@@ -712,7 +712,9 @@ function loginUserSession(handleVal) {
   localStorage.setItem('pitch_ump_last_handle', handleVal);
   
   loadSavedSessionFromLocal();
+  loadFavoriteTeam();
   updateProfileStatsUI();
+  updateDailyStreakStatusUI();
   playCoinSound();
   
   if (autoPlayTimeout) {
@@ -875,6 +877,7 @@ export function startGameSession() {
       loadSavedSessionFromLocal();
       updateProfileStatsUI();
       initProfileSettingsUI();
+      updateDailyStreakStatusUI();
     });
   }
   
@@ -4575,6 +4578,7 @@ function advanceNextAtBat() {
 }
 
 function saveChallengeSessionToLocal() {
+  const username = localStorage.getItem('ump_username');
   const data = {
     completedABsCount,
     dnfDisconnectsCount,
