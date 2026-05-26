@@ -111,6 +111,8 @@ let abStartCountdownInterval = null;
 let btnAbSummaryHome;
 let abPitchCounter;
 let btnStartWeeklyChallenge, weeklyChallengeProgressText, weeklyChallengeProgressBar;
+let dailyMatchupTitle, dailyCompeteStatus, btnPlayDailyCompete, dailyHistoricList;
+let activeDailyDate = "";
 
 // Settings values
 let reviewStyle = 'quick'; // 'quick' or 'full'
@@ -1053,6 +1055,12 @@ function cacheDOM() {
   weeklyChallengeProgressText = document.getElementById('weekly-challenge-progress-text');
   weeklyChallengeProgressBar = document.getElementById('weekly-challenge-progress-bar');
 
+  // Daily Compete Elements
+  dailyMatchupTitle = document.getElementById('daily-matchup-title');
+  dailyCompeteStatus = document.getElementById('daily-compete-status');
+  btnPlayDailyCompete = document.getElementById('btn-play-daily-compete');
+  dailyHistoricList = document.getElementById('daily-historic-list');
+
   matchupCard = document.getElementById('matchup-card');
   cardPitcherName = document.getElementById('card-pitcher-name');
   cardPitcherHand = document.getElementById('card-pitcher-hand');
@@ -1383,6 +1391,8 @@ function attachEvents() {
       // Restart current game session
       if (gameMode === 'weekly_challenge') {
         startWeeklyChallengeGame(activeGameIndex);
+      } else if (gameMode === 'daily_compete') {
+        startDailyCompeteGame(activeDailyDate);
       } else if (gameMode === 'daily_streak') {
         startDailyStreakChallenge();
       } else if (gameMode === 'orioles_full') {
@@ -1432,6 +1442,15 @@ function attachEvents() {
       e.stopPropagation();
       initAudio();
       startWeeklyChallenge();
+    });
+  }
+
+  if (btnPlayDailyCompete) {
+    btnPlayDailyCompete.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const todayStr = new Date().toISOString().split('T')[0];
+      startDailyCompeteGame(todayStr);
     });
   }
 
@@ -2096,6 +2115,10 @@ function transitionToState(newState) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, true);
     setOverlayVisible(startScreen, false);
+    if (teamSearchInput) {
+      teamSearchInput.value = "";
+    }
+    generateTeamSelectGrid();
   } else if (newState === STATES.START) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
@@ -2156,11 +2179,17 @@ function transitionToState(newState) {
             populateInningDropdown();
           }
           loadHalfInning(activeInning, activeIsTop);
-        } else if (gameMode === 'weekly_challenge') {
+        } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
           if (inningCard) inningCard.classList.add('hidden');
           if (weeklyPlaylistABs.length === 0) {
-            const rawABs = extractAtBatsFromWeeklyData();
-            weeklyPlaylistABs = [...rawABs];
+            if (gameMode === 'weekly_challenge') {
+              const rawABs = extractAtBatsFromWeeklyData();
+              weeklyPlaylistABs = [...rawABs];
+            } else {
+              const team = activeFavoriteTeam || "Orioles";
+              const todayStr = new Date().toISOString().split('T')[0];
+              weeklyPlaylistABs = generateDailyCondensedGame(team, todayStr);
+            }
           }
           const abData = weeklyPlaylistABs[activeWeeklyAbIndex] || weeklyPlaylistABs[0];
           pitchesList = abData.pitches;
@@ -2194,9 +2223,10 @@ function transitionToState(newState) {
       
       if (gameMode === 'standard') {
         pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF 10`;
-      } else if (gameMode === 'weekly_challenge') {
-        const total = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || 16;
-        pitchCounterText.textContent = `WEEKLY CHALLENGE | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
+      } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+        const total = weeklyPlaylistABs.length || 16;
+        const prefix = gameMode === 'weekly_challenge' ? 'WEEKLY CHALLENGE' : 'DAILY COMPETE';
+        pitchCounterText.textContent = `${prefix} | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
       } else if (gameMode === 'daily_streak') {
         pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
       } else {
@@ -3428,9 +3458,10 @@ function updateLiveScoreboard() {
 
   if (gameMode === 'standard') {
     pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF 10`;
-  } else if (gameMode === 'weekly_challenge') {
-    const total = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || 16;
-    pitchCounterText.textContent = `WEEKLY CHALLENGE | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
+  } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+    const total = weeklyPlaylistABs.length || 16;
+    const prefix = gameMode === 'weekly_challenge' ? 'WEEKLY CHALLENGE' : 'DAILY COMPETE';
+    pitchCounterText.textContent = `${prefix} | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
   } else if (gameMode === 'daily_streak') {
     pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
   } else {
@@ -3610,7 +3641,7 @@ function renderScoreboardDashboard() {
   let displayCorrectCount = userCorrectCount;
   let displayAcc = userAcc;
 
-  if (gameMode === 'weekly_challenge') {
+  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
     let overallCorrect = 0;
     let overallTotal = 0;
     weeklyPlaylistABs.forEach(ab => {
@@ -3638,12 +3669,17 @@ function renderScoreboardDashboard() {
     
     if (gameMode === 'weekly_challenge') {
       userStats.completedWeekly = (userStats.completedWeekly || 0) + 1;
+    } else if (gameMode === 'daily_compete') {
+      if (!userStats.dailyHistory) userStats.dailyHistory = {};
+      userStats.dailyHistory[activeDailyDate] = displayAcc;
+      const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${activeDailyDate}`;
+      localStorage.removeItem(key);
     }
     userStats.dnfs = dnfDisconnectsCount;
     
     // Calculate new overall accuracy combining all history sessions
-    let totalCallsSum = (gameMode === 'weekly_challenge') ? displayPitchesCount : calledPitches.length;
-    let totalCorrectSum = (gameMode === 'weekly_challenge') ? displayCorrectCount : userCorrectCount;
+    let totalCallsSum = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length;
+    let totalCorrectSum = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount;
     if (userStats.history) {
       userStats.history.forEach(h => {
         totalCallsSum += h.totalCalls;
@@ -3672,6 +3708,8 @@ function renderScoreboardDashboard() {
     if (gameMode === 'weekly_challenge') {
       const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
       gameName = gameData ? gameData.title : "Weekly Challenge";
+    } else if (gameMode === 'daily_compete') {
+      gameName = `Daily Compete (${activeDailyDate})`;
     } else if (gameMode === 'orioles_full') {
       gameName = "Orioles simulation";
     } else if (gameMode === 'daily_streak') {
@@ -3688,13 +3726,14 @@ function renderScoreboardDashboard() {
     userStats.history.push({
       gameName,
       matchup,
-      correctCalls: (gameMode === 'weekly_challenge') ? displayCorrectCount : userCorrectCount,
-      totalCalls: (gameMode === 'weekly_challenge') ? displayPitchesCount : calledPitches.length,
-      accuracy: (gameMode === 'weekly_challenge') ? displayAcc : userAcc,
+      correctCalls: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount,
+      totalCalls: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length,
+      accuracy: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc,
       date: new Date().toLocaleDateString()
     });
     
     localStorage.setItem(statsKey, JSON.stringify(userStats));
+    saveGlobalUserStats(username, userStats);
     updateProfileStatsUI();
 
     // Submit global scores to KVDB
@@ -4073,6 +4112,8 @@ function switchTab(tabName) {
     updateProfileStatsUI();
   } else if (tabName === 'leaderboard') {
     renderLeaderboard('weekly');
+  } else if (tabName === 'play') {
+    renderDailyCompeteDashboard();
   }
 }
 
@@ -4330,7 +4371,7 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
   
   // Handle weekly challenge stats saving and EXP bar animation
-  if (gameMode === 'weekly_challenge') {
+  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
     if (abSummaryWeeklyChallengeDetails) {
       abSummaryWeeklyChallengeDetails.classList.remove('hidden');
       abSummaryWeeklyChallengeDetails.classList.add('flex');
@@ -4395,7 +4436,7 @@ async function showAtBatSummaryScreen(outcomeText) {
 
   // Connect film room and umpire scorecard URLs specifically to this at-bat's game
   let urls;
-  if (gameMode === 'weekly_challenge' && weeklyPlaylistABs[activeWeeklyAbIndex]) {
+  if ((gameMode === 'weekly_challenge' || gameMode === 'daily_compete') && weeklyPlaylistABs[activeWeeklyAbIndex]) {
     const abData = weeklyPlaylistABs[activeWeeklyAbIndex];
     urls = getRevisitedUrls(targetPitch, abData);
   } else {
@@ -4435,7 +4476,7 @@ function advanceNextAtBat() {
   currentAbStartHistoryIndex = pitchHistory.length;
   
   // Advance in weekly challenge playlist
-  if (gameMode === 'weekly_challenge') {
+  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
     activeWeeklyAbIndex++;
     saveChallengeSessionToLocal();
     updateChallengeProgressUI();
@@ -4470,20 +4511,32 @@ function saveChallengeSessionToLocal() {
       gameMode,
       activeWeeklyAbIndex,
       activeGameIndex,
+      activeDailyDate,
       currentPitchIndex,
+      abBalls,
+      abStrikes,
+      pitchHistory,
       historyLength: pitchHistory.length
     };
   } else {
     data.activeChallenge = null;
   }
   
-  const username = localStorage.getItem('ump_username');
-  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  let key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  if (gameMode === 'daily_compete') {
+    key = username ? `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${activeDailyDate}` : `pitch_ump_daily_compete_mvp_guest_${activeDailyDate}`;
+  }
+  
   localStorage.setItem(key, JSON.stringify(data));
   
   if (username) {
     getGlobalUserStats(username).then(stats => {
-      stats.challengeProgress = data;
+      if (gameMode === 'daily_compete') {
+        if (!stats.dailyProgress) stats.dailyProgress = {};
+        stats.dailyProgress[activeDailyDate] = data;
+      } else {
+        stats.challengeProgress = data;
+      }
       saveGlobalUserStats(username, stats);
     });
   }
@@ -4491,36 +4544,26 @@ function saveChallengeSessionToLocal() {
 
 function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
-  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
-  const raw = localStorage.getItem(key);
-  if (!raw) {
+  
+  const weeklyKey = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  const rawWeekly = localStorage.getItem(weeklyKey);
+  if (rawWeekly) {
+    try {
+      const data = JSON.parse(rawWeekly);
+      if (data.completedABsCount) completedABsCount = data.completedABsCount;
+      if (data.dnfDisconnectsCount) dnfDisconnectsCount = data.dnfDisconnectsCount;
+      if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
+      if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
+    } catch (e) {
+      console.error(e);
+    }
+  } else {
     completedABsCount = [0, 0, 0, 0, 0];
     activeWeeklyAbIndex = 0;
     activeGameIndex = 0;
-    updateChallengeProgressUI();
-    return;
   }
   
-  try {
-    const data = JSON.parse(raw);
-    if (data.completedABsCount) completedABsCount = data.completedABsCount;
-    if (data.dnfDisconnectsCount) dnfDisconnectsCount = data.dnfDisconnectsCount;
-    if (data.weeklyPlaylistABs) weeklyPlaylistABs = data.weeklyPlaylistABs;
-    if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
-    if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
-    
-    // Check if the user had an active game running and closed it (tracks DNF disconnects)
-    if (data.activeChallenge) {
-      dnfDisconnectsCount++;
-      saveChallengeSessionToLocal(); // Save immediately
-      showABOutcomeToast("DISCONNECT RESTORED: DNF LOGGED");
-    }
-    
-    updateChallengeProgressUI();
-    updateProfileStatsUI();
-  } catch (e) {
-    console.error("Failed to load local challenge session", e);
-  }
+  updateChallengeProgressUI();
 }
 
 function pauseGameOnFocusLoss() {
@@ -5101,16 +5144,18 @@ function extractAtBatsFromWeeklyData() {
     }
   });
   
-  const shuffle = (arr) => {
+  // Deterministic Mulberry32 generator
+  const randGenerator = mulberry32(20260525);
+  const deterministicShuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(randGenerator() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
   };
   
-  shuffle(borderlineABs);
-  shuffle(normalABs);
+  deterministicShuffle(borderlineABs);
+  deterministicShuffle(normalABs);
   
   const targetBorderline = 100;
   const targetNormal = 100;
@@ -5127,7 +5172,7 @@ function extractAtBatsFromWeeklyData() {
   }
   
   const finalPlaylist = selectedBorderline.concat(selectedNormal).slice(0, 200);
-  return shuffle(finalPlaylist);
+  return deterministicShuffle(finalPlaylist);
 }
 
 function startWeeklyChallenge() {
@@ -5588,19 +5633,18 @@ function renderDashboardGamesList() {
   if (!dashboardGamesList) return;
   dashboardGamesList.innerHTML = '';
 
+  const gameCounts = WEEKLY_CHALLENGE_DATA.map((_, idx) => ({ abs: 0, pitches: 0 }));
+  weeklyPlaylistABs.forEach(ab => {
+    if (ab.gameIndex !== undefined && gameCounts[ab.gameIndex]) {
+      gameCounts[ab.gameIndex].abs++;
+      gameCounts[ab.gameIndex].pitches += ab.pitches.length;
+    }
+  });
+
   WEEKLY_CHALLENGE_DATA.forEach((game, idx) => {
-    const gameABs = [];
-    let currentBatter = '';
-    game.pitches.forEach(p => {
-      if (p.batter !== currentBatter) {
-        gameABs.push(p);
-        currentBatter = p.batter;
-      }
-    });
-    const totalABs = gameABs.length || 3;
-    
+    const counts = gameCounts[idx] || { abs: 0, pitches: 0 };
     const card = document.createElement('div');
-    card.className = 'glass-panel p-3.5 rounded-xl border border-white/5 flex flex-col justify-between transition-all select-none';
+    card.className = 'glass-panel p-2.5 rounded-lg border border-white/5 flex flex-col justify-between transition-all select-none';
     
     let rivalBadgeHtml = '';
     if (activeFavoriteTeam) {
@@ -5608,7 +5652,7 @@ function renderDashboardGamesList() {
       const awayTeam = parts[0];
       const homeTeam = parts[1];
       if (awayTeam === activeFavoriteTeam || homeTeam === activeFavoriteTeam) {
-        rivalBadgeHtml = `<span class="absolute top-2 right-2 text-[8px] font-mono-tech px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded font-bold">RIVALRY</span>`;
+        rivalBadgeHtml = `<span class="absolute top-1.5 right-1.5 text-[8px] font-mono-tech px-1 py-0.2 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded font-bold">RIVAL</span>`;
       }
     }
 
@@ -5617,12 +5661,15 @@ function renderDashboardGamesList() {
       ${rivalBadgeHtml}
       <div class="flex flex-col h-full justify-between">
         <div>
-          <span class="text-[9px] font-mono-tech text-purple-400 font-bold uppercase tracking-wider">MATCH #${idx + 1}</span>
-          <span class="text-xs font-black text-white mt-1 uppercase tracking-wide leading-tight block">${game.title}</span>
-          <p class="text-[9px] text-gray-400 mt-1 font-mono-tech uppercase leading-relaxed">${game.description || 'Live Match Details'}</p>
+          <div class="flex justify-between items-center mb-0.5">
+            <span class="text-[8px] font-mono-tech text-purple-400 font-bold uppercase tracking-wider">MATCH #${idx + 1}</span>
+            <span class="text-[8px] text-gray-500 font-mono-tech uppercase font-bold">${counts.pitches} PITCHES</span>
+          </div>
+          <span class="text-[11px] font-black text-white uppercase tracking-wide leading-tight block">${game.title}</span>
+          <p class="text-[8px] text-gray-400 font-mono-tech uppercase leading-tight mt-0.5">${game.description || 'Live Match Details'}</p>
         </div>
-        <div class="mt-3 pt-2 border-t border-white/5 flex justify-between items-center text-[9px] font-mono-tech text-gray-500">
-          <span>${totalABs} AT-BATS</span>
+        <div class="mt-2 pt-1 border-t border-white/5 flex justify-between items-center text-[8px] font-mono-tech text-gray-500">
+          <span>${counts.abs} AT-BATS</span>
           <span class="text-purple-400 font-bold">INGESTED</span>
         </div>
       </div>
@@ -6202,5 +6249,352 @@ async function renderLeaderboard(type) {
     `;
     leaderboardTableBody.appendChild(tr);
   });
+}
+
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function mulberry32(a) {
+  return function() {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+}
+
+function generateDailyCondensedGame(teamName, dateString) {
+  const seed = hashString(teamName + dateString);
+  const rand = mulberry32(seed);
+  
+  // Find opponent
+  const oppTeams = TEAMS_LIST.filter(t => t.name !== teamName);
+  const oppIdx = Math.floor(rand() * oppTeams.length);
+  const opponent = oppTeams[oppIdx];
+  
+  // Choose home/away randomly
+  const isHome = rand() < 0.5;
+  const awayTeam = isHome ? opponent.name : teamName;
+  const homeTeam = isHome ? teamName : opponent.name;
+  
+  const teamPlayers = {
+    'Orioles': ["Gunnar Henderson", "Adley Rutschman", "Colton Cowser", "Anthony Santander", "Ryan Mountcastle", "Jordan Westburg"],
+    'Tigers': ["Riley Greene", "Kerry Carpenter", "Mark Canha", "Colt Keith", "Gio Urshela", "Jake Rogers"],
+    'Phillies': ["Bryce Harper", "Trea Turner", "Kyle Schwarber", "Alec Bohm", "Bryson Stott", "Nick Castellanos"],
+    'Mets': ["Francisco Lindor", "Pete Alonso", "Brandon Nimmo", "Jeff McNeil", "Starling Marte", "Francisco Alvarez"],
+    'Dodgers': ["Shohei Ohtani", "Mookie Betts", "Freddie Freeman", "Teoscar Hernández", "Max Muncy", "Will Smith"],
+    'Yankees': ["Aaron Judge", "Juan Soto", "Giancarlo Stanton", "Anthony Volpe", "Anthony Rizzo", "Gleyber Torres"],
+    'Red Sox': ["Rafael Devers", "Jarren Duran", "Tyler O'Neill", "Masataka Yoshida", "Connor Wong", "Ceddanne Rafaela"],
+    'Astros': ["Jose Altuve", "Yordan Alvarez", "Alex Bregman", "Kyle Tucker", "Jeremy Peña", "Yainer Diaz"],
+    'Rangers': ["Corey Seager", "Marcus Semien", "Adolis García", "Jonah Heim", "Wyatt Langford", "Josh Jung"],
+    'Giants': ["Matt Chapman", "Jung Hoo Lee", "LaMonte Wade Jr.", "Jorge Soler", "Thairo Estrada", "Patrick Bailey"]
+  };
+  
+  const getPlayersForTeam = (t) => {
+    return teamPlayers[t] || [`Player A (${t})`, `Player B (${t})`, `Player C (${t})`, `Player D (${t})`, `Player E (${t})`, `Player F (${t})`];
+  };
+  
+  const awayBatters = getPlayersForTeam(awayTeam);
+  const homeBatters = getPlayersForTeam(homeTeam);
+  
+  const teamPitchers = {
+    'Orioles': ["Corbin Burnes", "Grayson Rodriguez"],
+    'Tigers': ["Tarik Skubal", "Jack Flaherty"],
+    'Phillies': ["Zack Wheeler", "Aaron Nola"],
+    'Mets': ["Kodai Senga", "Luis Severino"],
+    'Dodgers': ["Yoshinobu Yamamoto", "Tyler Glasnow"],
+    'Yankees': ["Gerrit Cole", "Marcus Stroman"],
+    'Red Sox': ["Nick Pivetta", "Brayan Bello"],
+    'Astros': ["Framber Valdez", "Justin Verlander"],
+    'Rangers': ["Nathan Eovaldi", "Jon Gray"],
+    'Giants': ["Logan Webb", "Kyle Harrison"]
+  };
+  
+  const getPitcherForTeam = (t) => {
+    const list = teamPitchers[t] || [`Pitcher X (${t})`, `Pitcher Y (${t})`];
+    return list[Math.floor(rand() * list.length)];
+  };
+  
+  const awayPitcher = getPitcherForTeam(awayTeam);
+  const homePitcher = getPitcherForTeam(homeTeam);
+  
+  const abList = [];
+  for (let abIdx = 0; abIdx < 15; abIdx++) {
+    const inning = Math.floor(abIdx / 2) + 1;
+    const isTop = abIdx % 2 === 0;
+    const battingTeam = isTop ? awayTeam : homeTeam;
+    const pitchingTeam = isTop ? homeTeam : awayTeam;
+    
+    const batterList = isTop ? awayBatters : homeBatters;
+    const batterName = batterList[abIdx % batterList.length];
+    const pitcherName = isTop ? homePitcher : awayPitcher;
+    
+    const pitches = [];
+    const numPitches = Math.floor(rand() * 4) + 1;
+    for (let pIdx = 0; pIdx < numPitches; pIdx++) {
+      const pitchTypes = ["Fastball", "Slider", "Changeup", "Curveball", "Sinker", "Cutter"];
+      const pitchType = pitchTypes[Math.floor(rand() * pitchTypes.length)];
+      const speed = Math.floor(rand() * 20) + 80;
+      
+      const isBorderline = rand() < 0.5;
+      let crossX = 0;
+      let crossY = 2.5;
+      const szTop = 3.4;
+      const szBot = 1.6;
+      
+      if (isBorderline) {
+        const borderType = Math.floor(rand() * 4);
+        if (borderType === 0) {
+          crossX = -0.8283 + (rand() * 0.2 - 0.1);
+          crossY = szBot + (rand() * 1.5);
+        } else if (borderType === 1) {
+          crossX = 0.8283 + (rand() * 0.2 - 0.1);
+          crossY = szBot + (rand() * 1.5);
+        } else if (borderType === 2) {
+          crossX = -0.8 + (rand() * 1.6);
+          crossY = szBot - 0.12 + (rand() * 0.2 - 0.1);
+        } else {
+          crossX = -0.8 + (rand() * 1.6);
+          crossY = szTop + 0.12 + (rand() * 0.2 - 0.1);
+        }
+      } else {
+        const isStrike = rand() < 0.5;
+        if (isStrike) {
+          crossX = -0.6 + (rand() * 1.2);
+          crossY = szBot + 0.2 + (rand() * 1.4);
+        } else {
+          crossX = rand() < 0.5 ? -1.3 - (rand() * 0.5) : 1.3 + (rand() * 0.5);
+          crossY = rand() < 0.5 ? szBot - 0.5 - (rand() * 0.5) : szTop + 0.5 + (rand() * 0.5);
+        }
+      }
+      
+      const isStrikeAbs = Math.abs(crossX) <= 0.8283 && crossY >= (szBot - 0.12) && crossY <= (szTop + 0.12);
+      const absCall = isStrikeAbs ? "S" : "B";
+      const realCall = absCall;
+      
+      const isLastPitch = pIdx === numPitches - 1;
+      let isSwing = false;
+      let swingOutcome = null;
+      let swingHitType = null;
+      
+      if (isLastPitch) {
+        const outcomeRoll = rand();
+        if (outcomeRoll < 0.3) {
+          isSwing = true;
+          swingOutcome = "HIT";
+          swingHitType = rand() < 0.15 ? "HOMERUN" : (rand() < 0.3 ? "DOUBLE" : "SINGLE");
+        } else if (outcomeRoll < 0.6) {
+          isSwing = true;
+          swingOutcome = "OUT";
+          swingHitType = rand() < 0.5 ? "FLYOUT" : "GROUNDOUT";
+        } else if (outcomeRoll < 0.8) {
+          isSwing = true;
+          swingOutcome = "WHIFF";
+        }
+      }
+      
+      const pitchObj = {
+        id: 20000 + abIdx * 10 + pIdx,
+        inning,
+        is_top: isTop,
+        pitcher: pitcherName,
+        pitcher_hand: rand() < 0.75 ? "RHP" : "LHP",
+        batter: batterName,
+        batter_hand: rand() < 0.6 ? "RHB" : "LHB",
+        pitch_type: pitchType,
+        speed_mph: speed,
+        release_pos_x: isTop ? 1.7 : -1.7,
+        release_pos_y: 50.5,
+        release_pos_z: 6.0,
+        vx0: isTop ? -crossX * 0.1 : crossX * 0.1,
+        vy0: -130.0,
+        vz0: -5.0,
+        ax: 2.0,
+        ay: 25.0,
+        az: -20.0,
+        sz_top: szTop,
+        sz_bot: szBot,
+        real_ump_call: realCall,
+        abs_call: absCall,
+        is_critical: isBorderline,
+        historical_blurb: `${pitcherName} throws a ${speed} MPH ${pitchType}. ${batterName} ${isSwing ? (swingOutcome === 'HIT' ? 'hits a line drive ' + swingHitType : (swingOutcome === 'WHIFF' ? 'swings and misses' : 'hits a routine ' + swingHitType)) : 'takes it for a called ' + (absCall === 'S' ? 'STRIKE' : 'BALL')}.`,
+        is_swing: isSwing,
+        swing_outcome: swingOutcome,
+        swing_hit_type: swingHitType
+      };
+      
+      pitches.push(pitchObj);
+    }
+    
+    abList.push({
+      gameIndex: abIdx,
+      gameTitle: `${awayTeam.toUpperCase()} @ ${homeTeam.toUpperCase()}`,
+      filmRoomUrl: "https://www.mlb.com",
+      umpScorecardUrl: "https://umpscorecards.com",
+      pitches,
+      batter: batterName,
+      pitcher: isTop ? homePitcher : awayPitcher
+    });
+  }
+  
+  return abList;
+}
+
+function renderDailyCompeteDashboard() {
+  const username = localStorage.getItem('ump_username');
+  if (!username) {
+    if (dailyMatchupTitle) dailyMatchupTitle.textContent = "LOGIN TO PLAY";
+    if (dailyCompeteStatus) {
+      dailyCompeteStatus.textContent = "AUTHENTICATION REQUIRED";
+      dailyCompeteStatus.className = "text-[9px] font-bold text-red-400 uppercase mt-0.5";
+    }
+    if (btnPlayDailyCompete) btnPlayDailyCompete.disabled = true;
+    if (dailyHistoricList) dailyHistoricList.innerHTML = `<div class="text-[10px] text-gray-500 text-center py-4">PLEASE LOG IN TO VIEW ARCHIVES</div>`;
+    return;
+  }
+  
+  if (btnPlayDailyCompete) btnPlayDailyCompete.disabled = false;
+  
+  const team = activeFavoriteTeam || "Orioles";
+  const todayStr = new Date().toISOString().split('T')[0];
+  
+  if (dailyMatchupTitle) {
+    dailyMatchupTitle.textContent = `${team.toUpperCase()} DAILY GAME`;
+  }
+  
+  getGlobalUserStats(username).then(stats => {
+    const dailyHistory = stats.dailyHistory || {};
+    const todayResult = dailyHistory[todayStr];
+    
+    if (dailyCompeteStatus) {
+      if (todayResult !== undefined) {
+        dailyCompeteStatus.textContent = `COMPLETED - ${todayResult}% ACCURACY`;
+        dailyCompeteStatus.className = "text-[9px] font-bold text-emerald-400 uppercase mt-0.5";
+        if (btnPlayDailyCompete) btnPlayDailyCompete.textContent = "Replay Daily";
+      } else {
+        dailyCompeteStatus.textContent = "UNPLAYED (Available)";
+        dailyCompeteStatus.className = "text-[9px] font-bold text-yellow-400 uppercase mt-0.5";
+        if (btnPlayDailyCompete) btnPlayDailyCompete.textContent = "Play Now";
+      }
+    }
+    
+    if (dailyHistoricList) {
+      dailyHistoricList.innerHTML = "";
+      const startDate = new Date("2026-04-01T00:00:00");
+      const endDate = new Date();
+      
+      const dates = [];
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        dates.push(d.toISOString().split('T')[0]);
+      }
+      dates.reverse();
+      
+      dates.forEach(dStr => {
+        const result = dailyHistory[dStr];
+        const item = document.createElement('div');
+        item.className = "flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-white/5 cursor-pointer transition-colors";
+        
+        let statusHtml = `<span class="text-[8px] font-mono-tech px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 rounded font-bold border border-yellow-500/20">UNPLAYED</span>`;
+        if (result !== undefined) {
+          statusHtml = `<span class="text-[8px] font-mono-tech px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 rounded font-bold border border-emerald-500/20">${result}% ACCURACY</span>`;
+        }
+        
+        const dateObj = new Date(dStr + "T00:00:00");
+        const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        
+        item.innerHTML = `
+          <div class="flex flex-col">
+            <span class="text-[9px] font-mono-tech text-gray-500">${dStr}</span>
+            <span class="text-[10px] font-black text-white mt-0.5">${formattedDate}</span>
+          </div>
+          ${statusHtml}
+        `;
+        
+        item.addEventListener('click', () => {
+          startDailyCompeteGame(dStr);
+        });
+        
+        dailyHistoricList.appendChild(item);
+      });
+    }
+  });
+}
+
+function startDailyCompeteGame(dateString) {
+  const username = localStorage.getItem('ump_username');
+  if (!username) return;
+  
+  gameMode = 'daily_compete';
+  activeDailyDate = dateString;
+  isGamePaused = false;
+  
+  if (pauseScreen) {
+    pauseScreen.classList.add('opacity-0', 'pointer-events-none');
+    pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  
+  const team = activeFavoriteTeam || "Orioles";
+  const rawABs = generateDailyCondensedGame(team, dateString);
+  
+  const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${dateString}`;
+  const rawSession = localStorage.getItem(key);
+  let savedPlaylist = null;
+  let savedAbIndex = 0;
+  
+  if (rawSession) {
+    try {
+      const savedData = JSON.parse(rawSession);
+      if (savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === rawABs.length) {
+        savedPlaylist = savedData.weeklyPlaylistABs;
+        savedAbIndex = savedData.activeWeeklyAbIndex || 0;
+        if (savedAbIndex >= savedPlaylist.length) {
+          savedPlaylist = null;
+          savedAbIndex = 0;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to restore daily compete playlist", e);
+    }
+  }
+  
+  if (savedPlaylist) {
+    weeklyPlaylistABs = savedPlaylist;
+    activeWeeklyAbIndex = savedAbIndex;
+    
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (data.activeChallenge) {
+          currentPitchIndex = data.activeChallenge.currentPitchIndex || 0;
+          abBalls = data.activeChallenge.abBalls || 0;
+          abStrikes = data.activeChallenge.abStrikes || 0;
+          pitchHistory = data.activeChallenge.pitchHistory || [];
+        } else {
+          currentPitchIndex = 0;
+          abBalls = 0;
+          abStrikes = 0;
+          pitchHistory = [];
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  } else {
+    weeklyPlaylistABs = [...rawABs];
+    activeWeeklyAbIndex = 0;
+    currentPitchIndex = 0;
+    abBalls = 0;
+    abStrikes = 0;
+    pitchHistory = [];
+  }
+  
+  loadWeeklyAtBat(activeWeeklyAbIndex);
 }
 

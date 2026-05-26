@@ -147,7 +147,7 @@
           <h1 class="text-4xl md:text-5xl font-black uppercase tracking-tight text-white leading-none font-mono-tech select-none">
             UMP<span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-blue-500 shadow-neon-strike-glow">SIM3000</span>
           </h1>
-          <p class="text-gray-400 text-xs font-mono-tech tracking-wider uppercase mt-1.5">Arcade Umpire Training Simulation</p>
+          <p class="text-gray-400 text-xs font-mono-tech tracking-wider uppercase mt-1.5">Retro Umpire Simulation</p>
         </div>
 
         <!-- Dashboard Panel Container -->
@@ -168,32 +168,31 @@
 
           <!-- Tab Contents -->
           <div class="p-6 flex-1 flex flex-col justify-start">
-            
-            <!-- Tab Content: PLAY -->
-            <div id="tab-content-play" class="w-full flex flex-col gap-6">
+                    <!-- Tab Content: PLAY -->
+            <div id="tab-content-play" class="w-full flex flex-col gap-4 select-none">
               
-              <!-- Core Challenge Panel -->
-              <div class="glass-panel p-5 rounded-2xl border border-white/10 flex flex-col md:flex-row gap-6">
-                <!-- Action / Progress Card -->
+              <!-- 1. Weekly Challenge Section -->
+              <div class="glass-panel p-4 rounded-xl border border-white/10 flex flex-col md:flex-row gap-5">
+                <!-- Weekly Challenge Controls -->
                 <div class="flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-purple-400 font-mono-tech flex items-center gap-2 mb-2">
-                      <span class="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-pulse"></span>
+                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-purple-400 font-mono-tech flex items-center gap-2 mb-1.5">
+                      <span class="w-2 h-2 rounded-full bg-purple-500 shadow-pulse"></span>
                       Weekly Challenge
                     </h3>
-                    <p class="text-xs text-gray-400 leading-relaxed mb-4">
-                      Evaluate critical called pitches curated from last week's real MLB matchups. Maintain accuracy to climb the Crew Chief Leaderboard.
+                    <p class="text-[11px] text-gray-400 leading-relaxed mb-3">
+                      Umpire critical called pitches curated from real MLB matches. Maintain high accuracy to climb the global standings.
                     </p>
                   </div>
                   <div>
-                    <div class="flex justify-between text-[10px] font-mono-tech text-gray-400 mb-1.5 font-bold">
+                    <div class="flex justify-between text-[9px] font-mono-tech text-gray-400 mb-1 font-bold">
                       <span>CHALLENGE PROGRESS</span>
-                      <span id="weekly-challenge-progress-text">0 / 16 At-Bats</span>
+                      <span id="weekly-challenge-progress-text">0 / 200 At-Bats</span>
                     </div>
-                    <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                    <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-white/5">
                       <div id="weekly-challenge-progress-bar" class="bg-gradient-to-r from-purple-500 to-indigo-500 h-full w-0 rounded-full transition-all duration-300"></div>
                     </div>
-                    <button id="btn-start-weekly-challenge" class="w-full mt-4 py-3 bg-purple-600 hover:bg-purple-500 text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-95 cursor-pointer text-center text-white shadow-lg shadow-purple-500/20 pointer-events-auto">
+                    <button id="btn-start-weekly-challenge" class="w-full mt-3 py-2.5 bg-purple-600 hover:bg-purple-500 text-xs font-extrabold uppercase tracking-wider rounded-lg transition-all hover:scale-[1.01] active:scale-95 cursor-pointer text-center text-white shadow-lg shadow-purple-500/20 pointer-events-auto">
                       Start Challenge
                     </button>
                   </div>
@@ -202,60 +201,55 @@
                 <!-- Vertical Divider -->
                 <div class="hidden md:block w-px bg-white/10 self-stretch"></div>
 
-                <!-- Featured Rivalry Games List -->
-                <div class="flex-[1.5] flex flex-col">
-                  <div class="flex justify-between items-center mb-2">
-                    <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider">Weekly Real MLB Matches</span>
-                    <span class="text-[9px] text-gray-500 font-mono-tech uppercase">Rivals Ingested</span>
+                <!-- Ingested Games Feed -->
+                <div class="flex-[1.2] flex flex-col justify-between min-h-[140px]">
+                  <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider">Weekly Matchup Logs</span>
+                    <span class="text-[9px] text-purple-400 font-mono-tech font-bold uppercase">Ingested Feed</span>
                   </div>
-                  
-                  <div class="grid grid-cols-2 md:grid-cols-3 gap-2 flex-1" id="dashboard-games-list">
-                    <!-- Cards will display the 5 game matchups -->
+                  <div class="flex-1 overflow-y-auto max-h-[120px] p-2 border border-white/5 bg-slate-950/40 rounded-lg flex flex-col gap-1.5" id="dashboard-games-list">
+                    <!-- Cards populated in game.js -->
                   </div>
                 </div>
               </div>
 
-              <!-- Daily Challenge / Team Rival Practice Modes -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Daily Challenge Card -->
-                <div class="glass-panel-light p-5 rounded-xl border border-white/5 flex flex-col justify-between">
+              <!-- 2. Daily Compete Section (Wordle-style) -->
+              <div class="glass-panel p-4 rounded-xl border border-white/10 flex flex-col md:flex-row gap-5">
+                <!-- Today's Daily Compete Card -->
+                <div class="flex-1 flex flex-col justify-between">
                   <div>
-                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-blue-400 font-mono-tech flex items-center gap-2 mb-2">
-                      <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-lg shadow-blue-500/40 animate-pulse"></span>
-                      Daily Streak Challenge
+                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-blue-400 font-mono-tech flex items-center gap-2 mb-1.5">
+                      <span class="w-2 h-2 rounded-full bg-blue-500 shadow-pulse"></span>
+                      Daily Compete
                     </h3>
-                    <p class="text-xs text-gray-300 mb-4 leading-relaxed">
-                      Evaluate consecutive borderline pitches. Make one incorrect call, and your streak ends!
+                    <p class="text-[11px] text-gray-400 leading-relaxed mb-3">
+                      Play a Wordle-style condensed game challenge of your favorite team's real matchup from the 2026 season. New games drop daily.
                     </p>
                   </div>
-                  <div class="flex items-center gap-4 justify-between">
+                  
+                  <div class="glass-panel-light p-2.5 rounded-lg border border-white/5 flex items-center justify-between mb-2">
                     <div class="flex flex-col">
-                      <span class="text-[9px] font-mono-tech text-gray-500">TODAY'S ATTEMPT</span>
-                      <span id="daily-attempt-status" class="text-xs font-bold text-green-400 uppercase">Available (Free)</span>
+                      <span class="text-[8px] font-mono-tech text-gray-500 uppercase">TODAY'S DAILY COMPETITION</span>
+                      <span id="daily-matchup-title" class="text-xs font-black text-white uppercase mt-0.5">ORIOLES CHALLENGE</span>
+                      <span id="daily-compete-status" class="text-[9px] font-bold text-yellow-400 uppercase mt-0.5">UNPLAYED (Available)</span>
                     </div>
-                    <button id="btn-start-daily-streak" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white">
-                      Start Streak
+                    <button id="btn-play-daily-compete" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-blue-500/20">
+                      Play Now
                     </button>
                   </div>
                 </div>
 
-                <!-- Practice Sandbox -->
-                <div class="glass-panel-light p-5 rounded-xl border border-white/5 flex flex-col justify-between">
-                  <div>
-                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-amber-500 font-mono-tech mb-2">
-                      Practice Sandbox
-                    </h3>
-                    <p class="text-xs text-gray-300 mb-4 leading-relaxed">
-                      Practice calling standard pitches or replay the full 9-inning Orioles doubleheader simulation without scoring penalties.
-                    </p>
+                <!-- Vertical Divider -->
+                <div class="hidden md:block w-px bg-white/10 self-stretch"></div>
+
+                <!-- Historical 2026 Games Selector -->
+                <div class="flex-[1.2] flex flex-col justify-between min-h-[140px]">
+                  <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider">Historic Games (2026 Season)</span>
+                    <span class="text-[9px] text-blue-400 font-mono-tech font-bold uppercase">Archived</span>
                   </div>
-                  <div class="grid grid-cols-2 gap-2.5">
-                    <button id="btn-start-game" class="py-2.5 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-white">
-                      10-P Practice
-                    </button>
-                    <button id="btn-start-orioles-full" class="py-2.5 bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-white">
-                      Orioles Simulation
-                    </button>
+                  <div id="daily-historic-list" class="flex-1 overflow-y-auto max-h-[120px] p-2 border border-white/5 bg-slate-950/40 rounded-lg flex flex-col gap-1">
+                    <!-- Dynamic list of historical 2026 season days -->
                   </div>
                 </div>
               </div>
