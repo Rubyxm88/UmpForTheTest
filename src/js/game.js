@@ -211,7 +211,7 @@ let activeUiMode = 'classic'; // 'classic' | 'adaptive' | 'cinematic'
 // Arcade Login Form elements
 let loginHandleInput, loginPinInput, loginErrorMsg, btnStatsLogout;
 let loginConfirmBox, btnLoginConfirmCreate, btnLoginConfirmCancel;
-let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, btnProfileSavePin, profilePinMsg, teamSearchInput;
+let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, profileNewPinConfirm, btnProfileSavePin, profilePinMsg, teamSearchInput, dailyAttemptStatus, btnHudLogout;
 
 // Collapsible Matchup Card elements
 let btnMatchupToggle;
@@ -795,6 +795,13 @@ function initProfileSettingsUI() {
       initAudio();
       
       const newPinVal = profileNewPin ? profileNewPin.value.trim() : "";
+      const confirmPinVal = profileNewPinConfirm ? profileNewPinConfirm.value.trim() : "";
+      
+      if (newPinVal !== confirmPinVal) {
+        alert("ERROR: NEW PIN AND CONFIRM PIN DO NOT MATCH!");
+        return;
+      }
+      
       if (!/^\d{4,8}$/.test(newPinVal)) {
         alert("ERROR: PIN MUST BE 4 TO 8 DIGITS");
         return;
@@ -815,6 +822,7 @@ function initProfileSettingsUI() {
           profilePinMsg.classList.remove('text-purple-400');
           profilePinMsg.classList.add('text-emerald-400');
           if (profileNewPin) profileNewPin.value = "";
+          if (profileNewPinConfirm) profileNewPinConfirm.value = "";
           setTimeout(() => {
             profilePinMsg.classList.add('hidden');
           }, 3000);
@@ -1123,8 +1131,14 @@ function cacheDOM() {
   teamSearchInput = document.getElementById('team-search-input');
   profileFavTeamLogo = document.getElementById('profile-fav-team-logo');
   profileNewPin = document.getElementById('profile-new-pin');
+  profileNewPinConfirm = document.getElementById('profile-new-pin-confirm');
   btnProfileSavePin = document.getElementById('btn-profile-save-pin');
   profilePinMsg = document.getElementById('profile-pin-msg');
+
+  // Restored Streak & HUD elements
+  btnStartDailyStreak = document.getElementById('btn-start-daily-streak');
+  dailyAttemptStatus = document.getElementById('daily-attempt-status');
+  btnHudLogout = document.getElementById('btn-hud-logout');
 
   // Collapsible Matchup Card elements
   btnMatchupToggle = document.getElementById('btn-matchup-toggle');
@@ -1454,6 +1468,8 @@ function attachEvents() {
     });
   }
 
+
+
   // Focus and visibility loss event listeners — pause on blur/hidden, do NOT auto-resume
   window.addEventListener('blur', () => {
     setTimeout(() => {
@@ -1690,34 +1706,39 @@ function attachEvents() {
     });
   }
 
+  const performLogout = (e) => {
+    e.stopPropagation();
+    initAudio();
+    localStorage.removeItem('ump_username');
+    loadSavedSessionFromLocal();
+    activeFavoriteTeam = null;
+    if (loginHandleInput) loginHandleInput.value = "";
+    if (loginPinInput) loginPinInput.value = "";
+    if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+    if (loginConfirmBox) {
+      loginConfirmBox.classList.add('hidden');
+      loginConfirmBox.classList.remove('flex');
+    }
+    
+    // Clear demo/active state
+    if (autoPlayTimeout) {
+      clearTimeout(autoPlayTimeout);
+      autoPlayTimeout = null;
+    }
+    pitchHistory = [];
+    currentPitchIndex = 0;
+    currentAbStartHistoryIndex = 0;
+    abBalls = 0;
+    abStrikes = 0;
+    
+    transitionToState(STATES.WELCOME);
+  };
+
   if (btnStatsLogout) {
-    btnStatsLogout.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      localStorage.removeItem('ump_username');
-      loadSavedSessionFromLocal();
-      activeFavoriteTeam = null;
-      if (loginHandleInput) loginHandleInput.value = "";
-      if (loginPinInput) loginPinInput.value = "";
-      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
-      if (loginConfirmBox) {
-        loginConfirmBox.classList.add('hidden');
-        loginConfirmBox.classList.remove('flex');
-      }
-      
-      // Clear demo/active state
-      if (autoPlayTimeout) {
-        clearTimeout(autoPlayTimeout);
-        autoPlayTimeout = null;
-      }
-      pitchHistory = [];
-      currentPitchIndex = 0;
-      currentAbStartHistoryIndex = 0;
-      abBalls = 0;
-      abStrikes = 0;
-      
-      transitionToState(STATES.IDLE);
-    });
+    btnStatsLogout.addEventListener('click', performLogout);
+  }
+  if (btnHudLogout) {
+    btnHudLogout.addEventListener('click', performLogout);
   }
 
   if (btnCloseSettings) {
@@ -4554,13 +4575,20 @@ function loadSavedSessionFromLocal() {
       if (data.dnfDisconnectsCount) dnfDisconnectsCount = data.dnfDisconnectsCount;
       if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
       if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
+      if (data.weeklyPlaylistABs && data.weeklyPlaylistABs.length > 0) {
+        weeklyPlaylistABs = data.weeklyPlaylistABs;
+      } else {
+        weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+      }
     } catch (e) {
       console.error(e);
+      weeklyPlaylistABs = extractAtBatsFromWeeklyData();
     }
   } else {
     completedABsCount = [0, 0, 0, 0, 0];
     activeWeeklyAbIndex = 0;
     activeGameIndex = 0;
+    weeklyPlaylistABs = extractAtBatsFromWeeklyData();
   }
   
   updateChallengeProgressUI();
@@ -4771,17 +4799,93 @@ function updateProfileStatsUI() {
   const historyTableBody = document.getElementById('history-table-body');
   
   const username = localStorage.getItem('ump_username');
+  
+  // HUD Elements caching
+  const hudTeamLogo = document.getElementById('hud-user-team-logo');
+  const hudFavBadge = document.getElementById('hud-user-favorite-badge');
+  const hudHandle = document.getElementById('hud-user-handle');
+  const hudXpText = document.getElementById('hud-user-xp-text');
+  const hudXpBar = document.getElementById('hud-user-xp-bar');
+  
   if (!username) {
     if (avgAccEl) avgAccEl.textContent = "--";
     if (maxStrEl) maxStrEl.textContent = "--";
     if (compWkEl) compWkEl.textContent = "--";
     if (dnfEl) dnfEl.textContent = "0";
     if (historyTableBody) historyTableBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500">Log in to view stats</td></tr>';
+    
+    // Reset Top-Bar HUD for Guest
+    if (hudHandle) hudHandle.textContent = "GUEST_UMPIRE";
+    if (hudFavBadge) {
+      hudFavBadge.textContent = "NONE";
+      hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech";
+    }
+    if (hudTeamLogo) {
+      hudTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      hudTeamLogo.classList.add('animate-pulse');
+    }
+    if (hudXpText) hudXpText.textContent = "0 XP (Log in to earn Crew XP)";
+    if (hudXpBar) hudXpBar.style.width = "5%";
     return;
   }
   
   const statsKey = `pitch_ump_stats_${username}`;
   const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  
+  // Set handle
+  if (hudHandle) hudHandle.textContent = username.toUpperCase();
+  
+  // Set favorite team & logo
+  if (hudFavBadge) {
+    if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
+      hudFavBadge.textContent = activeFavoriteTeam.slice(0, 3).toUpperCase();
+      hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded uppercase font-mono-tech";
+    } else {
+      hudFavBadge.textContent = "NONE";
+      hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech";
+    }
+  }
+  
+  if (hudTeamLogo) {
+    if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
+      hudTeamLogo.src = getTeamLogoUrl(activeFavoriteTeam);
+      hudTeamLogo.classList.remove('animate-pulse');
+    } else {
+      hudTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      hudTeamLogo.classList.add('animate-pulse');
+    }
+  }
+  
+  // Calculate XP (Experience Points) based on history correct calls
+  let xp = 0;
+  const history = userStats.history || [];
+  history.forEach(h => {
+    const isWeekly = h.gameName && h.gameName.includes("Weekly");
+    const isStreak = h.gameName && h.gameName.includes("Streak");
+    const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
+    
+    if (isWeekly) {
+      xp += (h.correctCalls || 0) * 10;
+    } else if (isStreak) {
+      xp += (h.correctCalls || 0) * 15;
+    } else if (isDailyCompete) {
+      xp += (h.correctCalls || 0) * 12;
+    } else {
+      xp += (h.correctCalls || 0) * 5;
+    }
+  });
+  
+  const currentLevel = Math.floor(xp / 1000) + 1;
+  const prevLevelXp = (currentLevel - 1) * 1000;
+  const progressXp = xp - prevLevelXp;
+  const pct = Math.min(100, Math.max(5, Math.round((progressXp / 1000) * 100)));
+  
+  if (hudXpText) {
+    hudXpText.textContent = `Lvl ${currentLevel} Crew Chief | ${xp.toLocaleString()} XP (${progressXp} / 1,000 to next level)`;
+  }
+  if (hudXpBar) {
+    hudXpBar.style.width = `${pct}%`;
+  }
   
   if (avgAccEl) {
     avgAccEl.textContent = userStats.overallAccuracy !== null && userStats.overallAccuracy !== undefined ? `${userStats.overallAccuracy}%` : "--";
@@ -5184,7 +5288,9 @@ function startWeeklyChallenge() {
   }
   
   const rawABs = extractAtBatsFromWeeklyData();
-  const rawSession = localStorage.getItem('pitch_ump_challenge_mvp');
+  const username = localStorage.getItem('ump_username');
+  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  const rawSession = localStorage.getItem(key);
   let savedPlaylist = null;
   let savedAbIndex = 0;
   
@@ -5215,7 +5321,7 @@ function startWeeklyChallenge() {
           }
         } else {
           console.log("Invalidating saved weekly playlist: teammate matchups or data version mismatch detected.");
-          localStorage.removeItem('pitch_ump_challenge_mvp');
+          localStorage.removeItem(key);
         }
       }
     } catch (e) {
@@ -5228,10 +5334,6 @@ function startWeeklyChallenge() {
     activeWeeklyAbIndex = savedAbIndex;
   } else {
     weeklyPlaylistABs = [...rawABs];
-    for (let i = weeklyPlaylistABs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [weeklyPlaylistABs[i], weeklyPlaylistABs[j]] = [weeklyPlaylistABs[j], weeklyPlaylistABs[i]];
-    }
     activeWeeklyAbIndex = 0;
   }
   
@@ -6164,9 +6266,9 @@ async function renderLeaderboard(type) {
   if (type === 'weekly') {
     divisionTitle = "Weekly Challenge Standings";
   } else if (type === 'daily') {
-    divisionTitle = "Streak Leaderboard (Consecutive Correct)";
+    divisionTitle = "Daily Streak Challenge Standings";
   } else if (type === 'alltime') {
-    divisionTitle = "All-Time Hall of Fame";
+    divisionTitle = "Team Standings (MLB Fan Leaderboard)";
   }
   leaderboardDivisionTitle.textContent = divisionTitle.toUpperCase();
 
@@ -6221,11 +6323,11 @@ async function renderLeaderboard(type) {
       ];
     } else if (type === 'alltime') {
       rows = [
-        { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "99.4%", score: "2,450 pts" },
-        { rank: 2, name: "PerfectCall_99", team: "Yankees", accuracy: "97.8%", score: "2,120 pts" },
-        { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "96.9%", score: "1,980 pts" },
-        { rank: 4, name: "Miller_Crew", team: "Dodgers", accuracy: "96.2%", score: "1,890 pts" },
-        { rank: 5, name: "Umpire_Pro", team: "Dodgers", accuracy: "94.5%", score: "1,650 pts" },
+        { rank: 1, name: "ORIOLES FANS", team: "BAL", accuracy: "95.8%", score: "12,450 pts" },
+        { rank: 2, name: "YANKEES FANS", team: "NYY", accuracy: "94.2%", score: "10,120 pts" },
+        { rank: 3, name: "DODGERS FANS", team: "LAD", accuracy: "93.9%", score: "9,890 pts" },
+        { rank: 4, name: "PHILLIES FANS", team: "PHI", accuracy: "93.5%", score: "9,150 pts" },
+        { rank: 5, name: "GIANTS FANS", team: "SF", accuracy: "92.8%", score: "8,650 pts" },
       ];
     }
   }
