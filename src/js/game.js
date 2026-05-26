@@ -648,6 +648,62 @@ function playStrikeoutSirenSound() {
   });
 }
 
+async function getGlobalUsers() {
+  try {
+    const res = await fetch(`${KVDB_BASE_URL}/users`);
+    if (res.ok) {
+      const users = await res.json();
+      if (users && typeof users === 'object') return users;
+    }
+  } catch (e) {
+    console.warn("Error fetching global users map:", e);
+  }
+  return JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+}
+
+async function saveGlobalUser(handle, pin) {
+  try {
+    const users = await getGlobalUsers();
+    users[handle.toUpperCase()] = pin;
+    localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+    await fetch(`${KVDB_BASE_URL}/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(users)
+    });
+  } catch (e) {
+    console.warn("Error saving user globally:", e);
+  }
+}
+
+async function getGlobalUserStats(handle) {
+  try {
+    const res = await fetch(`${KVDB_BASE_URL}/stats_${handle.toUpperCase()}`);
+    if (res.ok) {
+      const stats = await res.json();
+      if (stats && typeof stats === 'object') return stats;
+    }
+  } catch (e) {
+    console.warn(`Error fetching stats for ${handle}:`, e);
+  }
+  const statsKey = `pitch_ump_stats_${handle.toUpperCase()}`;
+  return JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+}
+
+async function saveGlobalUserStats(handle, stats) {
+  const statsKey = `pitch_ump_stats_${handle.toUpperCase()}`;
+  localStorage.setItem(statsKey, JSON.stringify(stats));
+  try {
+    await fetch(`${KVDB_BASE_URL}/stats_${handle.toUpperCase()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(stats)
+    });
+  } catch (e) {
+    console.warn(`Error saving stats for ${handle} globally:`, e);
+  }
+}
+
 function loginUserSession(handleVal) {
   localStorage.setItem('ump_username', handleVal);
   localStorage.setItem('pitch_ump_last_handle', handleVal);
@@ -696,14 +752,21 @@ function initProfileSettingsUI() {
     }
   }
   
-  profileFavTeamSelect.onchange = function() {
+  profileFavTeamSelect.onchange = async function() {
     initAudio();
     const val = this.value;
+    const currentHandle = localStorage.getItem('ump_username');
     if (val === 'none') {
       activeFavoriteTeam = null;
       localStorage.removeItem('pitch_ump_favorite_team');
       if (profileFavTeamLogo) profileFavTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
       if (userFavoriteTeamBadge) userFavoriteTeamBadge.textContent = 'FAVORITE TEAM: NONE';
+      
+      if (currentHandle) {
+        const stats = await getGlobalUserStats(currentHandle);
+        stats.favoriteTeam = "none";
+        await saveGlobalUserStats(currentHandle, stats);
+      }
     } else {
       const team = TEAMS_LIST.find(t => t.name.toLowerCase() === val);
       if (team) {
@@ -712,12 +775,18 @@ function initProfileSettingsUI() {
         if (profileFavTeamLogo) profileFavTeamLogo.src = getTeamLogoUrl(team.name);
         if (userFavoriteTeamBadge) userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${team.name.toUpperCase()}`;
         playCoinSound();
+        
+        if (currentHandle) {
+          const stats = await getGlobalUserStats(currentHandle);
+          stats.favoriteTeam = team.name;
+          await saveGlobalUserStats(currentHandle, stats);
+        }
       }
     }
   };
   
   if (btnProfileSavePin) {
-    btnProfileSavePin.onclick = function(e) {
+    btnProfileSavePin.onclick = async function(e) {
       e.stopPropagation();
       initAudio();
       
@@ -729,18 +798,23 @@ function initProfileSettingsUI() {
       
       const currentHandle = localStorage.getItem('ump_username');
       if (currentHandle) {
-        let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
-        users[currentHandle] = newPinVal;
-        localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+        if (profilePinMsg) {
+          profilePinMsg.textContent = "UPDATING PIN PASSCODE...";
+          profilePinMsg.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
+          profilePinMsg.classList.add('text-purple-400');
+        }
+        
+        await saveGlobalUser(currentHandle, newPinVal);
         
         if (profilePinMsg) {
-          profilePinMsg.classList.remove('hidden');
+          profilePinMsg.textContent = "PIN SECURELY UPDATED!";
+          profilePinMsg.classList.remove('text-purple-400');
+          profilePinMsg.classList.add('text-emerald-400');
+          if (profileNewPin) profileNewPin.value = "";
           setTimeout(() => {
             profilePinMsg.classList.add('hidden');
           }, 3000);
         }
-        if (profileNewPin) profileNewPin.value = "";
-        
         playCoinSound();
       }
     };
@@ -764,6 +838,25 @@ export function startGameSession() {
   
   loadSavedSessionFromLocal();
   loadFavoriteTeam();
+  
+  const storedUser = localStorage.getItem('ump_username');
+  if (storedUser) {
+    getGlobalUserStats(storedUser).then(globalStats => {
+      const statsKey = `pitch_ump_stats_${storedUser.toUpperCase()}`;
+      localStorage.setItem(statsKey, JSON.stringify(globalStats));
+      
+      if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
+        activeFavoriteTeam = globalStats.favoriteTeam;
+        localStorage.setItem('pitch_ump_favorite_team', globalStats.favoriteTeam);
+        if (userFavoriteTeamBadge) {
+          userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${globalStats.favoriteTeam.toUpperCase()}`;
+        }
+      }
+      updateProfileStatsUI();
+      initProfileSettingsUI();
+    });
+  }
+  
   initProfileSettingsUI();
   generateTeamSelectGrid();
   renderDashboardGamesList();
@@ -1058,7 +1151,7 @@ function cacheDOM() {
   leaderboardDivisionTitle = document.getElementById('leaderboard-division-title');
 }
 
-function submitLoginAction() {
+async function submitLoginAction() {
   initAudio();
   
   const handleVal = loginHandleInput ? loginHandleInput.value.trim() : "";
@@ -1081,7 +1174,13 @@ function submitLoginAction() {
   }
   
   const handleValNormalized = handleVal.toUpperCase();
-  let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+  
+  if (loginErrorMsg) {
+    loginErrorMsg.textContent = "VERIFYING CREW CHIEF CREDENTIALS...";
+    loginErrorMsg.classList.remove('hidden');
+  }
+
+  const users = await getGlobalUsers();
   
   if (users[handleValNormalized] === undefined) {
     // User does not exist, show confirm registration overlay
@@ -1098,6 +1197,17 @@ function submitLoginAction() {
         loginConfirmBox.classList.add('hidden');
         loginConfirmBox.classList.remove('flex');
       }
+      
+      // Load user stats from global DB
+      const globalStats = await getGlobalUserStats(handleValNormalized);
+      const statsKey = `pitch_ump_stats_${handleValNormalized}`;
+      localStorage.setItem(statsKey, JSON.stringify(globalStats));
+      
+      if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
+        activeFavoriteTeam = globalStats.favoriteTeam;
+        localStorage.setItem('pitch_ump_favorite_team', globalStats.favoriteTeam);
+      }
+      
       loginUserSession(handleValNormalized);
     } else {
       if (loginErrorMsg) {
@@ -1496,7 +1606,7 @@ function attachEvents() {
   if (loginPinInput) loginPinInput.addEventListener('keydown', handleLoginEnter);
 
   if (btnLoginConfirmCreate) {
-    btnLoginConfirmCreate.addEventListener('click', (e) => {
+    btnLoginConfirmCreate.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
       
@@ -1504,9 +1614,23 @@ function attachEvents() {
       const pinVal = loginPinInput ? loginPinInput.value.trim() : "";
       const handleValNormalized = handleVal.toUpperCase();
       
-      let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
-      users[handleValNormalized] = pinVal;
-      localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+      if (loginErrorMsg) {
+        loginErrorMsg.textContent = "REGISTERING NEW CREW CHIEF...";
+        loginErrorMsg.classList.remove('hidden');
+      }
+
+      await saveGlobalUser(handleValNormalized, pinVal);
+      
+      // Initialize blank stats template globally
+      const blankStats = {
+        overallAccuracy: null,
+        maxStreak: 0,
+        completedWeekly: 0,
+        dnfs: 0,
+        favoriteTeam: "none",
+        history: []
+      };
+      await saveGlobalUserStats(handleValNormalized, blankStats);
       
       if (loginConfirmBox) {
         loginConfirmBox.classList.add('hidden');
@@ -5919,16 +6043,16 @@ async function renderLeaderboard(type) {
         { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "98.8%", score: "990 pts" },
         { rank: 2, name: "Miller_Crew", team: "Dodgers", accuracy: "97.2%", score: "972 pts" },
         { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "95.5%", score: "955 pts" },
-        { rank: 4, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "94.8%", score: "948 pts", isUser: true },
+        { rank: 4, name: "Umpire_Pro", team: "Dodgers", accuracy: "94.1%", score: "941 pts" },
         { rank: 5, name: "Angel_H", team: "Astros", accuracy: "81.2%", score: "812 pts" },
       ];
     } else if (type === 'daily') {
       rows = [
         { rank: 1, name: "PerfectCall_99", team: "Yankees", accuracy: "98.5%", score: "24 Streak" },
         { rank: 2, name: "LaserEye", team: "Rangers", accuracy: "96.4%", score: "19 Streak" },
-        { rank: 3, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.3%", score: "15 Streak", isUser: true },
-        { rank: 4, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
-        { rank: 5, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
+        { rank: 3, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
+        { rank: 4, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
+        { rank: 5, name: "ZoneMaster", team: "Tigers", accuracy: "89.2%", score: "8 Streak" },
       ];
     } else if (type === 'alltime') {
       rows = [
@@ -5936,7 +6060,7 @@ async function renderLeaderboard(type) {
         { rank: 2, name: "PerfectCall_99", team: "Yankees", accuracy: "97.8%", score: "2,120 pts" },
         { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "96.9%", score: "1,980 pts" },
         { rank: 4, name: "Miller_Crew", team: "Dodgers", accuracy: "96.2%", score: "1,890 pts" },
-        { rank: 5, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.5%", score: "1,750 pts", isUser: true },
+        { rank: 5, name: "Umpire_Pro", team: "Dodgers", accuracy: "94.5%", score: "1,650 pts" },
       ];
     }
   }
