@@ -1,0 +1,862 @@
+<!doctype html>
+<html lang="en" style="background-color:#06090e;">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Pitch Ump 3D — Professional MLB umpire simulation with Automated Ball-Strike (ABS) challenge, real Statcast trajectory physics, and UmpScorecard diagnostics." />
+    <title>Pitch Ump 3D - ABS Challenge Simulation</title>
+    <!-- Prevent white flash: inline critical dark background -->
+    <style>html,body{background-color:#06090e;margin:0;padding:0;}</style>
+    <!-- Preconnect for Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  </head>
+  <body class="bg-[#06090e] text-white overflow-hidden select-none font-sans">
+    
+    <!-- Three.js Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0">
+      <canvas id="three-canvas"></canvas>
+    </div>
+
+    <!-- UI Overlay Layer -->
+    <div id="hud-layer" class="absolute inset-0 w-full h-full z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+      
+      <!-- Game Status Badge (Floating top center) -->
+      <div id="game-status-badge" class="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 px-5 py-2 bg-slate-950/90 backdrop-blur border border-white/10 text-white text-xs font-extrabold uppercase font-mono-tech tracking-widest rounded-full shadow-xl z-40 transition-all duration-300 opacity-0 pointer-events-none flex items-center gap-2.5">
+        <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" id="game-status-dot"></span>
+        <span id="game-status-text">WAITING FOR PITCH</span>
+      </div>
+
+      <!-- SCREEN A: WELCOME SCREEN (Cinematic entry) -->
+      <div id="welcome-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-8 z-55 pointer-events-auto transition-opacity duration-500">
+        <div class="max-w-md w-full glass-panel p-8 rounded-2xl border border-white/10 text-center flex flex-col items-center shadow-2xl relative overflow-hidden">
+          <div class="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-purple-500/10 blur-3xl"></div>
+          <div class="absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-blue-500/10 blur-3xl"></div>
+          
+          <span class="px-3.5 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/20">ABS Challenge 3D</span>
+          <h1 class="text-4xl md:text-5xl font-black uppercase mt-5 tracking-tight leading-none text-white font-mono-tech">
+            PITCH <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-500 shadow-neon-strike-glow">UMP 3D</span>
+          </h1>
+          <p class="text-gray-400 text-xs font-mono-tech tracking-widest uppercase mt-2 mb-8">Professional Umpire Simulation</p>
+          
+          <button id="btn-welcome-start" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg shadow-purple-500/25 hover:scale-[1.02] active:scale-95 transition-all cursor-pointer">
+            Select Favorite Team & Play
+          </button>
+        </div>
+      </div>
+
+      <!-- SCREEN B: FAVORITE TEAM SELECT -->
+      <div id="team-select-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-8 z-54 pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
+        <div class="max-w-2xl w-full glass-panel p-6 md:p-8 rounded-2xl border border-white/10 flex flex-col shadow-2xl relative overflow-hidden">
+          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/5 blur-3xl"></div>
+          
+          <div class="text-center mb-6">
+            <h2 class="text-2xl md:text-3xl font-extrabold uppercase text-white tracking-wide font-mono-tech">Select Favorite Team</h2>
+            <p class="text-gray-400 text-xs uppercase font-mono-tech tracking-wider mt-1.5">This unlocks custom rival matchups & leaderboard divisions</p>
+          </div>
+          
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 max-h-[320px] overflow-y-auto p-3 border border-white/5 bg-slate-950/40 rounded-xl mb-6" id="team-grid-container">
+            <!-- Team items generated dynamically in game.js -->
+          </div>
+          
+          <button id="btn-confirm-team" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            Confirm Team Selection
+          </button>
+        </div>
+      </div>
+
+      <!-- SCREEN C: MAIN DASHBOARD MENU HUB -->
+      <div id="start-screen" class="absolute inset-0 w-full h-full bg-slate-950/95 bg-grid-pattern flex flex-col items-center p-4 md:p-8 z-50 pointer-events-auto transition-opacity duration-500 overflow-y-auto">
+        
+        <!-- Dashboard Header -->
+        <div class="w-full max-w-4xl text-center mb-6 flex flex-col items-center mt-2 md:mt-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span id="user-favorite-team-badge" class="px-3.5 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/25">FAVORITE TEAM: NONE</span>
+            <span class="px-3.5 py-1 text-[10px] font-bold uppercase tracking-widest bg-blue-600 rounded-full shadow-lg">LIVE INGESTION</span>
+          </div>
+          <h1 class="text-4xl md:text-5xl font-black uppercase tracking-tight text-white leading-none font-mono-tech">
+            PITCH <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-500 shadow-neon-strike-glow">UMP 3D</span>
+          </h1>
+          <p class="text-gray-400 text-xs font-mono-tech tracking-wider uppercase mt-1.5">ABS Ingestion & Umpire Curation Dashboard</p>
+        </div>
+
+        <!-- Dashboard Panel Container -->
+        <div class="w-full max-w-4xl glass-panel rounded-2xl border border-white/10 flex flex-col overflow-hidden min-h-[460px]">
+          
+          <!-- Tab Navigation Headers -->
+          <div class="w-full flex border-b border-white/10 bg-slate-950/50">
+            <button id="tab-btn-play" class="flex-1 py-4 text-center text-xs font-bold uppercase tracking-widest text-white border-b-2 border-purple-500 bg-white/5 transition-all cursor-pointer">
+              Play Challenge
+            </button>
+            <button id="tab-btn-leaderboard" class="flex-1 py-4 text-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/2 transition-all cursor-pointer">
+              Leaderboards
+            </button>
+            <button id="tab-btn-stats" class="flex-1 py-4 text-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/2 transition-all cursor-pointer">
+              My Stats & Profile
+            </button>
+          </div>
+
+          <!-- Tab Contents -->
+          <div class="p-6 flex-1 flex flex-col justify-start">
+            
+            <!-- Tab Content: PLAY -->
+            <div id="tab-content-play" class="w-full flex flex-col gap-6">
+              
+              <!-- Core Challenge Panel -->
+              <div class="glass-panel p-5 rounded-2xl border border-white/10 flex flex-col md:flex-row gap-6">
+                <!-- Action / Progress Card -->
+                <div class="flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-purple-400 font-mono-tech flex items-center gap-2 mb-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-pulse"></span>
+                      Weekly Challenge
+                    </h3>
+                    <p class="text-xs text-gray-400 leading-relaxed mb-4">
+                      Evaluate critical called pitches curated from last week's real MLB matchups. Maintain accuracy to climb the Crew Chief Leaderboard.
+                    </p>
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[10px] font-mono-tech text-gray-400 mb-1.5 font-bold">
+                      <span>CHALLENGE PROGRESS</span>
+                      <span id="weekly-challenge-progress-text">0 / 16 At-Bats</span>
+                    </div>
+                    <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                      <div id="weekly-challenge-progress-bar" class="bg-gradient-to-r from-purple-500 to-indigo-500 h-full w-0 rounded-full transition-all duration-300"></div>
+                    </div>
+                    <button id="btn-start-weekly-challenge" class="w-full mt-4 py-3 bg-purple-600 hover:bg-purple-500 text-xs font-extrabold uppercase tracking-wider rounded-xl transition-all hover:scale-[1.02] active:scale-95 cursor-pointer text-center text-white shadow-lg shadow-purple-500/20 pointer-events-auto">
+                      Start Challenge
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Vertical Divider -->
+                <div class="hidden md:block w-px bg-white/10 self-stretch"></div>
+
+                <!-- Featured Rivalry Games List -->
+                <div class="flex-[1.5] flex flex-col">
+                  <div class="flex justify-between items-center mb-2">
+                    <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider">Weekly Real MLB Matches</span>
+                    <span class="text-[9px] text-gray-500 font-mono-tech uppercase">Rivals Ingested</span>
+                  </div>
+                  
+                  <div class="grid grid-cols-2 md:grid-cols-3 gap-2 flex-1" id="dashboard-games-list">
+                    <!-- Cards will display the 5 game matchups -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Daily Challenge / Team Rival Practice Modes -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Daily Challenge Card -->
+                <div class="glass-panel-light p-5 rounded-xl border border-white/5 flex flex-col justify-between">
+                  <div>
+                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-blue-400 font-mono-tech flex items-center gap-2 mb-2">
+                      <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-lg shadow-blue-500/40 animate-pulse"></span>
+                      Daily Streak Challenge
+                    </h3>
+                    <p class="text-xs text-gray-300 mb-4 leading-relaxed">
+                      Evaluate consecutive borderline pitches. Make one incorrect call, and your streak ends!
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-4 justify-between">
+                    <div class="flex flex-col">
+                      <span class="text-[9px] font-mono-tech text-gray-500">TODAY'S ATTEMPT</span>
+                      <span id="daily-attempt-status" class="text-xs font-bold text-green-400 uppercase">Available (Free)</span>
+                    </div>
+                    <button id="btn-start-daily-streak" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white">
+                      Start Streak
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Practice Sandbox -->
+                <div class="glass-panel-light p-5 rounded-xl border border-white/5 flex flex-col justify-between">
+                  <div>
+                    <h3 class="text-sm font-extrabold uppercase tracking-widest text-amber-500 font-mono-tech mb-2">
+                      Practice Sandbox
+                    </h3>
+                    <p class="text-xs text-gray-300 mb-4 leading-relaxed">
+                      Practice calling standard pitches or replay the full 9-inning Orioles doubleheader simulation without scoring penalties.
+                    </p>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2.5">
+                    <button id="btn-start-game" class="py-2.5 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-white">
+                      10-P Practice
+                    </button>
+                    <button id="btn-start-orioles-full" class="py-2.5 bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer text-white">
+                      Orioles Simulation
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Tab Content: LEADERBOARDS -->
+            <div id="tab-content-leaderboard" class="w-full hidden flex-col">
+              <div class="flex justify-between items-center mb-4">
+                <span id="leaderboard-division-title" class="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono-tech">Umpire Crew Standings</span>
+                <div class="flex gap-2">
+                  <button id="leader-btn-weekly" class="px-3 py-1 bg-purple-600 text-[10px] font-bold uppercase rounded-md text-white cursor-pointer">Weekly</button>
+                  <button id="leader-btn-daily" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">Streak</button>
+                  <button id="leader-btn-alltime" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">All-Time</button>
+                </div>
+              </div>
+              
+              <!-- Leaderboard Table -->
+              <div class="w-full rounded-lg border border-white/10 glass-panel-light overflow-hidden">
+                <table class="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+                      <th class="p-3">Rank</th>
+                      <th class="p-3">Crew Chief</th>
+                      <th class="p-3">Team</th>
+                      <th class="p-3 text-center">Accuracy</th>
+                      <th class="p-3 text-center">Score / Streak</th>
+                    </tr>
+                  </thead>
+                  <tbody id="leaderboard-table-body">
+                    <!-- Rows populated dynamically in game.js -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Tab Content: STATS -->
+            <div id="tab-content-stats" class="w-full hidden flex-col">
+              <div class="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono-tech mb-4">
+                Performance Telemetry
+              </div>
+              
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Overall Accuracy</span>
+                  <span id="stats-avg-accuracy" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
+                </div>
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Max Streak</span>
+                  <span id="stats-max-streak" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
+                </div>
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Challenge Games</span>
+                  <span id="stats-completed-weekly" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
+                </div>
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">DNF Disconnects</span>
+                  <span id="stats-dnfs" class="text-3xl font-black text-red-400 font-mono-tech mt-2">0</span>
+                </div>
+              </div>
+
+              <!-- History Logs list -->
+              <div class="flex-1 flex flex-col">
+                <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider mb-2">Challenge History Log</span>
+                <div class="w-full rounded-lg border border-white/10 glass-panel-light overflow-hidden">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+                        <th class="p-3">Challenge Game</th>
+                        <th class="p-3">Matchup</th>
+                        <th class="p-3 text-center">Correct Calls</th>
+                        <th class="p-3 text-center">Accuracy</th>
+                      </tr>
+                    </thead>
+                    <tbody id="history-table-body">
+                      <!-- Filled dynamically in game.js -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Footnotes -->
+        <div class="mt-4 text-[10px] text-gray-500 font-mono-tech uppercase tracking-wider">
+          KEYBOARD SHORTCUTS: [SPACE] THROW/CONTINUE &nbsp;|&nbsp; [← / A] BALL &nbsp;|&nbsp; [→ / D] STRIKE
+        </div>
+
+      </div>
+
+      <!-- GAME HUD: HEADER (TOP BAR) -->
+      <div id="hud-header" class="w-full flex flex-col md:flex-row justify-between items-stretch gap-4 opacity-0 transition-opacity duration-300 pointer-events-auto">
+        <!-- Count Tracker & Info -->
+        <div class="flex items-center gap-4 glass-panel px-5 py-3 rounded-xl border border-white/10 flex-1 md:flex-initial">
+          <div class="flex flex-col">
+            <span class="text-xs uppercase text-gray-400 font-mono-tech tracking-wider">Challenge Tracker</span>
+            <span id="pitch-counter-text" class="text-xl font-bold font-mono-tech text-white">CHALLENGE STARTING...</span>
+          </div>
+          <div class="h-8 w-px bg-white/15"></div>
+          <!-- Baseball Count -->
+          <div class="flex gap-4">
+            <div class="flex flex-col items-center">
+              <span class="text-[10px] uppercase text-gray-400 font-mono-tech">Balls</span>
+              <div class="flex gap-1.5 mt-1" id="balls-indicator">
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+              </div>
+            </div>
+            <div class="flex flex-col items-center">
+              <span class="text-[10px] uppercase text-gray-400 font-mono-tech">Strikes</span>
+              <div class="flex gap-1.5 mt-1" id="strikes-indicator">
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+              </div>
+            </div>
+            <div class="flex flex-col items-center">
+              <span class="text-[10px] uppercase text-gray-400 font-mono-tech">Outs</span>
+              <div class="flex gap-1.5 mt-1" id="outs-indicator">
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+                <div class="w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
+              </div>
+            </div>
+            
+            <div class="flex flex-col items-center ml-2 border-l border-white/10 pl-3">
+              <span class="text-[10px] uppercase text-gray-400 font-mono-tech">AB Pitch</span>
+              <span id="ab-pitch-counter" class="text-sm font-bold font-mono-tech mt-0.5 text-purple-400">1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inning Selector Dropdown Card (hidden by default) -->
+        <div id="inning-card" class="flex items-center gap-3 glass-panel px-4 py-3 rounded-xl border border-white/10 hidden">
+          <div class="flex flex-col">
+            <span class="text-[10px] uppercase text-gray-400 font-mono-tech tracking-wider">Inning</span>
+            <select id="select-inning" class="bg-gray-800 text-xs font-semibold rounded-md px-2.5 py-1.5 border border-white/10 text-white focus:outline-none cursor-pointer mt-1 pointer-events-auto">
+              <!-- Options populated dynamically -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Accuracy Scorecard -->
+        <div class="flex items-center gap-5 glass-panel px-4 py-2.5 rounded-xl border border-white/10 flex-1 md:flex-initial pointer-events-auto">
+          <!-- Current AB stats -->
+          <div class="flex items-center gap-4">
+            <div class="flex flex-col text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech tracking-wider leading-none">AB Call</span>
+              <span id="user-ab-accuracy-text" class="text-base font-bold font-mono-tech text-blue-400 mt-1">100%</span>
+            </div>
+            <div class="h-6 w-px bg-white/10"></div>
+            <div class="flex flex-col text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech tracking-wider leading-none">AB MLB Ump</span>
+              <span id="ump-ab-accuracy-text" class="text-base font-bold font-mono-tech text-red-400 mt-1">100%</span>
+            </div>
+          </div>
+          
+          <div class="h-8 w-px bg-white/20"></div>
+          
+          <!-- Weekly / Session overall accuracy (Clickable to show personal Ump Card) -->
+          <button id="btn-show-umpcard" class="flex items-center gap-3 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-purple-500/30 px-3 py-1.5 rounded-lg transition-all cursor-pointer pointer-events-auto group">
+            <div class="flex flex-col text-left">
+              <span class="text-[8px] uppercase text-purple-400 font-mono-tech font-bold tracking-wider leading-none">Challenge Acc</span>
+              <span id="user-weekly-accuracy-text" class="text-base font-black font-mono-tech text-white mt-1 group-hover:text-purple-300 transition-colors">0%</span>
+            </div>
+            <div class="flex items-center justify-center bg-purple-500/10 text-purple-400 border border-purple-500/25 p-1 rounded group-hover:bg-purple-500/20 group-hover:scale-105 transition-all">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+            </div>
+          </button>
+        </div>
+
+        <!-- Utility Button Group (Main Menu & Settings Toggle) -->
+        <div class="flex items-center gap-2">
+          <!-- UI Layout Mode Switcher -->
+          <div class="hidden sm:flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl pointer-events-auto font-mono-tech text-[8px] h-full min-h-[48px]">
+            <button id="btn-ui-classic" class="px-2 py-2 rounded-lg text-white bg-purple-600 font-bold transition-all cursor-pointer select-none">CLASSIC</button>
+            <button id="btn-ui-adaptive" class="px-2 py-2 rounded-lg text-white/50 hover:text-white transition-all cursor-pointer select-none">ADAPTIVE</button>
+            <button id="btn-ui-cinematic" class="px-2 py-2 rounded-lg text-white/50 hover:text-white transition-all cursor-pointer select-none">CINEMATIC</button>
+          </div>
+          <!-- Main Menu Button -->
+          <button id="btn-main-menu" class="flex items-center justify-center glass-panel px-4 rounded-xl border border-white/10 hover:bg-white/5 hover:scale-105 active:scale-95 transition-all cursor-pointer pointer-events-auto text-white w-12 md:w-14 h-full min-h-[48px]">
+            <svg class="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+          </button>
+          
+          <!-- Settings Toggle Button -->
+          <button id="btn-settings-toggle" class="flex items-center justify-center glass-panel px-4 rounded-xl border border-white/10 hover:bg-white/5 hover:scale-105 active:scale-95 transition-all cursor-pointer pointer-events-auto text-white w-12 md:w-14 h-full min-h-[48px]">
+            <svg class="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Matchup Card Overlay (2D) -->
+      <div id="matchup-card" class="absolute left-4 md:left-6 top-[150px] md:top-[110px] z-20 pointer-events-auto glass-panel p-4 rounded-xl border border-white/10 w-72 flex flex-col gap-3 opacity-0 transition-opacity duration-300 shadow-xl">
+        <div class="text-[8px] font-mono-tech uppercase tracking-widest text-purple-400 font-bold border-b border-white/10 pb-1 flex justify-between items-center select-none">
+          <span id="matchup-game-title">ACTIVE MATCHUP</span>
+          <span id="matchup-game-date" class="text-gray-500 text-[7px] font-normal">MAY 25, 2026</span>
+        </div>
+        
+        <!-- Pitcher Info Row -->
+        <div class="flex items-center gap-3">
+          <!-- Player Headshot Container -->
+          <div class="relative w-11 h-11 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
+            <img id="card-pitcher-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Pitcher Headshot" />
+            <img id="card-pitcher-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/110.svg" alt="Team Logo" />
+          </div>
+          <div class="flex-1 flex flex-col min-w-0">
+            <div class="flex justify-between items-center">
+              <span class="text-[7px] font-mono-tech text-purple-400 uppercase tracking-widest font-bold">PITCHER</span>
+              <span id="card-pitcher-hand" class="text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25">RHP</span>
+            </div>
+            <span id="card-pitcher-name" class="text-xs font-bold text-white tracking-wide truncate">--</span>
+            <span id="card-pitcher-stats" class="text-[8px] text-gray-400 font-mono-tech mt-0.5">ERA: 2.84 | SO: 220 | WHIP: 1.02</span>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="h-px bg-white/5"></div>
+
+        <!-- Batter Info Row -->
+        <div class="flex items-center gap-3">
+          <!-- Player Headshot Container -->
+          <div class="relative w-11 h-11 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
+            <img id="card-batter-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Batter Headshot" />
+            <img id="card-batter-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/116.svg" alt="Team Logo" />
+          </div>
+          <div class="flex-1 flex flex-col min-w-0">
+            <div class="flex justify-between items-center">
+              <span class="text-[7px] font-mono-tech text-purple-400 uppercase tracking-widest font-bold">BATTER</span>
+              <span id="card-batter-hand" class="text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25">LHB</span>
+            </div>
+            <span id="card-batter-name" class="text-xs font-bold text-white tracking-wide truncate">--</span>
+            <span id="card-batter-stats" class="text-[8px] text-gray-400 font-mono-tech mt-0.5">AVG: .298 | HR: 24 | OPS: .912</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Replay Watermark Badge -->
+      <div id="replay-badge" class="absolute top-[100px] right-6 z-20 flex items-center bg-red-600/90 text-white font-mono-tech font-bold text-xs uppercase px-3 py-1.5 rounded-md shadow-lg border border-red-500/30 opacity-0 transition-opacity duration-300 pointer-events-none">
+        <span class="w-2.5 h-2.5 rounded-full bg-white animate-pulse mr-2"></span>
+        REPLAY
+      </div>
+
+      <!-- GAME HUD: MIDDLE VIEW (TIMER, DECISION PROMPT & TOASTS) -->
+      <div id="hud-middle" class="w-full flex-1 flex flex-col justify-center items-center relative py-6">
+        
+        <!-- Center Toast Notifications -->
+        <div id="toast-message" class="absolute top-4 px-6 py-3 rounded-xl font-extrabold uppercase tracking-wider text-lg shadow-xl opacity-0 scale-90 transition-all duration-300 border">
+          <!-- Text dynamically inserted -->
+        </div>
+
+        <!-- Quick Preview Controls (floating at bottom of viewport) -->
+        <div id="quick-preview-controls" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-0 pointer-events-none scale-90 transition-all duration-300 z-30">
+          <!-- Pitch Detail Bug -->
+          <div id="pitch-detail-bug" class="glass-panel backdrop-blur-md border border-white/10 px-5 py-3.5 rounded-xl flex flex-col gap-2.5 pointer-events-none w-72 md:w-80 text-left shadow-lg">
+            <div class="flex justify-between items-center border-b border-white/10 pb-1.5">
+              <span id="pitch-detail-type" class="font-extrabold text-sm md:text-base text-white tracking-wide">FASTBALL</span>
+              <span id="pitch-detail-speed" class="text-sm md:text-base text-purple-400 font-mono-tech font-extrabold">95.4 MPH</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-xs md:text-sm font-mono-tech">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">Pitch Breaks</span>
+                <span id="pitch-detail-break" class="text-white font-bold">H: +4.2"  V: -12.1"</span>
+              </div>
+              <div class="flex flex-col gap-0.5 items-end">
+                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">Zone Location</span>
+                <span id="pitch-detail-loc" class="text-white font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase">Inside Low</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions Button Group -->
+          <div class="flex items-center gap-2 pointer-events-auto">
+            <button id="btn-view-details" class="px-6 h-12 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              View ABS Review Details [V]
+            </button>
+            <button id="btn-quick-continue" class="px-6 h-12 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              Continue <span id="quick-continue-timer" class="font-mono-tech text-purple-400 ml-1"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Decision Buttons for touch screen and PC -->
+        <div id="decision-prompt" class="absolute bottom-6 flex flex-col items-center gap-3 opacity-0 pointer-events-none scale-95 transition-all duration-300 z-30">
+          <div class="text-[10px] font-mono-tech tracking-widest text-slate-400 uppercase font-bold text-center leading-relaxed">
+            SWIPE MOBILE OR USE KEYBOARD SHORTCUTS
+          </div>
+          <div class="flex items-center gap-4 pointer-events-auto">
+            <!-- BALL Button -->
+            <button id="btn-call-ball" class="flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-900 to-blue-800 border-2 border-blue-500/30 hover:border-blue-500/60 rounded-2xl font-black uppercase tracking-wider text-lg shadow-xl shadow-blue-500/5 hover:scale-105 active:scale-95 transition-all cursor-pointer text-white w-40 md:w-44 select-none">
+              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+              BALL [←]
+            </button>
+            
+            <div id="countdown-timer-container" class="relative w-12 h-12 flex items-center justify-center bg-slate-900/60 rounded-full border border-white/10 shadow-lg">
+              <svg class="w-12 h-12 transform -rotate-90">
+                <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.06)" stroke-width="3" fill="transparent" />
+                <circle id="countdown-timer-ring" cx="24" cy="24" r="20" stroke="#a855f7" stroke-width="3" fill="transparent" class="transition-all duration-100" />
+              </svg>
+              <span id="countdown-timer-text" class="absolute font-mono-tech text-xs font-bold text-white">3.0</span>
+            </div>
+            
+            <!-- STRIKE Button -->
+            <button id="btn-call-strike" class="flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-red-900 to-red-800 border-2 border-red-500/30 hover:border-red-500/60 rounded-2xl font-black uppercase tracking-wider text-lg shadow-xl shadow-red-500/5 hover:scale-105 active:scale-95 transition-all cursor-pointer text-white w-40 md:w-44 select-none">
+              STRIKE [→]
+              <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- GAME HUD: FOOTER (BOTTOM SHEET / DETAILS SIDEBAR) -->
+      <div id="hud-footer" class="w-full pointer-events-auto flex flex-col items-center">
+        
+        <!-- ABS BROADCAST OVERLAY: Detailed review panel sidebar (shown on 'V' click) -->
+        <div id="abs-broadcast-overlay" class="absolute inset-0 w-full h-full pointer-events-none z-20 opacity-0 transition-all duration-500 scale-95">
+          
+          <!-- Top Left: Team Challenge Pill -->
+          <div id="abs-challenge-team-pill" class="absolute top-24 left-4 md:left-6 flex items-center bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1.5 gap-2 select-none z-10">
+            <div id="abs-team-logo" class="w-5 h-5 rounded flex items-center justify-center text-[10px] font-black text-white font-mono-tech shadow-inner">S</div>
+            <div id="abs-team-name-text" class="text-[11px] font-black tracking-wider text-slate-800 uppercase font-sans">MARINERS CHALLENGE</div>
+          </div>
+
+          <!-- Center Right: ABS Card and Ruling Pill -->
+          <div class="absolute top-[22%] right-6 flex flex-col items-center gap-2 select-none">
+            <div class="w-24 h-24 bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col items-center justify-center p-2">
+              <div class="flex items-center gap-0.5 bg-blue-900 px-1 py-0.5 rounded text-[8px] font-bold text-white mb-1 uppercase tracking-widest leading-none">
+                <span class="text-red-500 text-[6px]">?</span> ABS
+              </div>
+              <span class="text-2xl font-black text-slate-900 tracking-tighter leading-none font-mono-tech">ABS</span>
+              <span class="text-[7px] text-gray-400 font-bold uppercase mt-1 tracking-wider text-center">Automated Zone</span>
+            </div>
+            
+            <div id="abs-ruling-pill" class="flex items-center justify-center bg-white border border-slate-200 rounded-lg px-4 py-1.5 shadow-md w-full">
+              <span id="abs-ruling-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 mr-2"></span>
+              <span id="abs-ruling-text" class="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">STRIKE</span>
+            </div>
+          </div>
+
+          <!-- Bottom Center Row: Call Result Pill + Continue Button side-by-side -->
+          <div class="absolute bottom-40 left-1/2 -translate-x-1/2 flex items-center justify-center gap-4 select-none pointer-events-auto">
+            <div id="abs-call-result-pill" class="glass-panel rounded-xl px-5 py-2.5 shadow-2xl flex items-center gap-3 border border-white/10 h-12">
+              <span id="abs-result-title" class="text-xs font-bold text-gray-400 uppercase tracking-wider font-mono-tech">CALL CONFIRMED</span>
+              <span id="abs-result-value" class="text-sm font-black px-2.5 py-1 rounded-md uppercase text-green-400 bg-green-950/50 border border-green-500/30 shadow-sm">STRIKE</span>
+            </div>
+            <button id="btn-broadcast-continue" class="px-6 h-12 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2">
+              Continue [Space]
+              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+            </button>
+          </div>
+
+          <!-- Bottom Center: Two-Row Telemetry Ticker Overlay -->
+          <div class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl glass-panel p-4 rounded-xl border border-white/10 flex flex-col gap-2.5 select-none">
+            <div class="flex items-center justify-center gap-5 md:gap-8">
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Pitch Type</span>
+                <span id="abs-stat-type" class="font-bold text-white font-mono-tech text-sm">--</span>
+              </div>
+              <div class="w-px h-7 bg-white/15"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Velocity</span>
+                <span id="abs-stat-speed" class="font-bold text-white font-mono-tech text-sm">--</span>
+              </div>
+              <div class="w-px h-7 bg-white/15"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Break</span>
+                <span id="abs-stat-break" class="font-bold text-white font-mono-tech text-sm">--</span>
+              </div>
+              <div class="w-px h-7 bg-white/15"></div>
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Zone Dist</span>
+                <span id="abs-stat-height" class="font-bold text-white font-mono-tech text-sm">--</span>
+              </div>
+            </div>
+            <div class="border-t border-white/10 pt-2">
+              <p id="abs-stat-blurb" class="text-[12px] text-gray-300 italic leading-relaxed text-center px-2"></p>
+            </div>
+          </div>
+        </div>
+
+        <div id="hud-keyboard-help" class="text-[10px] text-gray-400 font-mono-tech mt-2 tracking-widest opacity-0 transition-opacity duration-300">
+          SHORTCUTS: [SPACE] PLAY/CONTINUE &nbsp;|&nbsp; [← / A] BALL &nbsp;|&nbsp; [→ / D] STRIKE &nbsp;|&nbsp; MOBILE: SWIPE LEFT / RIGHT
+        </div>
+      </div>
+
+      <!-- SCREEN G: UP-TO-BAT MATCHUP PREVIEW OVERLAY (Untimed Walk-up card) -->
+      <div id="ab-start-overlay" class="absolute inset-0 w-full h-full bg-slate-950/90 flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-300">
+        <div class="max-w-md w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col items-center pointer-events-auto text-center relative overflow-hidden">
+          <div class="absolute -top-24 -right-24 w-48 h-48 rounded-full bg-purple-500/10 blur-3xl"></div>
+          
+          <span class="px-3 py-1 text-xs font-semibold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/25">New Matchup</span>
+          <h2 class="text-2xl font-black uppercase mt-3 tracking-wide text-white font-mono-tech">UPCOMING AT-BAT</h2>
+          
+          <div class="flex flex-col gap-4 bg-white/5 border border-white/10 rounded-xl p-5 mt-6 mb-4 w-full text-left">
+            <div class="flex justify-between items-center border-b border-white/10 pb-2">
+              <div>
+                <span class="text-[9px] uppercase text-gray-400 font-mono-tech block">Pitcher</span>
+                <span id="ab-start-pitcher" class="text-sm font-extrabold text-white">--</span>
+              </div>
+              <span id="ab-start-pitcher-hand" class="text-[10px] font-mono-tech bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded">RHP</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <div>
+                <span class="text-[9px] uppercase text-gray-400 font-mono-tech block">Batter</span>
+                <span id="ab-start-batter" class="text-sm font-extrabold text-white">--</span>
+              </div>
+              <span id="ab-start-batter-hand" class="text-[10px] font-mono-tech bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded">LHB</span>
+            </div>
+          </div>
+
+          <!-- Game Context Panel -->
+          <div id="ab-start-context" class="flex flex-col gap-3 bg-white/2 border border-white/5 rounded-xl p-4 mb-6 w-full text-xs font-mono-tech text-slate-300 text-left">
+            <div class="flex justify-between items-center">
+              <span>Inning: <b id="ab-start-inning" class="text-white">Top 1st</b></span>
+              <span>Outs: <b id="ab-start-outs" class="text-white">0 Outs</b></span>
+            </div>
+            <div class="flex justify-between items-center border-t border-white/5 pt-2">
+              <span>Score: <b id="ab-start-score" class="text-white">0 - 0</b></span>
+              <span class="flex items-center gap-1.5">
+                Base Runners:
+                <span id="ab-start-base-runners" class="flex gap-1.5">
+                  <span id="base-1" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="1st Base"></span>
+                  <span id="base-2" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="2nd Base"></span>
+                  <span id="base-3" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="3rd Base"></span>
+                </span>
+              </span>
+            </div>
+          </div>
+          
+          <button id="btn-ab-start-confirm" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            Ready to Play [Space]
+          </button>
+        </div>
+      </div>
+
+      <!-- SCREEN L: POST-AT-BAT SUMMARY OVERLAY -->
+      <div id="ab-summary-overlay" class="absolute inset-0 w-full h-full bg-slate-950/90 flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-300">
+        <div class="max-w-md w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col items-center pointer-events-auto text-center relative overflow-hidden">
+          <div class="absolute -bottom-24 -left-24 w-48 h-48 rounded-full bg-purple-500/10 blur-3xl"></div>
+          
+          <span class="px-3.5 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/20" id="ab-summary-title">At-Bat Complete</span>
+          <h2 id="ab-summary-matchup" class="text-lg md:text-xl font-extrabold uppercase mt-3 tracking-wide text-white leading-tight font-mono-tech">P: -- vs B: --</h2>
+          
+          <!-- Summary Metrics Box -->
+          <div class="grid grid-cols-2 gap-4 bg-white/5 border border-white/10 rounded-xl p-4 mt-5 mb-4 w-full text-center select-none">
+            <div class="flex flex-col">
+              <span class="text-[9px] font-mono-tech text-gray-400">YOUR CALL ACCURACY</span>
+              <span id="ab-summary-accuracy" class="text-3xl font-black text-blue-400 font-mono-tech mt-1 shadow-neon-ball-glow">100%</span>
+            </div>
+            <div class="flex flex-col border-l border-white/15">
+              <span class="text-[9px] font-mono-tech text-gray-400">TOTAL AB PITCHES</span>
+              <span id="ab-summary-pitches" class="text-3xl font-black text-purple-400 font-mono-tech mt-1 shadow-neon-abs-glow">--</span>
+            </div>
+          </div>
+
+          <!-- Clickable Interactive Pitch Matrix for the At-Bat -->
+          <div class="flex flex-col items-center gap-1.5 w-full bg-slate-900/60 border border-white/5 rounded-xl p-3 mb-4 animate-fade-in">
+            <span class="text-[8px] font-mono-tech text-purple-400 font-bold uppercase tracking-widest select-none">At-Bat Pitch Matrix</span>
+            
+            <div class="relative w-40 h-40 flex items-center justify-center p-1">
+              <svg id="ab-summary-matrix-svg" class="w-full h-full max-w-[140px]" viewBox="-2.0 0.0 4.0 4.0">
+                <polygon points="-0.7083,3.9 0.7083,3.9 0.7083,3.8 0,3.75 -0.7083,3.8" fill="rgba(255,255,255,0.15)" />
+                <rect x="-0.7083" y="1.48" width="1.4167" height="2.04" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="0.04" />
+                <line x1="-0.2361" y1="1.48" x2="-0.2361" y2="3.52" stroke="rgba(255,255,255,0.1)" stroke-width="0.02" stroke-dasharray="0.05,0.05" />
+                <line x1="0.2361" y1="1.48" x2="0.2361" y2="3.52" stroke="rgba(255,255,255,0.1)" stroke-width="0.02" stroke-dasharray="0.05,0.05" />
+                <line x1="-0.7083" y1="2.16" x2="0.7083" y2="2.16" stroke="rgba(255,255,255,0.1)" stroke-width="0.02" stroke-dasharray="0.05,0.05" />
+                <line x1="-0.7083" y1="2.84" x2="0.7083" y2="2.84" stroke="rgba(255,255,255,0.1)" stroke-width="0.02" stroke-dasharray="0.05,0.05" />
+                <g id="ab-summary-svg-pitches"></g>
+              </svg>
+            </div>
+            
+            <div id="ab-summary-pitch-details" class="text-[9px] text-slate-400 font-mono-tech text-center mt-0.5 select-none leading-relaxed min-h-[24px]">
+              Click a pitch above to review telemetry
+            </div>
+          </div>
+          
+          <p id="ab-summary-blurb" class="text-xs text-gray-300 italic leading-relaxed mb-4 px-3 select-text">
+            --
+          </p>
+          
+          <div class="flex flex-col gap-2.5 w-full">
+            <button id="btn-ab-summary-advance" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              Advance to Next AB [Space]
+            </button>
+            <div class="grid grid-cols-3 gap-1.5">
+              <a id="ab-summary-film-link" href="#" target="_blank" class="py-2.5 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white transition-colors cursor-pointer text-center flex items-center justify-center">
+                Film Room
+              </a>
+              <a id="ab-summary-scorecard-link" href="#" target="_blank" class="py-2.5 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white transition-colors cursor-pointer text-center flex items-center justify-center">
+                Ump Score
+              </a>
+              <button id="btn-ab-summary-home" class="py-2.5 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white transition-colors cursor-pointer text-center">
+                Quit
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN M: HIGH-FIDELITY INTERACTIVE UMPIRE SCORECARD -->
+      <div id="scoreboard-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
+        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col pointer-events-auto relative overflow-hidden">
+          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/10 blur-3xl"></div>
+          
+          <!-- Summary Header -->
+          <div class="text-center mb-6">
+            <span class="px-3.5 py-1 text-xs font-semibold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg">UmpScorecards Diagnostic</span>
+            <h2 class="text-3xl md:text-4xl font-black uppercase mt-3 tracking-wide leading-none font-mono-tech">OFFICIAL UMP SCORECARD</h2>
+            <p id="final-eval-rating" class="text-gray-400 text-xs font-mono-tech tracking-wider mt-1.5 uppercase">ABS vs. Umpire Curation Accuracy Report</p>
+          </div>
+
+          <!-- Scorecard Core Details (SVG Matrix vs Stats) -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
+            <!-- Left Side: Stats & RE24 -->
+            <div class="md:col-span-6 flex flex-col justify-between gap-4">
+              <div class="grid grid-cols-2 gap-4">
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Your Called Accuracy</span>
+                  <span id="final-user-accuracy" class="text-4xl font-black text-blue-400 font-mono-tech mt-1 block">0%</span>
+                  <span id="final-user-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
+                </div>
+                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Real MLB Ump Accuracy</span>
+                  <span id="final-ump-accuracy" class="text-4xl font-black text-red-400 font-mono-tech mt-1 block">0%</span>
+                  <span id="final-ump-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
+                </div>
+              </div>
+
+              <!-- RE24 Run Favor Display -->
+              <div class="glass-panel-light p-4 rounded-xl border border-white/5 flex flex-col justify-center text-center">
+                <span class="text-[9px] uppercase text-purple-300 font-mono-tech font-bold tracking-wider">RE24 Run Expectancy Impact</span>
+                <span id="final-scorecard-re24" class="text-2xl font-black text-white font-mono-tech mt-1">Favor: +0.00 Runs to --</span>
+                <p class="text-[9px] text-gray-400 mt-1 leading-relaxed">Runs shifted based on user strikes/balls call discrepancy vs. official ABS zones.</p>
+              </div>
+
+              <!-- Narrative description -->
+              <div id="final-eval-desc" class="text-xs text-gray-300 leading-relaxed font-sans glass-panel-light p-4 rounded-xl border border-white/5 flex-1 flex items-center justify-center text-center">
+                Completed game diagnostic data is calculated.
+              </div>
+            </div>
+
+            <!-- Right Side: SVG Strike Zone Matrix Plot -->
+            <div class="md:col-span-6 flex flex-col items-center">
+              <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider mb-2">Established Strike Zone Grid</span>
+              <div class="flex flex-col items-center justify-center p-4 bg-slate-950/60 border border-white/5 rounded-xl w-full h-[280px]">
+                <!-- SVG strike zone chart viewport mapping coordinates -->
+                <svg id="scorecard-matrix-svg" class="w-full h-full max-w-[240px]" viewBox="-2.0 0.0 4.0 4.0">
+                  <defs>
+                    <!-- Marker designs -->
+                    <filter id="glow-strike" x="-50%" y="-50%" width="200%" height="200%">
+                      <feGaussianBlur stdDeviation="0.1" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+                  
+                  <!-- Out of Zone background -->
+                  <rect x="-2.0" y="0.0" width="4.0" height="4.0" fill="rgba(255, 255, 255, 0.01)" />
+                  
+                  <!-- Dotted Standard Strike Zone Box (Width 17 inches: -0.7083 to 0.7083) -->
+                  <rect x="-0.7083" y="0.58" width="1.4166" height="1.84" fill="none" stroke="rgba(255, 255, 255, 0.2)" stroke-width="0.02" stroke-dasharray="0.06, 0.06" />
+                  
+                  <!-- Solid Extended strike zone box (width 17" + 2 * ball-radius = 2 * 0.8283) -->
+                  <rect x="-0.8283" y="0.48" width="1.6566" height="2.04" fill="none" stroke="rgba(255, 255, 255, 0.45)" stroke-width="0.03" />
+                  
+                  <!-- Grid container to hold points dynamically -->
+                  <g id="svg-pitches-container"></g>
+                </svg>
+              </div>
+              <!-- Legends -->
+              <div class="flex gap-4 mt-2 text-[9px] font-mono-tech text-gray-400">
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-green-500 border border-green-400"></span> Correct Ball</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rotate-45 bg-green-500 border border-green-400"></span> Correct Strike</span>
+                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-red-500 border border-red-400"></span> Missed Call</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Called Pitches Table Log -->
+          <div class="overflow-y-auto max-h-[140px] border border-white/10 rounded-xl mb-6 bg-slate-950/30">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[9px] text-gray-400 uppercase tracking-widest">
+                  <th class="p-3">Pitch</th>
+                  <th class="p-3">Details</th>
+                  <th class="p-3 text-center">Your Call</th>
+                  <th class="p-3 text-center">ABS Zone</th>
+                  <th class="p-3 text-center">Real Ump</th>
+                  <th class="p-3 text-center">Result</th>
+                </tr>
+              </thead>
+              <tbody id="scoreboard-table-body">
+                <!-- Pitches parsed dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Actions footer -->
+          <div class="flex gap-3 mt-auto">
+            <button id="btn-scoreboard-home" class="flex-1 py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              Return to Ingestion Dashboard
+            </button>
+            <button id="btn-scoreboard-leaderboard" class="py-4 px-6 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              View Crew Standings
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN P: GAME PAUSED SCREEN -->
+      <div id="pause-screen" class="absolute inset-0 w-full h-full bg-slate-950/80 backdrop-blur-md flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 transition-opacity duration-300">
+        <div class="max-w-sm w-full glass-panel p-6 md:p-8 rounded-2xl border border-white/10 flex flex-col gap-5 text-center relative overflow-hidden">
+          <div class="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-yellow-500/5 blur-3xl"></div>
+          
+          <h2 class="text-xl font-black text-white uppercase tracking-widest font-mono-tech flex items-center justify-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping"></span>
+            GAME PAUSED
+          </h2>
+          
+          <!-- Progress / Stats details in Pause Screen -->
+          <div class="flex flex-col gap-2.5 bg-white/5 border border-white/10 rounded-xl p-4 text-left font-mono-tech text-xs select-none">
+            <div class="flex justify-between border-b border-white/5 pb-1.5">
+              <span class="text-gray-400">Game Mode:</span>
+              <span id="pause-mode-text" class="text-white font-bold uppercase text-[10px]">Weekly Challenge</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1.5">
+              <span class="text-gray-400">Inning / Outs:</span>
+              <span id="pause-inning-outs-text" class="text-white font-bold">Top 1st | 0 Outs</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1.5">
+              <span class="text-gray-400">Current Score:</span>
+              <span id="pause-score-text" class="text-white font-bold">Away 0 - 0 Home</span>
+            </div>
+            <div id="pause-progress-row" class="flex justify-between border-b border-white/5 pb-1.5 hidden">
+              <span class="text-gray-400">Challenge AB:</span>
+              <span id="pause-progress-text" class="text-white font-bold">At-Bat 1 of 15</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-400">Accuracy (Takes):</span>
+              <span id="pause-acc-text" class="text-white font-bold text-yellow-400">100%</span>
+            </div>
+          </div>
+          
+          <p id="pause-timers" class="text-[10px] text-gray-400 font-mono-tech bg-white/5 border border-white/5 p-2 rounded hidden"></p>
+          
+          <div class="flex flex-col gap-2 w-full">
+            <button id="btn-resume-game" class="w-full py-3.5 bg-gradient-to-r from-yellow-600 to-amber-600 border border-yellow-500/30 rounded-xl font-extrabold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-[1.02] active:scale-95 transition-all cursor-pointer pointer-events-auto">
+              Resume
+            </button>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="btn-pause-restart" class="py-3 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white transition-colors cursor-pointer pointer-events-auto">
+                Restart Game
+              </button>
+              <button id="btn-pause-home" class="py-3 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white transition-colors cursor-pointer pointer-events-auto">
+                Exit to Home
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

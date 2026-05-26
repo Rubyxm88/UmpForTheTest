@@ -1,0 +1,439 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Share+Tech+Mono&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono-tech: 'Share Tech Mono', monospace;
+  --color-bg-base: #06090e;
+  --color-bg-surface: rgba(13, 20, 30, 0.7);
+  --color-brand-purple: #9333ea;
+  --color-brand-blue: #2563eb;
+  --color-strike-green: #22c55e;
+  --color-ball-red: #ef4444;
+  --color-neon-purple: #a855f7;
+  --color-neon-blue: #3b82f6;
+}
+
+:root {
+  font-family: var(--font-sans);
+  color-scheme: dark;
+  background-color: var(--color-bg-base);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+  background-color: var(--color-bg-base);
+}
+
+/* Custom Sport Telemetry / Digital Styles */
+.font-mono-tech {
+  font-family: var(--font-mono-tech);
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(10, 16, 26, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.glass-panel-hover:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(168, 85, 247, 0.25);
+  transform: translateY(-2px);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Neon Glows */
+.shadow-neon-strike {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.35), inset 0 0 10px rgba(239, 68, 68, 0.15);
+}
+
+.shadow-neon-ball {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.35), inset 0 0 10px rgba(59, 130, 246, 0.15);
+}
+
+.shadow-neon-strike-glow {
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.8), 0 0 20px rgba(239, 68, 68, 0.4);
+}
+
+.shadow-neon-ball-glow {
+  text-shadow: 0 0 8px rgba(59, 130, 246, 0.8), 0 0 20px rgba(59, 130, 246, 0.4);
+}
+
+.shadow-neon-abs-glow {
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.8), 0 0 20px rgba(168, 85, 247, 0.4);
+}
+
+.shadow-neon-green-glow {
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.8), 0 0 20px rgba(34, 197, 94, 0.4);
+}
+
+/* Stadium Grid overlay background for screens */
+.bg-grid-pattern {
+  background-size: 50px 50px;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+}
+
+/* 3D WebGL Canvas */
+#three-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Active Broadcast Overlay transition */
+.active-broadcast-overlay {
+  opacity: 1 !important;
+  transform: scale(1) !important;
+}
+
+/* Visibility toggles to prevent overlay click hijacking */
+#abs-broadcast-overlay:not(.active-broadcast-overlay) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+#welcome-screen:not(.opacity-100),
+#team-select-screen:not(.opacity-100),
+#start-screen:not(.opacity-100),
+#scoreboard-screen:not(.opacity-100),
+#camera-controls-panel:not(.opacity-100),
+#matchup-card:not(.opacity-100),
+#replay-badge:not(.opacity-100),
+#umpcard-overlay:not(.opacity-100),
+#ab-start-overlay:not(.opacity-100),
+#ab-summary-overlay:not(.opacity-100),
+#pause-screen:not(.opacity-100),
+#quick-preview-controls:not(.opacity-100) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Active dashboard tab highlights */
+.tab-btn-active {
+  color: #ffffff !important;
+  border-bottom-color: var(--color-brand-purple) !important;
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Micro-animations */
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.7; }
+}
+
+.shadow-pulse {
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+/* Responsive Scaling and Layout Shifts (Mobile-First) */
+@media (max-w: 768px) {
+  .dashboard-container {
+    padding: 1rem !important;
+  }
+  
+  .glass-panel {
+    border-radius: 1rem !important;
+  }
+  
+  /* Stack stats widgets on mobile */
+  .grid-stats-container {
+    grid-template-cols: 1fr !important;
+  }
+
+  /* Shrink text sizes */
+  h1 {
+    font-size: 2.25rem !important;
+  }
+  h2 {
+    font-size: 1.5rem !important;
+  }
+
+  /* Move HUD indicators to top bar */
+  #hud-header {
+    top: 0.5rem !important;
+    left: 0.5rem !important;
+    right: 0.5rem !important;
+    width: auto !important;
+    transform: none !important;
+  }
+
+  /* Bottom sheet slide-up style for previews & summaries */
+  .bottom-sheet-mobile {
+    top: auto !important;
+    bottom: 0 !important;
+    height: auto !important;
+    max-height: 80vh !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+/* ==========================================================================
+   UI LAYOUT MODES (Classic, Adaptive, Cinematic)
+   ========================================================================== */
+
+/* Active Switcher Pill State */
+.ui-mode-btn-active {
+  background-color: var(--color-brand-purple) !important;
+  color: #ffffff !important;
+  font-weight: bold !important;
+  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3) !important;
+}
+
+/* --- ADAPTIVE MODE LAYOUT --- */
+body.ui-mode-adaptive #hud-header {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  width: calc(100% - 32px) !important;
+  max-width: none !important;
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  z-index: 30;
+  opacity: 1;
+}
+
+body.ui-mode-adaptive #hud-footer {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px) !important;
+  max-width: 600px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 16px;
+  z-index: 30;
+}
+
+body.ui-mode-adaptive #matchup-card {
+  position: fixed !important;
+  left: 50% !important;
+  top: auto !important;
+  bottom: 110px !important;
+  transform: translateX(-50%) !important;
+  width: 92% !important;
+  max-width: 340px !important;
+  z-index: 25;
+  margin: 0 auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+body.ui-mode-adaptive #decide-prompt-container {
+  background: rgba(10, 16, 26, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 12px 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(12px);
+}
+
+/* --- CINEMATIC MODE LAYOUT --- */
+body.ui-mode-cinematic #hud-header {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: auto !important;
+  max-width: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px;
+  z-index: 30;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Cinematic Scorebug Styling */
+body.ui-mode-cinematic #hud-header > div:first-child {
+  background: linear-gradient(135deg, rgba(8, 12, 20, 0.95) 0%, rgba(18, 24, 38, 0.95) 100%);
+  border-left: 4px solid var(--color-brand-purple);
+  border-radius: 12px;
+  padding: 10px 18px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Hide other non-essential widgets from header in Cinematic */
+body.ui-mode-cinematic #hud-header > div:not(:first-child):not(.font-mono-tech) {
+  display: none !important;
+}
+
+/* Reposition UI Switcher to Top Right in Cinematic */
+body.ui-mode-cinematic #hud-header .font-mono-tech {
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  display: flex !important;
+  background: rgba(10, 16, 26, 0.7) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+/* Cinematic Broadcast walk-up lower-third banner */
+body.ui-mode-cinematic #matchup-card {
+  position: fixed !important;
+  left: 50% !important;
+  top: auto !important;
+  bottom: 40px !important;
+  transform: translateX(-50%) !important;
+  width: 90% !important;
+  max-width: 480px !important;
+  background: linear-gradient(90deg, rgba(6, 9, 14, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%);
+  border-left: 5px solid var(--color-brand-purple);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.8);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Cinematic corner decision buttons */
+body.ui-mode-cinematic #hud-footer {
+  position: static !important;
+  width: auto !important;
+}
+
+body.ui-mode-cinematic #decide-prompt-container {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-between !important;
+  pointer-events: none;
+  z-index: 15;
+}
+
+body.ui-mode-cinematic #btn-call-ball {
+  position: fixed !important;
+  left: 24px !important;
+  bottom: 40px !important;
+  height: 64px !important;
+  width: 160px !important;
+  pointer-events: auto !important;
+  border-radius: 16px !important;
+  background: rgba(37, 99, 235, 0.18) !important;
+  border: 2px solid rgba(59, 130, 246, 0.35) !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+}
+
+body.ui-mode-cinematic #btn-call-strike {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: 40px !important;
+  height: 64px !important;
+  width: 160px !important;
+  pointer-events: auto !important;
+  border-radius: 16px !important;
+  background: rgba(239, 68, 68, 0.18) !important;
+  border: 2px solid rgba(239, 68, 68, 0.35) !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.1);
+}
+
+body.ui-mode-cinematic #btn-call-ball:hover {
+  background: rgba(37, 99, 235, 0.3) !important;
+  border-color: rgba(59, 130, 246, 0.7) !important;
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.35) !important;
+}
+
+body.ui-mode-cinematic #btn-call-strike:hover {
+  background: rgba(239, 68, 68, 0.3) !important;
+  border-color: rgba(239, 68, 68, 0.7) !important;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.35) !important;
+}
+
+/* Cinematic large timer badge */
+body.ui-mode-cinematic #countdown-timer-container {
+  position: fixed !important;
+  top: 24px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  scale: 1.25 !important;
+  z-index: 30;
+  background: rgba(8, 12, 20, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  padding: 6px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+/* Media Query overrides for mobile viewport */
+@media (max-w: 640px) {
+  body.ui-mode-adaptive #matchup-card,
+  body.ui-mode-cinematic #matchup-card {
+    width: 94% !important;
+    bottom: 90px !important;
+  }
+  
+  body.ui-mode-cinematic #btn-call-ball {
+    left: 12px !important;
+    bottom: 20px !important;
+    width: 130px !important;
+    height: 52px !important;
+  }
+  
+  body.ui-mode-cinematic #btn-call-strike {
+    right: 12px !important;
+    bottom: 20px !important;
+    width: 130px !important;
+    height: 52px !important;
+  }
+  
+  body.ui-mode-cinematic #hud-header .font-mono-tech {
+    display: none !important; /* Hide switcher on small screens in Cinematic to save space */
+  }
+}
