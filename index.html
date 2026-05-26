@@ -1218,6 +1218,33 @@
 
     </div>
 
+      <!-- SCREEN: CUSTOM RETRO CONFIRM MODAL -->
+      <div id="confirm-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/80 backdrop-blur-sm flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300">
+        <div class="max-w-md w-full glass-panel p-6 rounded-2xl border-2 border-amber-500/30 flex flex-col items-center text-center shadow-2xl relative overflow-hidden">
+          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-amber-500/5 blur-3xl"></div>
+          
+          <div class="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4 text-amber-400">
+            <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+
+          <h3 class="text-sm font-black text-amber-400 font-mono-tech uppercase tracking-widest mb-2">Warning: Active Attempt</h3>
+          <p id="confirm-modal-text" class="text-xs text-gray-300 font-mono-tech uppercase leading-relaxed mb-6">
+            This will end your current attempt for the day! Are you sure you want to exit?
+          </p>
+
+          <div class="grid grid-cols-2 gap-3 w-full">
+            <button id="btn-confirm-modal-yes" class="py-3 bg-red-700 hover:bg-red-600 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg pointer-events-auto">
+              Exit Game
+            </button>
+            <button id="btn-confirm-modal-no" class="py-3 bg-slate-900 border border-white/10 hover:bg-gray-800 rounded-xl text-xs font-black uppercase text-gray-400 tracking-widest cursor-pointer transition-all pointer-events-auto">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

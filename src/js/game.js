@@ -193,6 +193,7 @@ let welcomeScreen, btnWelcomeStart, teamSelectScreen, btnConfirmTeam, userFavori
 let teamGridContainer, dashboardGamesList, finalScorecardRe24;
 let activeFavoriteTeam = null;
 let activeDailyTeam = null;
+let confirmModalOverlay, btnConfirmModalYes, btnConfirmModalNo;
 
 // Overlays
 let abSummaryOverlay, abSummaryTitle, abSummaryMatchup, abSummaryAccuracy, abSummaryPitches, abSummaryBlurb, abSummaryFilmLink, abSummaryScorecardLink, btnAbSummaryAdvance;
@@ -1012,6 +1013,9 @@ function cacheDOM() {
 
   pauseScreen = document.getElementById('pause-screen');
   btnResumeGame = document.getElementById('btn-resume-game');
+  confirmModalOverlay = document.getElementById('confirm-modal-overlay');
+  btnConfirmModalYes = document.getElementById('btn-confirm-modal-yes');
+  btnConfirmModalNo = document.getElementById('btn-confirm-modal-no');
 
   // At-Bat Start Overlay
   abStartOverlay = document.getElementById('ab-start-overlay');
@@ -1306,11 +1310,10 @@ function attachEvents() {
   }
   
   if (btnMainMenu) {
-    btnMainMenu.addEventListener('click', () => {
+    btnMainMenu.addEventListener('click', async () => {
       if (gameMode === 'daily_streak' && !isSessionOver) {
-        if (!confirm("This will end your current attempt for the day! Are you sure you want to exit?")) {
-          return;
-        }
+        const confirmed = await showCustomConfirm("This will end your current attempt for the day! Are you sure you want to exit?");
+        if (!confirmed) return;
       }
       goToMainMenu();
     });
@@ -1430,8 +1433,12 @@ function attachEvents() {
   }
 
   if (btnPauseHome) {
-    btnPauseHome.addEventListener('click', (e) => {
+    btnPauseHome.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (gameMode === 'daily_streak' && !isSessionOver) {
+        const confirmed = await showCustomConfirm("This will end your current attempt for the day! Are you sure you want to exit?");
+        if (!confirmed) return;
+      }
       initAudio();
       isGamePaused = false;
       if (pauseScreen) {
@@ -1508,11 +1515,10 @@ function attachEvents() {
   }
 
   if (btnAbStartExit) {
-    btnAbStartExit.addEventListener('click', () => {
+    btnAbStartExit.addEventListener('click', async () => {
       if (gameMode === 'daily_streak' && !isSessionOver) {
-        if (!confirm("This will end your current attempt for the day! Are you sure you want to exit?")) {
-          return;
-        }
+        const confirmed = await showCustomConfirm("This will end your current attempt for the day! Are you sure you want to exit?");
+        if (!confirmed) return;
       }
       initAudio();
       if (abStartOverlay) {
@@ -5728,6 +5734,40 @@ function setOverlayVisible(el, visible) {
     el.classList.add('opacity-0', 'pointer-events-none');
     el.classList.remove('opacity-100', 'pointer-events-auto');
   }
+}
+
+function showCustomConfirm(message) {
+  return new Promise((resolve) => {
+    if (!confirmModalOverlay || !btnConfirmModalYes || !btnConfirmModalNo) {
+      resolve(confirm(message));
+      return;
+    }
+    const txt = document.getElementById('confirm-modal-text');
+    if (txt) txt.textContent = message;
+    
+    confirmModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+    confirmModalOverlay.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+    
+    const handleYes = () => {
+      cleanup();
+      resolve(true);
+    };
+    
+    const handleNo = () => {
+      cleanup();
+      resolve(false);
+    };
+    
+    const cleanup = () => {
+      btnConfirmModalYes.removeEventListener('click', handleYes);
+      btnConfirmModalNo.removeEventListener('click', handleNo);
+      confirmModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+      confirmModalOverlay.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+    };
+    
+    btnConfirmModalYes.addEventListener('click', handleYes);
+    btnConfirmModalNo.addEventListener('click', handleNo);
+  });
 }
 
 async function saveFavoriteTeam(teamName) {
