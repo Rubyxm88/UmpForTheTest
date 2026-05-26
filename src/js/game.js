@@ -209,7 +209,7 @@ let activeUiMode = 'classic'; // 'classic' | 'adaptive' | 'cinematic'
 // Arcade Login Form elements
 let loginHandleInput, loginPinInput, loginErrorMsg, btnStatsLogout;
 let loginConfirmBox, btnLoginConfirmCreate, btnLoginConfirmCancel;
-let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, btnProfileSavePin, profilePinMsg;
+let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, btnProfileSavePin, profilePinMsg, teamSearchInput;
 
 // Collapsible Matchup Card elements
 let btnMatchupToggle;
@@ -1102,6 +1102,7 @@ function cacheDOM() {
   btnLoginConfirmCancel = document.getElementById('btn-login-confirm-cancel');
   
   profileFavTeamSelect = document.getElementById('profile-fav-team-select');
+  teamSearchInput = document.getElementById('team-search-input');
   profileFavTeamLogo = document.getElementById('profile-fav-team-logo');
   profileNewPin = document.getElementById('profile-new-pin');
   btnProfileSavePin = document.getElementById('btn-profile-save-pin');
@@ -5430,36 +5431,56 @@ let selectedTeamId = null;
 
 function generateTeamSelectGrid() {
   if (!teamGridContainer) return;
-  teamGridContainer.innerHTML = '';
   
-  TEAMS_LIST.forEach(team => {
-    const btn = document.createElement('button');
-    btn.className = 'flex flex-col items-center justify-center p-3 rounded-lg border border-white/10 bg-slate-900/60 hover:bg-slate-800/80 transition-all cursor-pointer select-none';
-    btn.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+  const renderGrid = (filterText = "") => {
+    teamGridContainer.innerHTML = '';
+    const filtered = TEAMS_LIST.filter(t => 
+      t.name.toLowerCase().includes(filterText.toLowerCase())
+    );
     
-    btn.innerHTML = `
-      <div class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white shadow-inner mb-2 select-none" style="background-color: ${team.color}">
-        ${team.symbol}
-      </div>
-      <span class="text-[10px] font-bold uppercase tracking-wider text-slate-300 font-mono-tech select-none">${team.name}</span>
-    `;
-    
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
+    filtered.forEach(team => {
+      const btn = document.createElement('button');
+      btn.className = 'flex flex-col items-center justify-center p-3 rounded-lg border border-white/10 bg-slate-900/60 hover:bg-slate-800/80 transition-all cursor-pointer select-none';
+      btn.style.borderColor = 'rgba(255, 255, 255, 0.08)';
       
-      teamGridContainer.querySelectorAll('button').forEach(b => {
-        b.classList.remove('border-purple-500', 'bg-purple-950/20');
-        b.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+      if (selectedTeamId === team.id) {
+        btn.classList.add('border-purple-500', 'bg-purple-950/20');
+        btn.style.borderColor = 'var(--color-brand-purple)';
+      }
+
+      btn.innerHTML = `
+        <div class="w-9 h-9 rounded-full flex items-center justify-center bg-slate-950 p-1.5 border border-white/10 shadow-inner mb-2 select-none">
+          <img class="w-full h-full object-contain" src="${getTeamLogoUrl(team.name)}" alt="${team.name}" />
+        </div>
+        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-300 font-mono-tech select-none">${team.name}</span>
+      `;
+      
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        initAudio();
+        
+        teamGridContainer.querySelectorAll('button').forEach(b => {
+          b.classList.remove('border-purple-500', 'bg-purple-950/20');
+          b.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+        });
+        
+        btn.classList.add('border-purple-500', 'bg-purple-950/20');
+        btn.style.borderColor = 'var(--color-brand-purple)';
+        selectedTeamId = team.id;
       });
       
-      btn.classList.add('border-purple-500', 'bg-purple-950/20');
-      btn.style.borderColor = 'var(--color-brand-purple)';
-      selectedTeamId = team.id;
+      teamGridContainer.appendChild(btn);
     });
-    
-    teamGridContainer.appendChild(btn);
-  });
+  };
+
+  if (teamSearchInput) {
+    teamSearchInput.value = "";
+    teamSearchInput.oninput = (e) => {
+      renderGrid(e.target.value);
+    };
+  }
+
+  renderGrid();
 }
 
 function renderDashboardGamesList() {
