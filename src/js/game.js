@@ -111,7 +111,7 @@ let abStartCountdownInterval = null;
 let btnAbSummaryHome;
 let abPitchCounter;
 let btnStartWeeklyChallenge, weeklyChallengeProgressText, weeklyChallengeProgressBar;
-let dailyMatchupTitle, dailyCompeteStatus, btnPlayDailyCompete, dailyHistoricList;
+let dailyMatchupTitle, dailyCompeteStatus, btnPlayDailyCompete, dailyHistoricList, dailyCompeteTeamSelect;
 let activeDailyDate = "";
 
 // Settings values
@@ -192,6 +192,7 @@ let btnStartDailyStreak;
 let welcomeScreen, btnWelcomeStart, teamSelectScreen, btnConfirmTeam, userFavoriteTeamBadge;
 let teamGridContainer, dashboardGamesList, finalScorecardRe24;
 let activeFavoriteTeam = null;
+let activeDailyTeam = null;
 
 // Overlays
 let abSummaryOverlay, abSummaryTitle, abSummaryMatchup, abSummaryAccuracy, abSummaryPitches, abSummaryBlurb, abSummaryFilmLink, abSummaryScorecardLink, btnAbSummaryAdvance;
@@ -1068,6 +1069,7 @@ function cacheDOM() {
   dailyCompeteStatus = document.getElementById('daily-compete-status');
   btnPlayDailyCompete = document.getElementById('btn-play-daily-compete');
   dailyHistoricList = document.getElementById('daily-historic-list');
+  dailyCompeteTeamSelect = document.getElementById('daily-compete-team-select');
 
   matchupCard = document.getElementById('matchup-card');
   cardPitcherName = document.getElementById('card-pitcher-name');
@@ -1302,6 +1304,11 @@ function attachEvents() {
   
   if (btnMainMenu) {
     btnMainMenu.addEventListener('click', () => {
+      if (gameMode === 'daily_streak' && !isSessionOver) {
+        if (!confirm("This will end your current attempt for the day! Are you sure you want to exit?")) {
+          return;
+        }
+      }
       goToMainMenu();
     });
   }
@@ -1499,6 +1506,11 @@ function attachEvents() {
 
   if (btnAbStartExit) {
     btnAbStartExit.addEventListener('click', () => {
+      if (gameMode === 'daily_streak' && !isSessionOver) {
+        if (!confirm("This will end your current attempt for the day! Are you sure you want to exit?")) {
+          return;
+        }
+      }
       initAudio();
       if (abStartOverlay) {
         abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
@@ -2627,6 +2639,18 @@ function setElementVisibility(el, visible) {
 function updateSettingsVisibility() {
   if (isSettingsOpen && (currentState === STATES.IDLE || currentState === STATES.ABS_REVIEW || currentState === STATES.START)) {
     if (cameraControlsPanel) {
+      let targetButton = null;
+      if (currentState === STATES.START) {
+        targetButton = btnDashboardSettingsToggle;
+      } else {
+        targetButton = btnSettingsToggle;
+      }
+      if (targetButton) {
+        const rect = targetButton.getBoundingClientRect();
+        cameraControlsPanel.style.top = `${rect.bottom}px`;
+        cameraControlsPanel.style.right = `${window.innerWidth - rect.right}px`;
+        cameraControlsPanel.style.left = 'auto';
+      }
       cameraControlsPanel.classList.remove('opacity-0', 'scale-95', 'pointer-events-none');
       cameraControlsPanel.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
     }
@@ -3121,7 +3145,8 @@ function advanceGameFlow(immediate = false) {
       isGameOver = true;
       activeAbEnded = true;
       showABOutcomeToast("STREAK ENDED! MISSED CALL");
-      localStorage.setItem('daily_streak_last_played_date', new Date().toLocaleDateString());
+      const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
+      localStorage.setItem(`daily_streak_last_played_date_${username}`, new Date().toLocaleDateString());
       updateDailyStreakStatusUI();
     }
   } else if (gameMode === 'orioles_full') {
@@ -3753,6 +3778,26 @@ function renderScoreboardDashboard() {
       date: new Date().toLocaleDateString()
     });
     
+    if (gameMode === 'daily_compete' && activeDailyTeam) {
+      if (!userStats.dailyHistory) userStats.dailyHistory = {};
+      userStats.dailyHistory[`${activeDailyTeam}_${activeDailyDate}`] = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc;
+      
+      if (!userStats.teamStats) userStats.teamStats = {};
+      if (!userStats.teamStats[activeDailyTeam]) {
+        userStats.teamStats[activeDailyTeam] = {
+          completedCount: 0,
+          correctCalls: 0,
+          totalCalls: 0,
+          accuracySum: 0
+        };
+      }
+      const tStats = userStats.teamStats[activeDailyTeam];
+      tStats.completedCount++;
+      tStats.correctCalls += (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount;
+      tStats.totalCalls += (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length;
+      tStats.accuracySum += parseFloat((gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc);
+    }
+
     localStorage.setItem(statsKey, JSON.stringify(userStats));
     saveGlobalUserStats(username, userStats);
     updateProfileStatsUI();
@@ -3765,10 +3810,24 @@ function renderScoreboardDashboard() {
       submitGlobalScore('daily', username, activeFavoriteTeam || 'None', `${userAcc}%`, `${userCorrectCount} Streak`, userCorrectCount);
     }
     
-    // Always sync overall stats to all-time leaderboard
-    const totalGames = userStats.history ? userStats.history.length : 1;
-    const alltimeScore = Math.round((userStats.overallAccuracy || 90) * 10 + totalGames * 5);
-    submitGlobalScore('alltime', username, activeFavoriteTeam || 'None', `${userStats.overallAccuracy || 90}%`, `${alltimeScore} pts`, alltimeScore);
+    // Compile mastery stats and completed teams lists
+    const completedTeamsList = Object.keys(userStats.teamStats || {});
+    const teamString = completedTeamsList.length > 0 ? completedTeamsList.join(',') : 'None';
+    
+    let avgAcc = 0;
+    if (completedTeamsList.length > 0) {
+      let sumAcc = 0;
+      completedTeamsList.forEach(t => {
+        const ts = userStats.teamStats[t];
+        sumAcc += ts.totalCalls > 0 ? (ts.correctCalls / ts.totalCalls) * 100 : 0;
+      });
+      avgAcc = Math.round(sumAcc / completedTeamsList.length);
+    } else {
+      avgAcc = userStats.overallAccuracy || 90;
+    }
+    
+    const masteryScore = completedTeamsList.length * 1000 + avgAcc;
+    submitGlobalScore('alltime', username, teamString, `${avgAcc}%`, `${completedTeamsList.length} Teams (${masteryScore} pts)`, masteryScore);
   }
 
   let rating = 'ROOKIE BALL';
@@ -4202,7 +4261,8 @@ function startWeeklyChallengeGame(gameIdx) {
  * Starts a Daily Streak challenge session
  */
 function startDailyStreakChallenge() {
-  localStorage.setItem('daily_streak_last_played_date', new Date().toLocaleDateString());
+  const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
+  localStorage.setItem(`daily_streak_last_played_date_${username}`, new Date().toLocaleDateString());
   updateDailyStreakStatusUI();
 
   gameMode = 'daily_streak';
@@ -4825,7 +4885,7 @@ function updateProfileStatsUI() {
       hudTeamLogo.classList.add('animate-pulse');
     }
     if (hudXpText) hudXpText.textContent = "0 XP (Log in to earn Crew XP)";
-    if (hudXpBar) hudXpBar.style.width = "5%";
+    if (hudXpBar) hudXpBar.style.width = "0%";
     return;
   }
   
@@ -4878,7 +4938,7 @@ function updateProfileStatsUI() {
   const currentLevel = Math.floor(xp / 1000) + 1;
   const prevLevelXp = (currentLevel - 1) * 1000;
   const progressXp = xp - prevLevelXp;
-  const pct = Math.min(100, Math.max(5, Math.round((progressXp / 1000) * 100)));
+  const pct = xp === 0 ? 0 : Math.min(100, Math.round((progressXp / 1000) * 100));
   
   if (hudXpText) {
     hudXpText.textContent = `Lvl ${currentLevel} Crew Chief | ${xp.toLocaleString()} XP (${progressXp} / 1,000 to next level)`;
@@ -5563,16 +5623,41 @@ function hideUmpireScorecardModal() {
   resumeGameFromPause();
 }
 
-function updateDailyStreakStatusUI() {
-  const lastPlayed = localStorage.getItem('daily_streak_last_played_date');
+async function updateDailyStreakStatusUI() {
+  const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
+  const lastPlayed = localStorage.getItem(`daily_streak_last_played_date_${username}`);
   const today = new Date().toLocaleDateString();
   const btn = document.getElementById('btn-start-daily-streak');
   const status = document.getElementById('daily-attempt-status');
+  const outcomeEl = document.getElementById('daily-streak-outcome');
+  const historicalEl = document.getElementById('daily-streak-historical');
+  const rankEl = document.getElementById('daily-streak-rank');
   
+  const statsKey = `pitch_ump_stats_${username.toUpperCase()}`;
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  
+  if (historicalEl) {
+    historicalEl.textContent = `${userStats.maxStreak || 0} Pitches`;
+  }
+  
+  if (outcomeEl) {
+    const todayAttempt = (userStats.history || []).find(h => h.gameName === "Daily Streak" && h.date === today);
+    if (todayAttempt) {
+      outcomeEl.textContent = `ENDED (Streak: ${todayAttempt.correctCalls})`;
+      outcomeEl.className = "text-red-400 font-bold";
+    } else if (lastPlayed === today) {
+      outcomeEl.textContent = "ATTEMPT FORFEITED";
+      outcomeEl.className = "text-red-400 font-bold";
+    } else {
+      outcomeEl.textContent = "NOT STARTED";
+      outcomeEl.className = "text-gray-400 font-bold";
+    }
+  }
+
   if (lastPlayed === today) {
     if (status) {
       status.textContent = "COMPLETED TODAY";
-      status.className = "text-xs font-bold text-red-400 uppercase animate-pulse";
+      status.className = "text-xs font-bold text-red-400 uppercase";
     }
     if (btn) {
       btn.setAttribute('disabled', 'true');
@@ -5585,8 +5670,30 @@ function updateDailyStreakStatusUI() {
     }
     if (btn) {
       btn.removeAttribute('disabled');
-      btn.className = "px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white";
+      btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20";
     }
+  }
+  
+  if (rankEl && username !== 'GUEST_UMPIRE') {
+    rankEl.textContent = "FETCHING...";
+    try {
+      const res = await fetch(`${KVDB_BASE_URL}/daily`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const userIdx = data.findIndex(item => item.name.toUpperCase() === username.toUpperCase());
+          if (userIdx !== -1) {
+            rankEl.textContent = `#${userIdx + 1} Global`;
+          } else {
+            rankEl.textContent = "UNRANKED";
+          }
+        }
+      }
+    } catch (e) {
+      rankEl.textContent = "OFFLINE";
+    }
+  } else if (rankEl) {
+    rankEl.textContent = "UNRANKED";
   }
 }
 
@@ -5619,17 +5726,39 @@ function setOverlayVisible(el, visible) {
   }
 }
 
-function saveFavoriteTeam(teamName) {
+async function saveFavoriteTeam(teamName) {
   activeFavoriteTeam = teamName;
-  localStorage.setItem('pitch_ump_favorite_team', teamName);
+  const username = localStorage.getItem('ump_username');
+  if (username) {
+    localStorage.setItem(`pitch_ump_favorite_team_${username.toUpperCase()}`, teamName);
+    
+    // Save user stats globally
+    try {
+      const stats = await getGlobalUserStats(username);
+      stats.favoriteTeam = teamName;
+      await saveGlobalUserStats(username, stats);
+    } catch (e) {
+      console.warn("Failed to save favorite team globally:", e);
+    }
+  } else {
+    localStorage.setItem('pitch_ump_favorite_team', teamName);
+  }
   if (userFavoriteTeamBadge) {
     userFavoriteTeamBadge.textContent = teamName ? `FAVORITE TEAM: ${teamName.toUpperCase()}` : 'FAVORITE TEAM: NONE';
   }
 }
 
 function loadFavoriteTeam() {
-  const saved = localStorage.getItem('pitch_ump_favorite_team');
-  if (saved) {
+  const username = localStorage.getItem('ump_username');
+  let saved = null;
+  if (username) {
+    saved = localStorage.getItem(`pitch_ump_favorite_team_${username.toUpperCase()}`);
+  }
+  if (!saved) {
+    saved = localStorage.getItem('pitch_ump_favorite_team');
+  }
+  
+  if (saved && saved !== 'none') {
     activeFavoriteTeam = saved;
     if (userFavoriteTeamBadge) {
       userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${saved.toUpperCase()}`;
@@ -5735,16 +5864,19 @@ function renderDashboardGamesList() {
   if (!dashboardGamesList) return;
   dashboardGamesList.innerHTML = '';
 
-  const gameCounts = WEEKLY_CHALLENGE_DATA.map((_, idx) => ({ abs: 0, pitches: 0 }));
-  weeklyPlaylistABs.forEach(ab => {
+  const gameCounts = WEEKLY_CHALLENGE_DATA.map((_, idx) => ({ abs: 0, pitches: 0, completedAbs: 0 }));
+  weeklyPlaylistABs.forEach((ab, playlistIdx) => {
     if (ab.gameIndex !== undefined && gameCounts[ab.gameIndex]) {
       gameCounts[ab.gameIndex].abs++;
       gameCounts[ab.gameIndex].pitches += ab.pitches.length;
+      if (playlistIdx < activeWeeklyAbIndex) {
+        gameCounts[ab.gameIndex].completedAbs++;
+      }
     }
   });
 
   WEEKLY_CHALLENGE_DATA.forEach((game, idx) => {
-    const counts = gameCounts[idx] || { abs: 0, pitches: 0 };
+    const counts = gameCounts[idx] || { abs: 0, pitches: 0, completedAbs: 0 };
     const card = document.createElement('div');
     card.className = 'glass-panel p-2.5 rounded-lg border border-white/5 flex flex-col justify-between transition-all select-none';
     
@@ -5771,7 +5903,7 @@ function renderDashboardGamesList() {
           <p class="text-[8px] text-gray-400 font-mono-tech uppercase leading-tight mt-0.5">${game.description || 'Live Match Details'}</p>
         </div>
         <div class="mt-2 pt-1 border-t border-white/5 flex justify-between items-center text-[8px] font-mono-tech text-gray-500">
-          <span>${counts.abs} AT-BATS</span>
+          <span>${counts.completedAbs} / ${counts.abs} ABs</span>
           <span class="text-purple-400 font-bold">INGESTED</span>
         </div>
       </div>
@@ -6268,16 +6400,51 @@ async function renderLeaderboard(type) {
   } else if (type === 'daily') {
     divisionTitle = "Daily Streak Challenge Standings";
   } else if (type === 'alltime') {
-    divisionTitle = "Team Standings (MLB Fan Leaderboard)";
+    divisionTitle = "Team Mastery Standings (Daily Compete)";
   }
   leaderboardDivisionTitle.textContent = divisionTitle.toUpperCase();
 
   const activeHandle = localStorage.getItem('ump_username') || "YOU";
 
+  // Rewrite table headers dynamically
+  const table = leaderboardTableBody.closest('table');
+  const thead = table ? table.querySelector('thead') : null;
+  if (thead) {
+    if (type === 'weekly') {
+      thead.innerHTML = `
+        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+          <th class="p-3">Rank</th>
+          <th class="p-3">Crew Chief</th>
+          <th class="p-3 text-center">Accuracy</th>
+          <th class="p-3 text-center">Score</th>
+        </tr>
+      `;
+    } else if (type === 'daily') {
+      thead.innerHTML = `
+        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+          <th class="p-3">Rank</th>
+          <th class="p-3">Crew Chief</th>
+          <th class="p-3 text-center">Accuracy</th>
+          <th class="p-3 text-center">Best Streak</th>
+        </tr>
+      `;
+    } else if (type === 'alltime') {
+      thead.innerHTML = `
+        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+          <th class="p-3">Rank</th>
+          <th class="p-3">Crew Chief</th>
+          <th class="p-3">Teams Completed</th>
+          <th class="p-3 text-center">Avg Accuracy</th>
+          <th class="p-3 text-center">Mastery Score</th>
+        </tr>
+      `;
+    }
+  }
+
   // Display loading
   leaderboardTableBody.innerHTML = `
     <tr>
-      <td colspan="5" class="p-6 text-center text-purple-400 font-mono-tech text-[10px] animate-pulse">
+      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-6 text-center text-purple-400 font-mono-tech text-[10px] animate-pulse">
         CONNECTING TO GLOBAL DATABASE & FETCHING LIVE STANDINGS...
       </td>
     </tr>
@@ -6307,27 +6474,27 @@ async function renderLeaderboard(type) {
   if (rows.length === 0) {
     if (type === 'weekly') {
       rows = [
-        { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "98.8%", score: "990 pts" },
-        { rank: 2, name: "Miller_Crew", team: "Dodgers", accuracy: "97.2%", score: "972 pts" },
-        { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "95.5%", score: "955 pts" },
-        { rank: 4, name: "Umpire_Pro", team: "Dodgers", accuracy: "94.1%", score: "941 pts" },
-        { rank: 5, name: "Angel_H", team: "Astros", accuracy: "81.2%", score: "812 pts" },
+        { rank: 1, name: "Pat Hoberg", accuracy: "98.8%", score: "990 pts" },
+        { rank: 2, name: "Miller_Crew", accuracy: "97.2%", score: "972 pts" },
+        { rank: 3, name: "West_Coast_Ump", accuracy: "95.5%", score: "955 pts" },
+        { rank: 4, name: "Umpire_Pro", accuracy: "94.1%", score: "941 pts" },
+        { rank: 5, name: "Angel_H", accuracy: "81.2%", score: "812 pts" },
       ];
     } else if (type === 'daily') {
       rows = [
-        { rank: 1, name: "PerfectCall_99", team: "Yankees", accuracy: "98.5%", score: "24 Streak" },
-        { rank: 2, name: "LaserEye", team: "Rangers", accuracy: "96.4%", score: "19 Streak" },
-        { rank: 3, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
-        { rank: 4, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
-        { rank: 5, name: "ZoneMaster", team: "Tigers", accuracy: "89.2%", score: "8 Streak" },
+        { rank: 1, name: "PerfectCall_99", accuracy: "98.5%", score: "24 Streak" },
+        { rank: 2, name: "LaserEye", accuracy: "96.4%", score: "19 Streak" },
+        { rank: 3, name: "BlueLover", accuracy: "92.0%", score: "12 Streak" },
+        { rank: 4, name: "RoboUmpWho", accuracy: "91.5%", score: "10 Streak" },
+        { rank: 5, name: "ZoneMaster", accuracy: "89.2%", score: "8 Streak" },
       ];
     } else if (type === 'alltime') {
       rows = [
-        { rank: 1, name: "ORIOLES FANS", team: "BAL", accuracy: "95.8%", score: "12,450 pts" },
-        { rank: 2, name: "YANKEES FANS", team: "NYY", accuracy: "94.2%", score: "10,120 pts" },
-        { rank: 3, name: "DODGERS FANS", team: "LAD", accuracy: "93.9%", score: "9,890 pts" },
-        { rank: 4, name: "PHILLIES FANS", team: "PHI", accuracy: "93.5%", score: "9,150 pts" },
-        { rank: 5, name: "GIANTS FANS", team: "SF", accuracy: "92.8%", score: "8,650 pts" },
+        { rank: 1, name: "Pat Hoberg", team: "Orioles,Yankees,Dodgers,Red Sox,Astros", accuracy: "96.8%", score: "5 Teams (5096 pts)" },
+        { rank: 2, name: "ZoneMaster", team: "Tigers,Twins,Orioles,Yankees", accuracy: "94.2%", score: "4 Teams (4094 pts)" },
+        { rank: 3, name: "LaserEye", team: "Rangers,Dodgers,Giants", accuracy: "93.9%", score: "3 Teams (3093 pts)" },
+        { rank: 4, name: "PerfectCall_99", team: "Yankees,Mets", accuracy: "95.5%", score: "2 Teams (2095 pts)" },
+        { rank: 5, name: "RoboUmpWho", team: "Red Sox", accuracy: "92.8%", score: "1 Team (1092 pts)" },
       ];
     }
   }
@@ -6342,13 +6509,33 @@ async function renderLeaderboard(type) {
     else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈 #2</span>`;
     else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉 #3</span>`;
 
-    tr.innerHTML = `
-      <td class="p-3">${rankHtml}</td>
-      <td class="p-3 uppercase tracking-wider">${r.name}</td>
-      <td class="p-3 uppercase tracking-wider text-gray-400">${r.team}</td>
-      <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
-      <td class="p-3 text-center font-bold">${r.score}</td>
-    `;
+    let rowContent = "";
+    if (type === 'weekly' || type === 'daily') {
+      rowContent = `
+        <td class="p-3">${rankHtml}</td>
+        <td class="p-3 uppercase tracking-wider">${r.name}</td>
+        <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
+        <td class="p-3 text-center font-bold ${type === 'daily' ? 'text-amber-400' : ''}">${r.score}</td>
+      `;
+    } else {
+      // type === 'alltime' (Mastery Standings)
+      let teamsHtml = '<span class="text-gray-500 font-bold">NONE</span>';
+      if (r.team && r.team !== 'None' && r.team !== 'none') {
+        const teams = r.team.split(',').map(t => t.trim());
+        teamsHtml = `<div class="flex flex-wrap gap-1">` + teams.map(t => {
+          return `<span class="px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded text-[9px] uppercase font-mono-tech font-bold">${t.slice(0, 3)}</span>`;
+        }).join('') + `</div>`;
+      }
+      rowContent = `
+        <td class="p-3">${rankHtml}</td>
+        <td class="p-3 uppercase tracking-wider">${r.name}</td>
+        <td class="p-3">${teamsHtml}</td>
+        <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
+        <td class="p-3 text-center font-bold text-purple-400">${r.score}</td>
+      `;
+    }
+
+    tr.innerHTML = rowContent;
     leaderboardTableBody.appendChild(tr);
   });
 }
@@ -6562,8 +6749,26 @@ function renderDailyCompeteDashboard() {
   }
   
   if (btnPlayDailyCompete) btnPlayDailyCompete.disabled = false;
+
+  // Populate team dropdown if not already populated
+  if (dailyCompeteTeamSelect && dailyCompeteTeamSelect.children.length === 0) {
+    TEAMS_LIST.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      opt.textContent = t.name.toUpperCase();
+      dailyCompeteTeamSelect.appendChild(opt);
+    });
+    if (activeFavoriteTeam) {
+      dailyCompeteTeamSelect.value = activeFavoriteTeam;
+    } else {
+      dailyCompeteTeamSelect.value = "Orioles";
+    }
+    dailyCompeteTeamSelect.onchange = () => {
+      renderDailyCompeteDashboard();
+    };
+  }
   
-  const team = activeFavoriteTeam || "Orioles";
+  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
   const todayStr = new Date().toISOString().split('T')[0];
   
   if (dailyMatchupTitle) {
@@ -6572,7 +6777,7 @@ function renderDailyCompeteDashboard() {
   
   getGlobalUserStats(username).then(stats => {
     const dailyHistory = stats.dailyHistory || {};
-    const todayResult = dailyHistory[todayStr];
+    const todayResult = dailyHistory[`${team}_${todayStr}`];
     
     if (dailyCompeteStatus) {
       if (todayResult !== undefined) {
@@ -6598,7 +6803,7 @@ function renderDailyCompeteDashboard() {
       dates.reverse();
       
       dates.forEach(dStr => {
-        const result = dailyHistory[dStr];
+        const result = dailyHistory[`${team}_${dStr}`];
         const item = document.createElement('div');
         item.className = "flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-white/5 cursor-pointer transition-colors";
         
@@ -6641,7 +6846,8 @@ function startDailyCompeteGame(dateString) {
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
   
-  const team = activeFavoriteTeam || "Orioles";
+  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
+  activeDailyTeam = team;
   const rawABs = generateDailyCondensedGame(team, dateString);
   
   const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${dateString}`;

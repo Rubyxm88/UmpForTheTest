@@ -139,16 +139,16 @@
             <img id="hud-user-team-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" class="w-10 h-10 object-contain drop-shadow bg-slate-950/40 rounded-full p-1 border border-white/10 animate-pulse" alt="Team Logo" />
             <div class="flex flex-col text-left">
               <div class="flex items-center gap-2">
-                <span class="text-[9px] font-mono-tech text-gray-500 uppercase tracking-widest font-bold">Crew Chief</span>
-                <span id="hud-user-favorite-badge" class="text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech">NONE</span>
+                <span class="text-[11px] font-mono-tech text-gray-500 uppercase tracking-widest font-bold">Crew Chief</span>
+                <span id="hud-user-favorite-badge" class="hidden">NONE</span>
               </div>
-              <span id="hud-user-handle" class="text-sm font-black text-white uppercase tracking-wider">GUEST_UMPIRE</span>
+              <span id="hud-user-handle" class="text-base font-black text-white uppercase tracking-wider">GUEST_UMPIRE</span>
             </div>
           </div>
 
           <!-- Middle: XP / Points Progress Bar -->
           <div class="flex-1 max-w-md w-full flex flex-col gap-1 px-2">
-            <div class="flex justify-between text-[8px] font-mono-tech font-bold text-gray-400">
+            <div class="flex justify-between text-[10px] font-mono-tech font-bold text-gray-400">
               <span>ACCUMULATED SCORE / EXPERIENCE</span>
               <span id="hud-user-xp-text">0 PTS</span>
             </div>
@@ -159,14 +159,14 @@
 
           <!-- Right Side: Quick Action buttons (Settings & Logout) -->
           <div class="flex items-center gap-2">
-            <button id="btn-dashboard-settings-toggle" class="px-3.5 py-2 text-[9px] font-extrabold uppercase tracking-widest bg-gray-800 hover:bg-purple-600 rounded-xl border border-white/10 transition-all cursor-pointer pointer-events-auto flex items-center gap-1.5 text-white">
+            <button id="btn-dashboard-settings-toggle" class="px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-gray-800 hover:bg-purple-600 rounded-xl border border-white/10 transition-all cursor-pointer pointer-events-auto flex items-center gap-1.5 text-white">
               <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                 <circle cx="12" cy="12" r="3"/>
               </svg>
               <span>SETTINGS</span>
             </button>
-            <button id="btn-hud-logout" class="px-3.5 py-2 text-[9px] font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-xl border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto">
+            <button id="btn-hud-logout" class="px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-xl border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto">
               LOGOUT
             </button>
           </div>
@@ -249,13 +249,15 @@
                     </p>
                   </div>
                   
-                  <div class="glass-panel-light p-2.5 rounded-lg border border-white/5 flex items-center justify-between mb-2">
-                    <div class="flex flex-col">
-                      <span class="text-[8px] font-mono-tech text-gray-500 uppercase">TODAY'S DAILY COMPETITION</span>
-                      <span id="daily-matchup-title" class="text-xs font-black text-white uppercase mt-0.5">ORIOLES CHALLENGE</span>
-                      <span id="daily-compete-status" class="text-[9px] font-bold text-yellow-400 uppercase mt-0.5">UNPLAYED (Available)</span>
+                  <div class="glass-panel-light p-2.5 rounded-lg border border-white/5 flex flex-col md:flex-row items-stretch md:items-center justify-between mb-2 gap-3">
+                    <div class="flex flex-col flex-1">
+                      <span class="text-[8px] font-mono-tech text-gray-500 uppercase">SELECT PLAYABLE TEAM</span>
+                      <select id="daily-compete-team-select" class="bg-slate-900 border border-white/10 rounded-lg p-1.5 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto cursor-pointer mt-1">
+                        <!-- Populated in game.js -->
+                      </select>
+                      <span id="daily-compete-status" class="text-[9px] font-bold text-yellow-400 uppercase mt-1">UNPLAYED (Available)</span>
                     </div>
-                    <button id="btn-play-daily-compete" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-blue-500/20">
+                    <button id="btn-play-daily-compete" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-blue-500/20 self-center md:self-auto">
                       Play Now
                     </button>
                   </div>
@@ -289,6 +291,22 @@
                     <button id="btn-start-daily-streak" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20">
                       Start Streak
                     </button>
+                  </div>
+
+                  <!-- Daily Streak Stats & Info -->
+                  <div class="flex flex-col gap-1.5 mt-2 pt-2 border-t border-white/5 text-[9px] font-mono-tech text-gray-400">
+                    <div class="flex justify-between">
+                      <span>OUTCOME TODAY:</span>
+                      <span id="daily-streak-outcome" class="text-white font-bold">N/A</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>BEST STREAK (HISTORICAL):</span>
+                      <span id="daily-streak-historical" class="text-amber-400 font-bold">0</span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span>OVERALL STREAK RANKING:</span>
+                      <span id="daily-streak-rank" class="text-purple-400 font-bold">UNRANKED</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -533,7 +551,7 @@
       </div>
 
       <!-- Settings Panel Sidebar (Camera & Sandbox Controls) -->
-      <div id="camera-controls-panel" class="absolute top-[100px] right-6 z-60 w-72 glass-panel p-5 rounded-xl border border-white/10 flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none">
+      <div id="camera-controls-panel" class="fixed z-60 w-72 glass-panel p-5 rounded-xl border border-white/10 flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none mt-2">
         <h3 class="text-xs font-mono-tech uppercase tracking-widest text-purple-400 font-bold border-b border-white/10 pb-1.5 flex justify-between items-center">
           <span>Game Settings</span>
           <button id="btn-close-settings" class="text-gray-400 hover:text-white transition-colors cursor-pointer text-[10px] focus:outline-none">✕</button>
