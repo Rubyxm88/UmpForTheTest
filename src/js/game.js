@@ -215,7 +215,8 @@ let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, btnProfileSavePin, 
 let btnMatchupToggle;
 
 // Settings elements
-let btnCloseSettings;
+let btnCloseSettings, btnDashboardSettingsToggle;
+let settingsUiClassic, settingsUiAdaptive, settingsUiCinematic;
 
 // Split Summary card elements
 let abSummaryPitcherImg, abSummaryPitcherLogo, abSummaryPitcherName, abSummaryPitcherHandBadge;
@@ -983,6 +984,10 @@ function cacheDOM() {
 
   // Settings elements
   btnCloseSettings = document.getElementById('btn-close-settings');
+  btnDashboardSettingsToggle = document.getElementById('btn-dashboard-settings-toggle');
+  settingsUiClassic = document.getElementById('settings-ui-classic');
+  settingsUiAdaptive = document.getElementById('settings-ui-adaptive');
+  settingsUiCinematic = document.getElementById('settings-ui-cinematic');
 
   // Split Summary card elements
   abSummaryPitcherImg = document.getElementById('ab-summary-pitcher-img');
@@ -1288,6 +1293,14 @@ function attachEvents() {
     });
   }
 
+  if (btnDashboardSettingsToggle) {
+    btnDashboardSettingsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isSettingsOpen = !isSettingsOpen;
+      updateSettingsVisibility();
+    });
+  }
+
   document.addEventListener('click', () => {
     if (isSettingsOpen) {
       isSettingsOpen = false;
@@ -1547,7 +1560,7 @@ function attachEvents() {
   [
     btnStartGame, btnStartOriolesFull, btnBall, btnStrike, btnBroadcastContinue, btnRestartGame,
     btnScoreboardHome, btnScoreboardLeaderboard,
-    camBtnUmp, camBtnSide, camBtnTop, selectSpeed, btnSettingsToggle,
+    camBtnUmp, camBtnSide, camBtnTop, selectSpeed, btnSettingsToggle, btnDashboardSettingsToggle,
     btnMainMenu, selectInning, btnAbSummaryAdvance, btnResumeGame,
     settingsTabGen, settingsTabSandbox, rngMannequinOpacity, selectBattersEyeColor,
     btnViewDetails, btnQuickContinue, btnStartWeeklyChallenge, btnAbStartConfirm, btnAbSummaryHome,
@@ -1881,6 +1894,8 @@ function transitionToState(newState) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, true);
+    isSettingsOpen = false;
+    updateSettingsVisibility();
   } else {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
@@ -2353,7 +2368,7 @@ function setElementVisibility(el, visible) {
 }
 
 function updateSettingsVisibility() {
-  if (isSettingsOpen && (currentState === STATES.IDLE || currentState === STATES.ABS_REVIEW)) {
+  if (isSettingsOpen && (currentState === STATES.IDLE || currentState === STATES.ABS_REVIEW || currentState === STATES.START)) {
     if (cameraControlsPanel) {
       cameraControlsPanel.classList.remove('opacity-0', 'scale-95', 'pointer-events-none');
       cameraControlsPanel.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
@@ -2361,6 +2376,10 @@ function updateSettingsVisibility() {
     if (btnSettingsToggle) {
       btnSettingsToggle.classList.add('bg-white/10');
       btnSettingsToggle.classList.add('border-purple-500/40');
+    }
+    if (btnDashboardSettingsToggle) {
+      btnDashboardSettingsToggle.classList.add('bg-purple-600');
+      btnDashboardSettingsToggle.classList.remove('bg-gray-800');
     }
   } else {
     if (cameraControlsPanel) {
@@ -2370,6 +2389,10 @@ function updateSettingsVisibility() {
     if (btnSettingsToggle) {
       btnSettingsToggle.classList.remove('bg-white/10');
       btnSettingsToggle.classList.remove('border-purple-500/40');
+    }
+    if (btnDashboardSettingsToggle) {
+      btnDashboardSettingsToggle.classList.remove('bg-purple-600');
+      btnDashboardSettingsToggle.classList.add('bg-gray-800');
     }
   }
 }
@@ -5114,27 +5137,22 @@ function initUiModeSwitcher() {
   const savedMode = localStorage.getItem('pitch_ump_ui_mode') || 'classic';
   setUiMode(savedMode);
 
-  if (btnUiClassic) {
-    btnUiClassic.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      setUiMode('classic');
-    });
-  }
-  if (btnUiAdaptive) {
-    btnUiAdaptive.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      setUiMode('adaptive');
-    });
-  }
-  if (btnUiCinematic) {
-    btnUiCinematic.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      setUiMode('cinematic');
-    });
-  }
+  const bindBtn = (btn, mode) => {
+    if (btn) {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        initAudio();
+        setUiMode(mode);
+      });
+    }
+  };
+
+  bindBtn(btnUiClassic, 'classic');
+  bindBtn(btnUiAdaptive, 'adaptive');
+  bindBtn(btnUiCinematic, 'cinematic');
+  bindBtn(settingsUiClassic, 'classic');
+  bindBtn(settingsUiAdaptive, 'adaptive');
+  bindBtn(settingsUiCinematic, 'cinematic');
 }
 
 function setUiMode(mode) {
@@ -5145,7 +5163,7 @@ function setUiMode(mode) {
   document.body.classList.remove('ui-mode-classic', 'ui-mode-adaptive', 'ui-mode-cinematic');
   document.body.classList.add(`ui-mode-${mode}`);
 
-  // Update switcher button highlights
+  // Update switcher button highlights (HUD)
   [btnUiClassic, btnUiAdaptive, btnUiCinematic].forEach(btn => {
     if (btn) {
       btn.classList.remove('ui-mode-btn-active');
@@ -5157,6 +5175,24 @@ function setUiMode(mode) {
   if (activeBtn) {
     activeBtn.classList.add('ui-mode-btn-active');
     activeBtn.classList.remove('text-white/50');
+  }
+
+  // Update switcher button highlights (Settings Panel)
+  [settingsUiClassic, settingsUiAdaptive, settingsUiCinematic].forEach(btn => {
+    if (btn) {
+      btn.classList.remove('bg-purple-600');
+      btn.classList.add('bg-gray-800');
+      btn.classList.remove('text-white');
+      btn.classList.add('text-white/60');
+    }
+  });
+
+  const activeSettingsBtn = mode === 'classic' ? settingsUiClassic : (mode === 'adaptive' ? settingsUiAdaptive : settingsUiCinematic);
+  if (activeSettingsBtn) {
+    activeSettingsBtn.classList.add('bg-purple-600');
+    activeSettingsBtn.classList.remove('bg-gray-800');
+    activeSettingsBtn.classList.add('text-white');
+    activeSettingsBtn.classList.remove('text-white/60');
   }
 
   // Trigger window resize to recalculate canvas layouts
