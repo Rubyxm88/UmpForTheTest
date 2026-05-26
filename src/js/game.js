@@ -202,9 +202,33 @@ let btnUiClassic, btnUiAdaptive, btnUiCinematic;
 let pauseModeText, pauseInningOutsText, pauseScoreText, pauseAccText, btnPauseRestart, btnPauseHome, pauseProgressRow, pauseProgressText;
 // Matchup Card Image/Logos/Stats
 let cardPitcherImg, cardPitcherLogo, cardPitcherStats, cardBatterImg, cardBatterLogo, cardBatterStats, matchupGameTitle, matchupGameDate;
-// At-Bat Summary Matrix SVG
+// At-Bat Summary Matrix SVG & Pitch Details
 let abSummaryMatrixSvg, abSummarySvgPitches, abSummaryPitchDetails;
 let activeUiMode = 'classic'; // 'classic' | 'adaptive' | 'cinematic'
+
+// Arcade Login Form elements
+let loginHandleInput, loginPinInput, loginErrorMsg, btnStatsLogout;
+let loginConfirmBox, btnLoginConfirmCreate, btnLoginConfirmCancel;
+let profileFavTeamSelect, profileFavTeamLogo, profileNewPin, btnProfileSavePin, profilePinMsg;
+
+// Collapsible Matchup Card elements
+let btnMatchupToggle;
+
+// Settings elements
+let btnCloseSettings;
+
+// Split Summary card elements
+let abSummaryPitcherImg, abSummaryPitcherLogo, abSummaryPitcherName, abSummaryPitcherHandBadge;
+let abSummaryBatterImg, abSummaryBatterLogo, abSummaryBatterName, abSummaryBatterHandBadge;
+let abSummaryPitchList;
+
+// Matchup Walkup card (ab-start-overlay) faceoff elements
+let abStartPitcherImg, abStartPitcherLogo, abStartPitcherStats;
+let abStartBatterImg, abStartBatterLogo, abStartBatterStats;
+let abStartPitcherName, abStartBatterName;
+
+// Leaderboard Buttons & Table
+let leaderBtnWeekly, leaderBtnDaily, leaderBtnAlltime, leaderboardTableBody, leaderboardDivisionTitle;
 
 let selectSpeed;
 let isSettingsOpen = false;
@@ -423,6 +447,274 @@ function playFanfareSound() {
   });
 }
 
+function playCoinSound() {
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  const now = audioCtx.currentTime;
+  const frequencies = [987.77, 1318.51]; // B5, E6
+  frequencies.forEach((freq, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+    
+    gain.gain.setValueAtTime(0.08, now + idx * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + idx * 0.08);
+    osc.stop(now + idx * 0.08 + 0.3);
+  });
+}
+
+function playBallWhooshSound(speedMph) {
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  const now = audioCtx.currentTime;
+  const duration = Math.max(0.25, Math.min(0.8, 40 / (speedMph || 90)));
+  const bufferSize = audioCtx.sampleRate * duration;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  
+  const noiseSource = audioCtx.createBufferSource();
+  noiseSource.buffer = buffer;
+  
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  
+  const startFreq = 200 + (speedMph - 70) * 4;
+  const endFreq = 900 + (speedMph - 70) * 12;
+  
+  filter.frequency.setValueAtTime(startFreq, now);
+  filter.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+  filter.Q.setValueAtTime(3.0, now);
+  
+  const gain = audioCtx.createGain();
+  const volume = Math.max(0.1, Math.min(0.65, (speedMph - 50) / 60));
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(volume, now + duration * 0.7);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  
+  noiseSource.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  noiseSource.start(now);
+  noiseSource.stop(now + duration);
+}
+
+function playStrikeCallSound() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc1 = audioCtx.createOscillator();
+  const osc2 = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  
+  osc1.type = 'triangle';
+  osc1.frequency.setValueAtTime(293.66, now);
+  osc1.frequency.linearRampToValueAtTime(587.33, now + 0.15);
+  
+  osc2.type = 'sawtooth';
+  osc2.frequency.setValueAtTime(295.66, now);
+  osc2.frequency.linearRampToValueAtTime(589.33, now + 0.15);
+  
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'peaking';
+  filter.frequency.setValueAtTime(800, now);
+  filter.Q.setValueAtTime(2.0, now);
+  
+  gain.gain.setValueAtTime(0.25, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  osc1.start(now);
+  osc2.start(now);
+  osc1.stop(now + 0.35);
+  osc2.stop(now + 0.35);
+}
+
+function playBallCallSound() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc1 = audioCtx.createOscillator();
+  const osc2 = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(392.00, now);
+  osc1.frequency.exponentialRampToValueAtTime(261.63, now + 0.2);
+  
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(493.88, now);
+  osc2.frequency.exponentialRampToValueAtTime(329.63, now + 0.2);
+  
+  gain.gain.setValueAtTime(0.2, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  osc1.start(now);
+  osc2.start(now);
+  osc1.stop(now + 0.3);
+  osc2.stop(now + 0.3);
+}
+
+function playStrikeoutSirenSound() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const duration = 1.0;
+  const oscSiren = audioCtx.createOscillator();
+  const gainSiren = audioCtx.createGain();
+  oscSiren.type = 'sawtooth';
+  oscSiren.frequency.setValueAtTime(440, now);
+  
+  for (let t = 0; t < duration; t += 0.1) {
+    oscSiren.frequency.linearRampToValueAtTime(660, now + t + 0.05);
+    oscSiren.frequency.linearRampToValueAtTime(330, now + t + 0.1);
+  }
+  
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(500, now);
+  
+  gainSiren.gain.setValueAtTime(0.12, now);
+  gainSiren.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  
+  oscSiren.connect(filter);
+  filter.connect(gainSiren);
+  gainSiren.connect(audioCtx.destination);
+  oscSiren.start(now);
+  oscSiren.stop(now + duration);
+  
+  const notes = [261.63, 311.13, 392.00, 523.25];
+  notes.forEach((freq, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+    
+    gain.gain.setValueAtTime(0.15, now + idx * 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.5);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + idx * 0.1);
+    osc.stop(now + idx * 0.1 + 0.55);
+  });
+}
+
+function loginUserSession(handleVal) {
+  localStorage.setItem('ump_username', handleVal);
+  updateProfileStatsUI();
+  playCoinSound();
+  
+  if (autoPlayTimeout) {
+    clearTimeout(autoPlayTimeout);
+    autoPlayTimeout = null;
+  }
+  pitchHistory = [];
+  currentPitchIndex = 0;
+  currentAbStartHistoryIndex = 0;
+  abBalls = 0;
+  abStrikes = 0;
+  
+  initProfileSettingsUI();
+  
+  if (activeFavoriteTeam) {
+    transitionToState(STATES.START);
+  } else {
+    transitionToState(STATES.TEAM_SELECT);
+  }
+}
+
+function initProfileSettingsUI() {
+  if (!profileFavTeamSelect) return;
+  
+  profileFavTeamSelect.innerHTML = '<option value="none">SELECT FAVORITE TEAM</option>';
+  TEAMS_LIST.forEach(team => {
+    const opt = document.createElement('option');
+    opt.value = team.name.toLowerCase();
+    opt.textContent = team.name.toUpperCase();
+    profileFavTeamSelect.appendChild(opt);
+  });
+  
+  if (activeFavoriteTeam) {
+    profileFavTeamSelect.value = activeFavoriteTeam.toLowerCase();
+    if (profileFavTeamLogo) {
+      profileFavTeamLogo.src = getTeamLogoUrl(activeFavoriteTeam);
+    }
+  } else {
+    profileFavTeamSelect.value = "none";
+    if (profileFavTeamLogo) {
+      profileFavTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+    }
+  }
+  
+  profileFavTeamSelect.onchange = function() {
+    initAudio();
+    const val = this.value;
+    if (val === 'none') {
+      activeFavoriteTeam = null;
+      localStorage.removeItem('pitch_ump_favorite_team');
+      if (profileFavTeamLogo) profileFavTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      if (userFavoriteTeamBadge) userFavoriteTeamBadge.textContent = 'FAVORITE TEAM: NONE';
+    } else {
+      const team = TEAMS_LIST.find(t => t.name.toLowerCase() === val);
+      if (team) {
+        activeFavoriteTeam = team.name;
+        localStorage.setItem('pitch_ump_favorite_team', team.name);
+        if (profileFavTeamLogo) profileFavTeamLogo.src = getTeamLogoUrl(team.name);
+        if (userFavoriteTeamBadge) userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${team.name.toUpperCase()}`;
+        playCoinSound();
+      }
+    }
+  };
+  
+  if (btnProfileSavePin) {
+    btnProfileSavePin.onclick = function(e) {
+      e.stopPropagation();
+      initAudio();
+      
+      const newPinVal = profileNewPin ? profileNewPin.value.trim() : "";
+      if (!/^\d{4,8}$/.test(newPinVal)) {
+        alert("ERROR: PIN MUST BE 4 TO 8 DIGITS");
+        return;
+      }
+      
+      const currentHandle = localStorage.getItem('ump_username');
+      if (currentHandle) {
+        let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+        users[currentHandle] = newPinVal;
+        localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+        
+        if (profilePinMsg) {
+          profilePinMsg.classList.remove('hidden');
+          setTimeout(() => {
+            profilePinMsg.classList.add('hidden');
+          }, 3000);
+        }
+        if (profileNewPin) profileNewPin.value = "";
+        
+        playCoinSound();
+      }
+    };
+  }
+}
+
 /**
  * Initialize all DOM queries and attach event listeners
  */
@@ -436,6 +728,7 @@ export function startGameSession() {
   
   loadSavedSessionFromLocal();
   loadFavoriteTeam();
+  initProfileSettingsUI();
   generateTeamSelectGrid();
   renderDashboardGamesList();
   updateDailyStreakStatusUI();
@@ -447,12 +740,17 @@ export function startGameSession() {
   
   window.addEventListener('resize', () => {
     onResize(container.clientWidth, container.clientHeight);
+    if (window.innerWidth < 640 && matchupCard) {
+      matchupCard.classList.add('collapsed');
+    }
   });
   
-  if (activeFavoriteTeam) {
+  if (!localStorage.getItem('ump_username')) {
+    transitionToState(STATES.IDLE);
+  } else if (activeFavoriteTeam) {
     transitionToState(STATES.START);
   } else {
-    transitionToState(STATES.WELCOME);
+    transitionToState(STATES.TEAM_SELECT);
   }
   
   tick();
@@ -662,6 +960,57 @@ function cacheDOM() {
   abSummaryMatrixSvg = document.getElementById('ab-summary-matrix-svg');
   abSummarySvgPitches = document.getElementById('ab-summary-svg-pitches');
   abSummaryPitchDetails = document.getElementById('ab-summary-pitch-details');
+
+  // Arcade Login Form elements
+  loginHandleInput = document.getElementById('login-handle');
+  loginPinInput = document.getElementById('login-pin');
+  loginErrorMsg = document.getElementById('login-error-msg');
+  btnStatsLogout = document.getElementById('btn-stats-logout');
+
+  // Arcade Login confirmation & Profile Settings
+  loginConfirmBox = document.getElementById('login-confirm-box');
+  btnLoginConfirmCreate = document.getElementById('btn-login-confirm-create');
+  btnLoginConfirmCancel = document.getElementById('btn-login-confirm-cancel');
+  
+  profileFavTeamSelect = document.getElementById('profile-fav-team-select');
+  profileFavTeamLogo = document.getElementById('profile-fav-team-logo');
+  profileNewPin = document.getElementById('profile-new-pin');
+  btnProfileSavePin = document.getElementById('btn-profile-save-pin');
+  profilePinMsg = document.getElementById('profile-pin-msg');
+
+  // Collapsible Matchup Card elements
+  btnMatchupToggle = document.getElementById('btn-matchup-toggle');
+
+  // Settings elements
+  btnCloseSettings = document.getElementById('btn-close-settings');
+
+  // Split Summary card elements
+  abSummaryPitcherImg = document.getElementById('ab-summary-pitcher-img');
+  abSummaryPitcherLogo = document.getElementById('ab-summary-pitcher-logo');
+  abSummaryPitcherName = document.getElementById('ab-summary-pitcher-name');
+  abSummaryPitcherHandBadge = document.getElementById('ab-summary-pitcher-hand-badge');
+  abSummaryBatterImg = document.getElementById('ab-summary-batter-img');
+  abSummaryBatterLogo = document.getElementById('ab-summary-batter-logo');
+  abSummaryBatterName = document.getElementById('ab-summary-batter-name');
+  abSummaryBatterHandBadge = document.getElementById('ab-summary-batter-hand-badge');
+  abSummaryPitchList = document.getElementById('ab-summary-pitch-list');
+
+  // Matchup Walkup card faceoff elements
+  abStartPitcherImg = document.getElementById('ab-start-pitcher-img');
+  abStartPitcherLogo = document.getElementById('ab-start-pitcher-logo');
+  abStartPitcherStats = document.getElementById('ab-start-pitcher-stats');
+  abStartBatterImg = document.getElementById('ab-start-batter-img');
+  abStartBatterLogo = document.getElementById('ab-start-batter-logo');
+  abStartBatterStats = document.getElementById('ab-start-batter-stats');
+  abStartPitcherName = document.getElementById('ab-start-pitcher');
+  abStartBatterName = document.getElementById('ab-start-batter');
+
+  // Leaderboard Buttons & Table
+  leaderBtnWeekly = document.getElementById('leader-btn-weekly');
+  leaderBtnDaily = document.getElementById('leader-btn-daily');
+  leaderBtnAlltime = document.getElementById('leader-btn-alltime');
+  leaderboardTableBody = document.getElementById('leaderboard-table-body');
+  leaderboardDivisionTitle = document.getElementById('leaderboard-division-title');
 }
 
 function attachEvents() {
@@ -996,7 +1345,10 @@ function attachEvents() {
   if (selectBattersEyeColor) {
     selectBattersEyeColor.addEventListener('change', function(e) {
       e.stopPropagation();
-      setBattersEyeColor(this.value);
+      let hex = '#0B2512';
+      if (this.value === 'black') hex = '#020202';
+      else if (this.value === 'light-grey') hex = '#222222';
+      setBattersEyeColor(hex);
     });
   }
 
@@ -1013,8 +1365,152 @@ function attachEvents() {
     btnWelcomeStart.addEventListener('click', (e) => {
       e.stopPropagation();
       initAudio();
-      transitionToState(STATES.TEAM_SELECT);
+      
+      const handleVal = loginHandleInput ? loginHandleInput.value.trim() : "";
+      const pinVal = loginPinInput ? loginPinInput.value.trim() : "";
+      
+      if (handleVal.length < 3) {
+        if (loginErrorMsg) {
+          loginErrorMsg.textContent = "ERROR: HANDLE MUST BE AT LEAST 3 CHARACTERS";
+          loginErrorMsg.classList.remove('hidden');
+        }
+        return;
+      }
+      
+      if (!/^\d{4,8}$/.test(pinVal)) {
+        if (loginErrorMsg) {
+          loginErrorMsg.textContent = "ERROR: PIN MUST BE 4 TO 8 DIGITS";
+          loginErrorMsg.classList.remove('hidden');
+        }
+        return;
+      }
+      
+      const handleValNormalized = handleVal.toUpperCase();
+      let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+      
+      if (users[handleValNormalized] === undefined) {
+        // User does not exist, show confirm registration overlay
+        if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+        if (loginConfirmBox) {
+          loginConfirmBox.classList.remove('hidden');
+          loginConfirmBox.classList.add('flex');
+        }
+      } else {
+        // User exists, verify PIN
+        if (users[handleValNormalized] === pinVal) {
+          if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+          if (loginConfirmBox) {
+            loginConfirmBox.classList.add('hidden');
+            loginConfirmBox.classList.remove('flex');
+          }
+          loginUserSession(handleValNormalized);
+        } else {
+          if (loginErrorMsg) {
+            loginErrorMsg.textContent = "ERROR: INVALID PIN FOR THIS HANDLE";
+            loginErrorMsg.classList.remove('hidden');
+          }
+          if (loginConfirmBox) {
+            loginConfirmBox.classList.add('hidden');
+            loginConfirmBox.classList.remove('flex');
+          }
+        }
+      }
     });
+  }
+
+  if (btnLoginConfirmCreate) {
+    btnLoginConfirmCreate.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      
+      const handleVal = loginHandleInput ? loginHandleInput.value.trim() : "";
+      const pinVal = loginPinInput ? loginPinInput.value.trim() : "";
+      const handleValNormalized = handleVal.toUpperCase();
+      
+      let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+      users[handleValNormalized] = pinVal;
+      localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+      
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.add('hidden');
+        loginConfirmBox.classList.remove('flex');
+      }
+      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+      
+      loginUserSession(handleValNormalized);
+    });
+  }
+
+  if (btnLoginConfirmCancel) {
+    btnLoginConfirmCancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.add('hidden');
+        loginConfirmBox.classList.remove('flex');
+      }
+    });
+  }
+
+  if (btnStatsLogout) {
+    btnStatsLogout.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      localStorage.removeItem('ump_username');
+      localStorage.removeItem('pitch_ump_challenge_mvp');
+      activeFavoriteTeam = null;
+      if (loginHandleInput) loginHandleInput.value = "";
+      if (loginPinInput) loginPinInput.value = "";
+      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.add('hidden');
+        loginConfirmBox.classList.remove('flex');
+      }
+      
+      // Clear demo/active state
+      if (autoPlayTimeout) {
+        clearTimeout(autoPlayTimeout);
+        autoPlayTimeout = null;
+      }
+      pitchHistory = [];
+      currentPitchIndex = 0;
+      currentAbStartHistoryIndex = 0;
+      abBalls = 0;
+      abStrikes = 0;
+      
+      transitionToState(STATES.IDLE);
+    });
+  }
+
+  if (btnCloseSettings) {
+    btnCloseSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isSettingsOpen = false;
+      updateSettingsVisibility();
+      resumeAutoPlayPitch();
+    });
+  }
+
+  if (btnMatchupToggle) {
+    btnMatchupToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      if (matchupCard) {
+        matchupCard.classList.toggle('collapsed');
+        const isCollapsed = matchupCard.classList.contains('collapsed');
+        localStorage.setItem('pitch_ump_matchup_collapsed', isCollapsed ? 'true' : 'false');
+      }
+    });
+  }
+
+  if (leaderBtnWeekly) {
+    leaderBtnWeekly.addEventListener('click', () => renderLeaderboard('weekly'));
+  }
+  if (leaderBtnDaily) {
+    leaderBtnDaily.addEventListener('click', () => renderLeaderboard('daily'));
+  }
+  if (leaderBtnAlltime) {
+    leaderBtnAlltime.addEventListener('click', () => renderLeaderboard('alltime'));
   }
 
   if (btnConfirmTeam) {
@@ -1055,7 +1551,7 @@ function attachEvents() {
     btnMainMenu, selectInning, btnAbSummaryAdvance, btnResumeGame,
     settingsTabGen, settingsTabSandbox, rngMannequinOpacity, selectBattersEyeColor,
     btnViewDetails, btnQuickContinue, btnStartWeeklyChallenge, btnAbStartConfirm, btnAbSummaryHome,
-    btnWelcomeStart, btnConfirmTeam
+    btnWelcomeStart, btnConfirmTeam, btnLoginConfirmCreate, btnLoginConfirmCancel
   ].forEach(btn => {
     if (btn) {
       btn.addEventListener('touchstart', preventBubble, { passive: true });
@@ -1350,14 +1846,30 @@ let playCrackSoundTriggered = false;
 
 function transitionToState(newState) {
   currentState = newState;
+  const loggedIn = !!localStorage.getItem('ump_username');
   
   if (newState !== STATES.ABS_REVIEW) {
     setZoomedIn(false);
     clearDimensionLine();
   }
 
+  // Auto-collapse matchup card during pitching, windup, or decision pending states
+  if (matchupCard) {
+    if (newState === STATES.WINDUP || newState === STATES.PITCHING || newState === STATES.DECISION_PENDING || newState === STATES.ABS_REVIEW) {
+      matchupCard.classList.add('collapsed');
+    } else if (newState === STATES.IDLE) {
+      const userCollapsed = localStorage.getItem('pitch_ump_matchup_collapsed') === 'true';
+      if (window.innerWidth >= 640 && !userCollapsed) {
+        matchupCard.classList.remove('collapsed');
+      } else {
+        matchupCard.classList.add('collapsed');
+      }
+    }
+  }
+
   // Manage main menu screens visibility
-  if (newState === STATES.WELCOME) {
+  const showWelcome = newState === STATES.WELCOME || !localStorage.getItem('ump_username');
+  if (showWelcome) {
     setOverlayVisible(welcomeScreen, true);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, false);
@@ -1502,10 +2014,18 @@ function transitionToState(newState) {
       updateLiveScoreboard();
       
       startScreen.classList.add('opacity-0', 'pointer-events-none');
-      hudHeader.classList.remove('opacity-0');
-      if (matchupCard) {
-        matchupCard.classList.remove('opacity-0', 'pointer-events-none');
-        matchupCard.classList.add('opacity-100', 'pointer-events-auto');
+      if (loggedIn) {
+        hudHeader.classList.remove('opacity-0');
+        if (matchupCard) {
+          matchupCard.classList.remove('opacity-0', 'pointer-events-none');
+          matchupCard.classList.add('opacity-100', 'pointer-events-auto');
+        }
+      } else {
+        hudHeader.classList.add('opacity-0');
+        if (matchupCard) {
+          matchupCard.classList.add('opacity-0', 'pointer-events-none');
+          matchupCard.classList.remove('opacity-100', 'pointer-events-auto');
+        }
       }
       if (replayBadge) {
         replayBadge.classList.add('opacity-0', 'pointer-events-none');
@@ -1624,6 +2144,9 @@ function transitionToState(newState) {
       
       pitchStartTime = performance.now();
       showStrikeZone(showFlightSzHelper); // Strike zone helper visual in flight
+      if (currentPitch && currentPitch.speed_mph) {
+        playBallWhooshSound(currentPitch.speed_mph);
+      }
       break;
 
     case STATES.DECISION_PENDING:
@@ -1634,8 +2157,18 @@ function transitionToState(newState) {
       showStrikeZone(false);
       hudKeyboardHelp.innerHTML = 'SHORTCUTS: [← / A] BALL &nbsp;|&nbsp; [→ / D] STRIKE &nbsp;|&nbsp; MOBILE: SWIPE LEFT/RIGHT';
       
-      setElementVisibility(decisionPrompt, true);
-      startCountdownTimer();
+      if (!localStorage.getItem('ump_username')) {
+        setElementVisibility(decisionPrompt, false);
+        setTimeout(() => {
+          if (!localStorage.getItem('ump_username') && currentState === STATES.DECISION_PENDING) {
+            swingOutcome = Math.random() < 0.5 ? 'S' : 'B';
+            submitSwingDecision();
+          }
+        }, 1200);
+      } else {
+        setElementVisibility(decisionPrompt, true);
+        startCountdownTimer();
+      }
       break;
 
     case STATES.ABS_REVIEW:
@@ -1646,7 +2179,7 @@ function transitionToState(newState) {
       clearInterval(timerInterval);
       setElementVisibility(decisionPrompt, false);
       
-      if (replayBadge) {
+      if (replayBadge && loggedIn) {
         replayBadge.classList.remove('opacity-0', 'pointer-events-none');
         replayBadge.classList.add('opacity-100');
       }
@@ -1719,7 +2252,7 @@ function transitionToState(newState) {
         
       } else {
         // Taken pitch: check if reviewStyle is quick or full
-        if (reviewStyle === 'quick') {
+        if (reviewStyle === 'quick' || !loggedIn) {
           // QUICK PREVIEW: Stay behind the plate (Umpire view)
           selectCameraView('umpire');
           showReviewPanel(false);
@@ -1729,28 +2262,34 @@ function transitionToState(newState) {
           setReviewingState(false); // Do not dim character mannequins
           setCrossingMarkerVisible(false);
           
-          if (btnViewDetails) btnViewDetails.classList.remove('hidden');
-          
-          // Populate pitch detail bug
-          populatePitchDetailBug();
+          if (loggedIn) {
+            if (btnViewDetails) btnViewDetails.classList.remove('hidden');
+            populatePitchDetailBug();
+            showDecisionToast(isCorrect, userHistoryItem.absCall);
+            if (isCorrect) {
+              if (abEnded && abStrikes === 3) {
+                playStrikeoutSirenSound();
+              } else {
+                if (userHistoryItem.absCall === 'S') {
+                  playStrikeCallSound();
+                } else {
+                  playBallCallSound();
+                }
+              }
+            } else {
+              playErrorBuzz();
+            }
+          }
           
           // Draw the crossing marker and trace
           drawTrajectoryTrace(pitchTrajectory.points, currentPitch.release_pos_y || 54.0);
           const isStrikeABSVal = userHistoryItem.absCall === 'S';
           drawCrossingMarker(pitchTrajectory.crossPoint, isStrikeABSVal);
           
-          // Show correct/incorrect toast and chimes
-          showDecisionToast(isCorrect, userHistoryItem.absCall);
-          if (isCorrect) {
-            playSuccessChime();
-          } else {
-            playErrorBuzz();
-          }
-          
-          if (abEnded) {
-            // Do NOT show the floating quick preview panel!
+          if (!loggedIn) {
+            startQuickReviewAutoAdvance(2000);
+          } else if (abEnded) {
             hideQuickPreviewPanel();
-            // Wait for replay to complete or player to click Space, then show summary screen
             if (summaryTimeout) clearTimeout(summaryTimeout);
             isTransitioningToSummary = true;
             summaryTimeout = setTimeout(() => {
@@ -1759,7 +2298,6 @@ function transitionToState(newState) {
               advanceGameFlow();
             }, minPreviewMs);
           } else {
-            // Show the quick preview buttons panel floating at bottom
             if (quickPreviewControls) {
               quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
               quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
@@ -1816,13 +2354,19 @@ function setElementVisibility(el, visible) {
 
 function updateSettingsVisibility() {
   if (isSettingsOpen && (currentState === STATES.IDLE || currentState === STATES.ABS_REVIEW)) {
-    setElementVisibility(cameraControlsPanel, true);
+    if (cameraControlsPanel) {
+      cameraControlsPanel.classList.remove('opacity-0', 'scale-95', 'pointer-events-none');
+      cameraControlsPanel.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+    }
     if (btnSettingsToggle) {
       btnSettingsToggle.classList.add('bg-white/10');
       btnSettingsToggle.classList.add('border-purple-500/40');
     }
   } else {
-    setElementVisibility(cameraControlsPanel, false);
+    if (cameraControlsPanel) {
+      cameraControlsPanel.classList.add('opacity-0', 'scale-95', 'pointer-events-none');
+      cameraControlsPanel.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+    }
     if (btnSettingsToggle) {
       btnSettingsToggle.classList.remove('bg-white/10');
       btnSettingsToggle.classList.remove('border-purple-500/40');
@@ -2263,6 +2807,19 @@ function advanceGameFlow(immediate = false) {
     autoPlayTimeout = null;
   }
 
+  const loggedIn = !!localStorage.getItem('ump_username');
+  if (!loggedIn) {
+    currentPitchIndex++;
+    if (currentPitchIndex >= pitchesList.length) {
+      currentPitchIndex = 0;
+      pitchHistory = [];
+    }
+    abBalls = 0;
+    abStrikes = 0;
+    transitionToState(STATES.IDLE);
+    return;
+  }
+
   const historyItem = pitchHistory[pitchHistory.length - 1];
   
   totalPitchesCount++;
@@ -2323,7 +2880,6 @@ function advanceGameFlow(immediate = false) {
     // Clear counts for the next AB
     abBalls = 0;
     abStrikes = 0;
-    currentAbStartHistoryIndex = pitchHistory.length;
     
     if (immediate) {
       if (summaryTimeout) {
@@ -2363,6 +2919,10 @@ function showABOutcomeToast(text) {
  * Displays the At-Bat Start overlay with matchup info and a 3-second auto-start countdown
  */
 function showAtBatStartScreen(onConfirmCallback) {
+  if (!localStorage.getItem('ump_username')) {
+    if (onConfirmCallback) onConfirmCallback();
+    return;
+  }
   if (!abStartOverlay) {
     if (onConfirmCallback) onConfirmCallback();
     return;
@@ -3113,6 +3673,8 @@ function switchTab(tabName) {
 
   if (tabName === 'stats') {
     updateProfileStatsUI();
+  } else if (tabName === 'leaderboard') {
+    renderLeaderboard('weekly');
   }
 }
 
@@ -3237,8 +3799,8 @@ function getRevisitedUrls(pitch, abData) {
   if (rawFilmUrl) {
     filmRoomUrl = rawFilmUrl;
   } else if (pitch && pitch.pitcher && pitch.batter) {
-    const query = encodeURIComponent(`${pitch.pitcher} vs ${pitch.batter}`);
-    filmRoomUrl = `https://www.mlb.com/video/search?q=${query}`;
+    const queryStr = `${pitch.pitcher} vs ${pitch.batter}` + (pitch.inning ? ` Inning ${pitch.inning}` : '');
+    filmRoomUrl = `https://www.mlb.com/video/search?q=${encodeURIComponent(queryStr)}`;
   }
 
   return { filmRoomUrl, umpScorecardUrl };
@@ -3247,7 +3809,7 @@ function getRevisitedUrls(pitch, abData) {
 /**
  * Displays the At-Bat Summary Overlay between weekly challenge at-bats
  */
-function showAtBatSummaryScreen(outcomeText) {
+async function showAtBatSummaryScreen(outcomeText) {
   if (!abSummaryOverlay) return;
   
   // Reset zoom and dimension line when showing summary
@@ -3261,19 +3823,94 @@ function showAtBatSummaryScreen(outcomeText) {
   const batter = lastAbBatter || "Batter";
   abSummaryMatchup.textContent = `P: ${pitcher.toUpperCase()} vs B: ${batter.toUpperCase()}`;
   
+  // Fetch headshot images and logos
+  if (abSummaryPitcherName) abSummaryPitcherName.textContent = pitcher.toUpperCase();
+  if (abSummaryBatterName) abSummaryBatterName.textContent = batter.toUpperCase();
+  
+  const targetPitch = lastCompletedPitch || currentPitch;
+  if (abSummaryPitcherHandBadge && targetPitch) {
+    abSummaryPitcherHandBadge.textContent = (targetPitch.pitcher_hand || "R") === "L" ? "LHP" : "RHP";
+  }
+  if (abSummaryBatterHandBadge && targetPitch) {
+    abSummaryBatterHandBadge.textContent = (targetPitch.batter_hand || "R") === "L" ? "LHB" : "RHB";
+  }
+
+  fetchPlayerMlbId(pitcher).then(pitcherId => {
+    if (abSummaryPitcherImg) {
+      abSummaryPitcherImg.src = pitcherId > 0 
+        ? `https://midfield.mlbstatic.com/v1/people/${pitcherId}/spots/120` 
+        : 'https://midfield.mlbstatic.com/v1/people/generic/spots/120';
+    }
+  });
+
+  fetchPlayerMlbId(batter).then(batterId => {
+    if (abSummaryBatterImg) {
+      abSummaryBatterImg.src = batterId > 0 
+        ? `https://midfield.mlbstatic.com/v1/people/${batterId}/spots/120` 
+        : 'https://midfield.mlbstatic.com/v1/people/generic/spots/120';
+    }
+  });
+
+  const pitcherTeam = getPlayerTeam(pitcher);
+  const batterTeam = getPlayerTeam(batter);
+
+  if (abSummaryPitcherLogo) {
+    abSummaryPitcherLogo.src = getTeamLogoUrl(pitcherTeam || "Orioles");
+  }
+  if (abSummaryBatterLogo) {
+    abSummaryBatterLogo.src = getTeamLogoUrl(batterTeam || "Tigers");
+  }
+  
   // Calculate accuracy only on taken pitches in this game session
-  const calledPitches = pitchHistory.filter(x => !x.isSwingPlay);
-  const correctCount = calledPitches.filter(x => x.userCorrect).length;
-  const accuracy = calledPitches.length > 0 ? Math.round((correctCount / calledPitches.length) * 100) : 100;
+  const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(x => !x.isSwingPlay);
+  const correctCount = abPitches.filter(x => x.userCorrect).length;
+  const accuracy = abPitches.length > 0 ? Math.round((correctCount / abPitches.length) * 100) : 100;
   
   abSummaryAccuracy.textContent = `${accuracy}%`;
-  abSummaryPitches.textContent = pitchHistory.length - currentAbStartHistoryIndex;
+  abSummaryPitches.textContent = abPitches.length;
   abSummaryBlurb.textContent = lastAbBlurb || "No play-by-play description available.";
   
+  // Populate Left 30% Panel: Pitch List
+  if (abSummaryPitchList) {
+    abSummaryPitchList.innerHTML = '';
+    
+    abPitches.forEach((item, index) => {
+      const isCorrect = item.userCorrect;
+      const callText = item.userCall === 'S' ? "STRIKE" : "BALL";
+      const absText = item.absCall === 'S' ? "STRIKE" : "BALL";
+      
+      const btn = document.createElement('button');
+      btn.className = `w-full text-left p-2 rounded-lg border text-[9px] font-mono-tech transition-all flex items-center justify-between cursor-pointer select-none ${
+        isCorrect 
+          ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20' 
+          : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+      }`;
+      btn.innerHTML = `
+        <div class="flex flex-col min-w-0">
+          <span class="text-white font-bold text-[10px]">#${index + 1}: ${item.pitchType}</span>
+          <span class="text-gray-400">${item.speedMph} MPH | ${callText} (ABS: ${absText})</span>
+        </div>
+        <span class="font-extrabold ${isCorrect ? 'text-green-400' : 'text-red-400'}">${isCorrect ? '✓' : '✗'}</span>
+      `;
+      
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        initAudio();
+        highlightPitchInSummary(index);
+      });
+      
+      abSummaryPitchList.appendChild(btn);
+    });
+  }
+
   // Draw At-Bat SVG Pitch Matrix
   drawAbSummarySVGMatrix();
   
-  const targetPitch = lastCompletedPitch || currentPitch;
+  // Highlight the last pitch automatically if available
+  if (abPitches.length > 0) {
+    highlightPitchInSummary(abPitches.length - 1);
+  }
+  
   // Connect film room and umpire scorecard URLs specifically to this at-bat's game
   let urls;
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs[activeWeeklyAbIndex]) {
@@ -3312,6 +3949,9 @@ function advanceNextAtBat() {
   quickStartNextPitch = true;
   activeAbEnded = false; // Reset AB ended status for the next AB
   
+  // Set start history index for the new AB
+  currentAbStartHistoryIndex = pitchHistory.length;
+  
   // Advance in weekly challenge playlist
   if (gameMode === 'weekly_challenge') {
     activeWeeklyAbIndex++;
@@ -3336,6 +3976,7 @@ function saveChallengeSessionToLocal() {
     dnfDisconnectsCount,
     weeklyPlaylistABs,
     activeWeeklyAbIndex,
+    activeGameIndex,
     profileStats: {
       avgAccuracy: 92.5,
       maxStreak: 12
@@ -3346,6 +3987,7 @@ function saveChallengeSessionToLocal() {
     data.activeChallenge = {
       gameMode,
       activeWeeklyAbIndex,
+      activeGameIndex,
       currentPitchIndex,
       historyLength: pitchHistory.length
     };
@@ -3366,6 +4008,7 @@ function loadSavedSessionFromLocal() {
     if (data.dnfDisconnectsCount) dnfDisconnectsCount = data.dnfDisconnectsCount;
     if (data.weeklyPlaylistABs) weeklyPlaylistABs = data.weeklyPlaylistABs;
     if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
+    if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
     
     // Check if the user had an active game running and closed it (tracks DNF disconnects)
     if (data.activeChallenge) {
@@ -3619,7 +4262,15 @@ function enterFullReviewPanel(userHistoryItem) {
   const isCorrect = userHistoryItem.userCorrect;
   showDecisionToast(isCorrect, userHistoryItem.absCall);
   if (isCorrect) {
-    playSuccessChime();
+    if (activeAbEnded && abStrikes === 3) {
+      playStrikeoutSirenSound();
+    } else {
+      if (userHistoryItem.absCall === 'S') {
+        playStrikeCallSound();
+      } else {
+        playBallCallSound();
+      }
+    }
   } else {
     playErrorBuzz();
   }
@@ -4605,12 +5256,17 @@ async function updateMatchupCardImagesAndStats(pitch) {
       : 'https://midfield.mlbstatic.com/v1/people/generic/spots/120';
   }
 
-  const parts = titleText.split(' vs. ');
-  const awayTeam = parts[0] || "Orioles";
-  const homeTeam = parts[1] || "Tigers";
+  // Dynamic team logo lookup based on player names
+  let pitcherTeam = getPlayerTeam(matchup.pitcher);
+  let batterTeam = getPlayerTeam(matchup.batter);
 
-  const pitcherTeam = activeIsTop ? homeTeam : awayTeam;
-  const batterTeam = activeIsTop ? awayTeam : homeTeam;
+  if (!pitcherTeam || !batterTeam) {
+    const parts = titleText.split(' vs. ');
+    const awayTeam = parts[0] || "Orioles";
+    const homeTeam = parts[1] || "Tigers";
+    if (!pitcherTeam) pitcherTeam = activeIsTop ? homeTeam : awayTeam;
+    if (!batterTeam) batterTeam = activeIsTop ? awayTeam : homeTeam;
+  }
 
   if (cardPitcherLogo) cardPitcherLogo.src = getTeamLogoUrl(pitcherTeam);
   if (cardBatterLogo) cardBatterLogo.src = getTeamLogoUrl(batterTeam);
@@ -4683,24 +5339,7 @@ function drawAbSummarySVGMatrix() {
     element.addEventListener('click', (e) => {
       e.stopPropagation();
       initAudio();
-      
-      if (abSummaryPitchDetails) {
-        const resultText = isCorrect ? "CORRECT CALL" : "MISSED CALL";
-        const resultColorClass = isCorrect ? "text-green-400" : "text-red-400";
-        const callText = item.userCall === 'S' ? "STRIKE" : "BALL";
-        const absText = item.absCall === 'S' ? "STRIKE" : "BALL";
-        
-        abSummaryPitchDetails.innerHTML = `
-          <span class="font-extrabold ${resultColorClass}">${resultText}</span><br>
-          Pitch #${index + 1}: <b class="text-white">${item.pitchType}</b> @ <b class="text-purple-400">${item.speedMph} MPH</b><br>
-          Your Call: <span class="text-white font-bold">${callText}</span> | ABS: <span class="text-white font-bold">${absText}</span>
-        `;
-      }
-      
-      element.setAttribute("stroke-width", "0.06");
-      setTimeout(() => {
-        element.setAttribute("stroke-width", "0.03");
-      }, 300);
+      highlightPitchInSummary(index);
     });
     
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -4708,6 +5347,145 @@ function drawAbSummarySVGMatrix() {
     element.appendChild(title);
     
     abSummarySvgPitches.appendChild(element);
+  });
+}
+
+function highlightPitchInSummary(index) {
+  const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(p => !p.isSwingPlay);
+  const item = abPitches[index];
+  if (!item) return;
+
+  if (abSummaryPitchDetails) {
+    const isCorrect = item.userCorrect;
+    const resultText = isCorrect ? "CORRECT CALL" : "MISSED CALL";
+    const resultColorClass = isCorrect ? "text-green-400" : "text-red-400";
+    const callText = item.userCall === 'S' ? "STRIKE" : "BALL";
+    const absText = item.absCall === 'S' ? "STRIKE" : "BALL";
+    
+    abSummaryPitchDetails.innerHTML = `
+      <span class="font-extrabold ${resultColorClass}">${resultText}</span><br>
+      Pitch #${index + 1}: <b class="text-white">${item.pitchType}</b> @ <b class="text-purple-400">${item.speedMph} MPH</b><br>
+      Your Call: <span class="text-white font-bold">${callText}</span> | ABS: <span class="text-white font-bold">${absText}</span>
+    `;
+  }
+
+  // Highlight button in the list
+  if (abSummaryPitchList) {
+    const buttons = abSummaryPitchList.querySelectorAll('button');
+    buttons.forEach((btn, btnIdx) => {
+      if (btnIdx === index) {
+        btn.classList.add('ring-2', 'ring-purple-500', 'border-purple-500/50');
+      } else {
+        btn.classList.remove('ring-2', 'ring-purple-500', 'border-purple-500/50');
+      }
+    });
+  }
+
+  // Highlight dot/shape in the SVG and dim others
+  if (abSummarySvgPitches) {
+    const elements = abSummarySvgPitches.children;
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      if (i === index) {
+        el.style.opacity = '1.0';
+        el.setAttribute('stroke-width', '0.07');
+        el.setAttribute('stroke', '#ffffff');
+        if (el.tagName === 'circle') {
+          el.setAttribute('r', '0.16');
+        }
+      } else {
+        el.style.opacity = '0.25';
+        el.setAttribute('stroke-width', '0.03');
+        const isCorrect = abPitches[i].userCorrect;
+        const originalStrokeColor = isCorrect ? '#4ade80' : '#f87171';
+        el.setAttribute('stroke', originalStrokeColor);
+        if (el.tagName === 'circle') {
+          el.setAttribute('r', '0.12');
+        }
+      }
+    }
+  }
+}
+
+function renderLeaderboard(type) {
+  if (!leaderboardTableBody || !leaderboardDivisionTitle) return;
+  
+  const buttons = [
+    { btn: leaderBtnWeekly, name: 'weekly' },
+    { btn: leaderBtnDaily, name: 'daily' },
+    { btn: leaderBtnAlltime, name: 'alltime' }
+  ];
+  
+  buttons.forEach(b => {
+    if (b.btn) {
+      if (b.name === type) {
+        b.btn.classList.replace('bg-gray-800', 'bg-purple-600');
+        b.btn.classList.replace('text-gray-400', 'text-white');
+      } else {
+        b.btn.classList.replace('bg-purple-600', 'bg-gray-800');
+        b.btn.classList.replace('text-white', 'text-gray-400');
+        b.btn.classList.add('hover:text-white');
+      }
+    }
+  });
+
+  let divisionTitle = "Umpire Crew Standings";
+  if (type === 'weekly') {
+    divisionTitle = "Weekly Challenge Standings";
+  } else if (type === 'daily') {
+    divisionTitle = "Streak Leaderboard (Consecutive Correct)";
+  } else if (type === 'alltime') {
+    divisionTitle = "All-Time Hall of Fame";
+  }
+  leaderboardDivisionTitle.textContent = divisionTitle.toUpperCase();
+
+  const activeHandle = localStorage.getItem('ump_username') || "YOU";
+
+  let rows = [];
+  if (type === 'weekly') {
+    rows = [
+      { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "98.8%", score: "990 pts" },
+      { rank: 2, name: "Miller_Crew", team: "Dodgers", accuracy: "97.2%", score: "972 pts" },
+      { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "95.5%", score: "955 pts" },
+      { rank: 4, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "94.8%", score: "948 pts", isUser: true },
+      { rank: 5, name: "Angel_H", team: "Astros", accuracy: "81.2%", score: "812 pts" },
+    ];
+  } else if (type === 'daily') {
+    rows = [
+      { rank: 1, name: "PerfectCall_99", team: "Yankees", accuracy: "98.5%", score: "24 Streak" },
+      { rank: 2, name: "LaserEye", team: "Rangers", accuracy: "96.4%", score: "19 Streak" },
+      { rank: 3, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.3%", score: "15 Streak", isUser: true },
+      { rank: 4, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
+      { rank: 5, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
+    ];
+  } else if (type === 'alltime') {
+    rows = [
+      { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "99.4%", score: "2,450 pts" },
+      { rank: 2, name: "PerfectCall_99", team: "Yankees", accuracy: "97.8%", score: "2,120 pts" },
+      { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "96.9%", score: "1,980 pts" },
+      { rank: 4, name: "Miller_Crew", team: "Dodgers", accuracy: "96.2%", score: "1,890 pts" },
+      { rank: 5, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.5%", score: "1,750 pts", isUser: true },
+    ];
+  }
+
+  leaderboardTableBody.innerHTML = '';
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.className = `border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}`;
+    
+    let rankHtml = `#${r.rank}`;
+    if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇 #1</span>`;
+    else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈 #2</span>`;
+    else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉 #3</span>`;
+
+    tr.innerHTML = `
+      <td class="p-3">${rankHtml}</td>
+      <td class="p-3 uppercase tracking-wider">${r.name}</td>
+      <td class="p-3 uppercase tracking-wider text-gray-400">${r.team}</td>
+      <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
+      <td class="p-3 text-center font-bold">${r.score}</td>
+    `;
+    leaderboardTableBody.appendChild(tr);
   });
 }
 

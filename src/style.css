@@ -433,7 +433,115 @@ body.ui-mode-cinematic #countdown-timer-container {
     height: 52px !important;
   }
   
+  /* Keep switcher visible on mobile but scale down padding slightly */
   body.ui-mode-cinematic #hud-header .font-mono-tech {
-    display: none !important; /* Hide switcher on small screens in Cinematic to save space */
+    padding: 2px !important;
+    top: 12px !important;
+    right: 12px !important;
   }
+}
+
+/* --- COLLAPSIBLE MATCHUP CARD STYLES --- */
+#matchup-card {
+  transition: all 0.30s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+#matchup-card.collapsed > div:not(:first-child) {
+  display: none !important;
+}
+#matchup-card.collapsed {
+  height: auto !important;
+  gap: 0 !important;
+  padding-bottom: 8px !important;
+}
+#matchup-card.collapsed #matchup-toggle-icon {
+  transform: rotate(180deg);
+}
+
+/* --- RESTORED CAMERA & SANDBOX SETTINGS PANEL --- */
+#camera-controls-panel {
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: top right;
+  background: rgba(8, 12, 22, 0.95);
+  border: 1px solid rgba(147, 51, 234, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 20px rgba(147, 51, 234, 0.15);
+  backdrop-filter: blur(16px);
+}
+#camera-controls-panel.opacity-100 {
+  transform: scale(1.0) !important;
+}
+#camera-controls-panel select {
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+/* --- ARCADE WELCOME & REBRAND STYLING (UmpSim3000) --- */
+.bg-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 4px;
+  z-index: 10;
+}
+
+@keyframes flash-text {
+  0%, 100% { opacity: 1; text-shadow: 0 0 8px rgba(250, 204, 21, 0.5); }
+  50% { opacity: 0.2; text-shadow: none; }
+}
+.animate-flash-text {
+  animation: flash-text 1.5s infinite;
+}
+
+.shadow-neon-box-glow {
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.2), 
+              inset 0 0 15px rgba(168, 85, 247, 0.1) !important;
+}
+
+/* Scrollbar customization for pitch lists */
+#ab-summary-pitch-list::-webkit-scrollbar {
+  width: 4px;
+}
+#ab-summary-pitch-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+#ab-summary-pitch-list::-webkit-scrollbar-thumb {
+  background: rgba(147, 51, 234, 0.3);
+  border-radius: 9999px;
+}
+#ab-summary-pitch-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 51, 234, 0.6);
+}
+
+/* Arcade Text Glow & Marquee Animations */
+@keyframes textGlowPulse {
+  0%, 100% {
+    text-shadow: 0 0 10px rgba(168, 85, 247, 0.6), 0 0 20px rgba(168, 85, 247, 0.3), 0 0 30px rgba(168, 85, 247, 0.2);
+  }
+  33% {
+    text-shadow: 0 0 12px rgba(236, 72, 153, 0.6), 0 0 24px rgba(236, 72, 153, 0.3), 0 0 36px rgba(236, 72, 153, 0.2);
+  }
+  66% {
+    text-shadow: 0 0 10px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3), 0 0 30px rgba(59, 130, 246, 0.2);
+  }
+}
+
+#welcome-screen h1 {
+  animation: textGlowPulse 4s infinite, glitchText 6s infinite;
+}
+
+@keyframes glitchText {
+  0%, 95%, 100% { transform: skew(0deg); }
+  96% { transform: skew(-4deg); }
+  97% { transform: skew(4deg); }
+  98% { transform: skew(-2deg); }
+  99% { transform: skew(2deg); }
+}
+
+/* Scoreboard Neon Glows */
+.border-cyan-500\/30 {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.15), inset 0 0 10px rgba(6, 182, 212, 0.05);
+}
+
+.border-purple-500\/30 {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.15), inset 0 0 10px rgba(168, 85, 247, 0.05);
 }
