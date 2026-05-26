@@ -515,63 +515,92 @@ function playBallWhooshSound(speedMph) {
 function playStrikeCallSound() {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
-  const osc1 = audioCtx.createOscillator();
-  const osc2 = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
   
-  osc1.type = 'triangle';
-  osc1.frequency.setValueAtTime(293.66, now);
-  osc1.frequency.linearRampToValueAtTime(587.33, now + 0.15);
+  // 1. Sharp punchy noise burst (the transient breath of "STRIKE!")
+  const bufferSize = audioCtx.sampleRate * 0.05;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+  const noiseFilter = audioCtx.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.frequency.setValueAtTime(1200, now);
+  noiseFilter.Q.setValueAtTime(5.0, now);
   
-  osc2.type = 'sawtooth';
-  osc2.frequency.setValueAtTime(295.66, now);
-  osc2.frequency.linearRampToValueAtTime(589.33, now + 0.15);
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.setValueAtTime(0.15, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
   
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = 'peaking';
-  filter.frequency.setValueAtTime(800, now);
-  filter.Q.setValueAtTime(2.0, now);
-  
-  gain.gain.setValueAtTime(0.25, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-  
-  osc1.connect(filter);
-  osc2.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioCtx.destination);
-  
-  osc1.start(now);
-  osc2.start(now);
-  osc1.stop(now + 0.35);
-  osc2.stop(now + 0.35);
+  noise.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+  noiseGain.connect(audioCtx.destination);
+  noise.start(now);
+  noise.stop(now + 0.05);
+
+  // 2. High-energy, soaring retro chord (resonant C5/E5/G5 with quick sweep)
+  const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+  notes.forEach((freq, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = idx === 3 ? 'square' : 'triangle'; // C6 is square for retro sparkle
+    osc.frequency.setValueAtTime(freq - 50, now);
+    osc.frequency.exponentialRampToValueAtTime(freq, now + 0.08); // Quick upward flex
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(freq * 1.5, now);
+    filter.Q.setValueAtTime(3.0, now);
+    
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    osc.start(now);
+    osc.stop(now + 0.25);
+  });
 }
 
 function playBallCallSound() {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
+  
+  // A pleasant, round, organic sine wave bubble pop
   const osc1 = audioCtx.createOscillator();
   const osc2 = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
+  const gain1 = audioCtx.createGain();
+  const gain2 = audioCtx.createGain();
   
   osc1.type = 'sine';
-  osc1.frequency.setValueAtTime(392.00, now);
-  osc1.frequency.exponentialRampToValueAtTime(261.63, now + 0.2);
+  osc1.frequency.setValueAtTime(261.63, now); // C4
+  osc1.frequency.exponentialRampToValueAtTime(196.00, now + 0.15); // Descend to G3
   
   osc2.type = 'sine';
-  osc2.frequency.setValueAtTime(493.88, now);
-  osc2.frequency.exponentialRampToValueAtTime(329.63, now + 0.2);
+  osc2.frequency.setValueAtTime(329.63, now); // E4
+  osc2.frequency.exponentialRampToValueAtTime(220.00, now + 0.15); // Descend to A3
   
-  gain.gain.setValueAtTime(0.2, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  gain1.gain.setValueAtTime(0.2, now);
+  gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
   
-  osc1.connect(gain);
-  osc2.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain2.gain.setValueAtTime(0.15, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  
+  osc1.connect(gain1);
+  gain1.connect(audioCtx.destination);
+  
+  osc2.connect(gain2);
+  gain2.connect(audioCtx.destination);
   
   osc1.start(now);
   osc2.start(now);
-  osc1.stop(now + 0.3);
-  osc2.stop(now + 0.3);
+  osc1.stop(now + 0.2);
+  osc2.stop(now + 0.2);
 }
 
 function playStrikeoutSirenSound() {
@@ -620,6 +649,7 @@ function playStrikeoutSirenSound() {
 
 function loginUserSession(handleVal) {
   localStorage.setItem('ump_username', handleVal);
+  localStorage.setItem('pitch_ump_last_handle', handleVal);
   updateProfileStatsUI();
   playCoinSound();
   
@@ -724,6 +754,10 @@ export function startGameSession() {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
   cacheDOM();
+  const lastHandle = localStorage.getItem('pitch_ump_last_handle');
+  if (lastHandle && loginHandleInput) {
+    loginHandleInput.value = lastHandle;
+  }
   attachEvents();
   initUiModeSwitcher();
   
@@ -1016,6 +1050,60 @@ function cacheDOM() {
   leaderBtnAlltime = document.getElementById('leader-btn-alltime');
   leaderboardTableBody = document.getElementById('leaderboard-table-body');
   leaderboardDivisionTitle = document.getElementById('leaderboard-division-title');
+}
+
+function submitLoginAction() {
+  initAudio();
+  
+  const handleVal = loginHandleInput ? loginHandleInput.value.trim() : "";
+  const pinVal = loginPinInput ? loginPinInput.value.trim() : "";
+  
+  if (handleVal.length < 3) {
+    if (loginErrorMsg) {
+      loginErrorMsg.textContent = "ERROR: HANDLE MUST BE AT LEAST 3 CHARACTERS";
+      loginErrorMsg.classList.remove('hidden');
+    }
+    return;
+  }
+  
+  if (!/^\d{4,8}$/.test(pinVal)) {
+    if (loginErrorMsg) {
+      loginErrorMsg.textContent = "ERROR: PIN MUST BE 4 TO 8 DIGITS";
+      loginErrorMsg.classList.remove('hidden');
+    }
+    return;
+  }
+  
+  const handleValNormalized = handleVal.toUpperCase();
+  let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
+  
+  if (users[handleValNormalized] === undefined) {
+    // User does not exist, show confirm registration overlay
+    if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+    if (loginConfirmBox) {
+      loginConfirmBox.classList.remove('hidden');
+      loginConfirmBox.classList.add('flex');
+    }
+  } else {
+    // User exists, verify PIN
+    if (users[handleValNormalized] === pinVal) {
+      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.add('hidden');
+        loginConfirmBox.classList.remove('flex');
+      }
+      loginUserSession(handleValNormalized);
+    } else {
+      if (loginErrorMsg) {
+        loginErrorMsg.textContent = "ERROR: INVALID PIN FOR THIS HANDLE";
+        loginErrorMsg.classList.remove('hidden');
+      }
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.add('hidden');
+        loginConfirmBox.classList.remove('flex');
+      }
+    }
+  }
 }
 
 function attachEvents() {
@@ -1377,59 +1465,18 @@ function attachEvents() {
   if (btnWelcomeStart) {
     btnWelcomeStart.addEventListener('click', (e) => {
       e.stopPropagation();
-      initAudio();
-      
-      const handleVal = loginHandleInput ? loginHandleInput.value.trim() : "";
-      const pinVal = loginPinInput ? loginPinInput.value.trim() : "";
-      
-      if (handleVal.length < 3) {
-        if (loginErrorMsg) {
-          loginErrorMsg.textContent = "ERROR: HANDLE MUST BE AT LEAST 3 CHARACTERS";
-          loginErrorMsg.classList.remove('hidden');
-        }
-        return;
-      }
-      
-      if (!/^\d{4,8}$/.test(pinVal)) {
-        if (loginErrorMsg) {
-          loginErrorMsg.textContent = "ERROR: PIN MUST BE 4 TO 8 DIGITS";
-          loginErrorMsg.classList.remove('hidden');
-        }
-        return;
-      }
-      
-      const handleValNormalized = handleVal.toUpperCase();
-      let users = JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
-      
-      if (users[handleValNormalized] === undefined) {
-        // User does not exist, show confirm registration overlay
-        if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
-        if (loginConfirmBox) {
-          loginConfirmBox.classList.remove('hidden');
-          loginConfirmBox.classList.add('flex');
-        }
-      } else {
-        // User exists, verify PIN
-        if (users[handleValNormalized] === pinVal) {
-          if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
-          if (loginConfirmBox) {
-            loginConfirmBox.classList.add('hidden');
-            loginConfirmBox.classList.remove('flex');
-          }
-          loginUserSession(handleValNormalized);
-        } else {
-          if (loginErrorMsg) {
-            loginErrorMsg.textContent = "ERROR: INVALID PIN FOR THIS HANDLE";
-            loginErrorMsg.classList.remove('hidden');
-          }
-          if (loginConfirmBox) {
-            loginConfirmBox.classList.add('hidden');
-            loginConfirmBox.classList.remove('flex');
-          }
-        }
-      }
+      submitLoginAction();
     });
   }
+
+  const handleLoginEnter = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitLoginAction();
+    }
+  };
+  if (loginHandleInput) loginHandleInput.addEventListener('keydown', handleLoginEnter);
+  if (loginPinInput) loginPinInput.addEventListener('keydown', handleLoginEnter);
 
   if (btnLoginConfirmCreate) {
     btnLoginConfirmCreate.addEventListener('click', (e) => {
@@ -3336,6 +3383,74 @@ function renderScoreboardDashboard() {
   finalUmpAccuracy.textContent = `${umpAcc}%`;
   finalUmpStats.textContent = `${umpCorrectCount} OF ${calledPitches.length} CORRECT`;
 
+  // Save game result to persistent user profile stats database in localStorage
+  const username = localStorage.getItem('ump_username');
+  if (username) {
+    const statsKey = `pitch_ump_stats_${username}`;
+    let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    
+    if (gameMode === 'weekly_challenge') {
+      userStats.completedWeekly = (userStats.completedWeekly || 0) + 1;
+    }
+    userStats.dnfs = dnfDisconnectsCount;
+    
+    // Calculate new overall accuracy combining all history sessions
+    let totalCallsSum = calledPitches.length;
+    let totalCorrectSum = userCorrectCount;
+    if (userStats.history) {
+      userStats.history.forEach(h => {
+        totalCallsSum += h.totalCalls;
+        totalCorrectSum += h.correctCalls;
+      });
+    }
+    userStats.overallAccuracy = totalCallsSum > 0 ? Math.round((totalCorrectSum / totalCallsSum) * 100) : 100;
+    
+    // Calculate max streak in this game and update overall max streak
+    let currentStreak = 0;
+    let maxGameStreak = 0;
+    calledPitches.forEach(p => {
+      if (p.userCorrect) {
+        currentStreak++;
+        if (currentStreak > maxGameStreak) maxGameStreak = currentStreak;
+      } else {
+        currentStreak = 0;
+      }
+    });
+    if (maxGameStreak > (userStats.maxStreak || 0)) {
+      userStats.maxStreak = maxGameStreak;
+    }
+    
+    let gameName = "Practice Mode";
+    let matchup = "N/A";
+    if (gameMode === 'weekly_challenge') {
+      const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
+      gameName = gameData ? gameData.title : "Weekly Challenge";
+    } else if (gameMode === 'orioles_full') {
+      gameName = "Orioles simulation";
+    } else if (gameMode === 'daily_streak') {
+      gameName = "Daily Streak";
+    }
+    
+    if (calledPitches.length > 0 && calledPitches[0].pitchData) {
+      const pData = calledPitches[0].pitchData;
+      const matchupNames = getMatchupNames(pData);
+      matchup = `${matchupNames.pitcher} vs ${matchupNames.batter}`;
+    }
+    
+    if (!userStats.history) userStats.history = [];
+    userStats.history.push({
+      gameName,
+      matchup,
+      correctCalls: userCorrectCount,
+      totalCalls: calledPitches.length,
+      accuracy: userAcc,
+      date: new Date().toLocaleDateString()
+    });
+    
+    localStorage.setItem(statsKey, JSON.stringify(userStats));
+    updateProfileStatsUI();
+  }
+
   let rating = 'ROOKIE BALL';
   let desc = 'You struggled to see the zone. Hit the training facilities and try again!';
   
@@ -4249,15 +4364,63 @@ function updateProfileStatsUI() {
   const maxStrEl = document.getElementById('stats-max-streak');
   const compWkEl = document.getElementById('stats-completed-weekly');
   const dnfEl = document.getElementById('stats-dnfs');
+  const historyTableBody = document.getElementById('history-table-body');
   
-  if (avgAccEl) avgAccEl.textContent = "92.5%";
-  if (maxStrEl) maxStrEl.textContent = "12";
-  if (compWkEl) {
-    const completed = activeWeeklyAbIndex;
-    const total = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || 16;
-    compWkEl.textContent = completed === total ? `Complete (${total} ABs)` : `${completed} / ${total} ABs`;
+  const username = localStorage.getItem('ump_username');
+  if (!username) {
+    if (avgAccEl) avgAccEl.textContent = "--";
+    if (maxStrEl) maxStrEl.textContent = "--";
+    if (compWkEl) compWkEl.textContent = "--";
+    if (dnfEl) dnfEl.textContent = "0";
+    if (historyTableBody) historyTableBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500">Log in to view stats</td></tr>';
+    return;
   }
-  if (dnfEl) dnfEl.textContent = dnfDisconnectsCount;
+  
+  const statsKey = `pitch_ump_stats_${username}`;
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  
+  if (avgAccEl) {
+    avgAccEl.textContent = userStats.overallAccuracy !== null && userStats.overallAccuracy !== undefined ? `${userStats.overallAccuracy}%` : "--";
+  }
+  if (maxStrEl) {
+    maxStrEl.textContent = userStats.maxStreak || "0";
+  }
+  if (compWkEl) {
+    const total = weeklyPlaylistABs.length || (typeof extractAtBatsFromWeeklyData === 'function' ? extractAtBatsFromWeeklyData().length : 16) || 16;
+    compWkEl.textContent = `${userStats.completedWeekly || 0} / ${total} Games`;
+  }
+  if (dnfEl) {
+    dnfEl.textContent = userStats.dnfs !== undefined ? userStats.dnfs : dnfDisconnectsCount;
+  }
+  
+  if (historyTableBody) {
+    historyTableBody.innerHTML = '';
+    if (!userStats.history || userStats.history.length === 0) {
+      historyTableBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500">No challenge history recorded yet.</td></tr>';
+    } else {
+      userStats.history.forEach(item => {
+        const row = document.createElement('tr');
+        row.className = 'border-b border-white/5 hover:bg-white/2 bg-slate-900/50';
+        
+        row.innerHTML = `
+          <td class="p-3">
+            <span class="text-xs font-mono-tech uppercase text-gray-300 font-bold block">${item.gameName}</span>
+            <span class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-0.5">${item.date}</span>
+          </td>
+          <td class="p-3 font-semibold text-gray-300 font-mono-tech text-[10px]">
+            ${item.matchup}
+          </td>
+          <td class="p-3 text-center text-xs font-mono-tech text-gray-300 font-bold">
+            ${item.correctCalls} / ${item.totalCalls}
+          </td>
+          <td class="p-3 text-center text-xs font-mono-tech font-black text-purple-400">
+            ${item.accuracy}%
+          </td>
+        `;
+        historyTableBody.appendChild(row);
+      });
+    }
+  }
 }
 
 // Sandbox Tuning Helpers
