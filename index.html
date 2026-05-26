@@ -472,7 +472,7 @@
         <!-- Utility Button Group (Main Menu & Settings Toggle) -->
         <div class="flex items-center gap-2">
           <!-- UI Layout Mode Switcher -->
-          <div class="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl pointer-events-auto font-mono-tech text-[8px] h-full min-h-[48px]">
+          <div id="ui-mode-switcher-container" class="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl pointer-events-auto font-mono-tech text-[8px] h-full min-h-[48px]">
             <button id="btn-ui-classic" class="px-2 py-2 rounded-lg text-white bg-purple-600 font-bold transition-all cursor-pointer select-none">CLASSIC</button>
             <button id="btn-ui-adaptive" class="px-2 py-2 rounded-lg text-white/50 hover:text-white transition-all cursor-pointer select-none">ADAPTIVE</button>
             <button id="btn-ui-cinematic" class="px-2 py-2 rounded-lg text-white/50 hover:text-white transition-all cursor-pointer select-none">CINEMATIC</button>
@@ -855,9 +855,14 @@
             </div>
           </div>
           
-          <button id="btn-ab-start-confirm" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-            Ready to Play [Space]
-          </button>
+          <div class="flex flex-col gap-2.5 w-full">
+            <button id="btn-ab-start-confirm" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+              Ready to Play [Space]
+            </button>
+            <button id="btn-ab-start-exit" class="w-full py-2.5 bg-gray-900 border border-white/10 hover:bg-gray-800 rounded-lg text-[10px] font-bold uppercase tracking-wider text-gray-400 hover:text-white transition-colors cursor-pointer">
+              Exit to Main Menu
+            </button>
+          </div>
         </div>
       </div>
 
@@ -921,6 +926,21 @@
             <div class="flex flex-col border-l border-white/15">
               <span class="text-[8px] font-mono-tech text-gray-400">TOTAL AB PITCHES</span>
               <span id="ab-summary-pitches" class="text-2xl font-black text-purple-400 font-mono-tech mt-0.5 shadow-neon-abs-glow">--</span>
+            </div>
+          </div>
+
+          <!-- Weekly Challenge Progress Details (Visible only when in weekly challenge mode) -->
+          <div id="ab-summary-weekly-challenge-details" class="hidden flex-col gap-2 bg-purple-950/20 border border-purple-500/25 rounded-xl p-3.5 mt-2 w-full select-none text-left">
+            <div class="flex justify-between items-center text-[8px] font-mono-tech font-bold text-purple-400">
+              <span>CHALLENGE PROGRESS</span>
+              <span id="ab-summary-weekly-progress-text">3 / 16 AT-BATS (25%)</span>
+            </div>
+            <div class="w-full bg-slate-950/80 rounded-full h-3 border border-white/10 overflow-hidden relative shadow-inner">
+              <div id="ab-summary-weekly-progress-bar" class="bg-gradient-to-r from-purple-500 via-pink-500 to-indigo-500 h-full w-0 rounded-full shadow-[0_0_8px_rgba(168,85,247,0.5)] transition-all duration-1000 ease-out"></div>
+            </div>
+            <div class="flex justify-between items-center text-[8px] font-mono-tech font-bold text-gray-400 mt-1">
+              <span>OVERALL CHALLENGE ACCURACY</span>
+              <span id="ab-summary-weekly-accuracy-text" class="text-blue-400 font-extrabold text-[10px]">95%</span>
             </div>
           </div>
 

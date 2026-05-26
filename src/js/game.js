@@ -222,11 +222,12 @@ let settingsUiClassic, settingsUiAdaptive, settingsUiCinematic;
 let abSummaryPitcherImg, abSummaryPitcherLogo, abSummaryPitcherName, abSummaryPitcherHandBadge;
 let abSummaryBatterImg, abSummaryBatterLogo, abSummaryBatterName, abSummaryBatterHandBadge;
 let abSummaryPitchList;
+let abSummaryWeeklyChallengeDetails, abSummaryWeeklyProgressText, abSummaryWeeklyProgressBar, abSummaryWeeklyAccuracyText;
 
 // Matchup Walkup card (ab-start-overlay) faceoff elements
 let abStartPitcherImg, abStartPitcherLogo, abStartPitcherStats;
 let abStartBatterImg, abStartBatterLogo, abStartBatterStats;
-let abStartPitcherName, abStartBatterName;
+let abStartPitcherName, abStartBatterName, btnAbStartExit;
 
 // Leaderboard Buttons & Table
 let leaderBtnWeekly, leaderBtnDaily, leaderBtnAlltime, leaderboardTableBody, leaderboardDivisionTitle;
@@ -1033,6 +1034,10 @@ function cacheDOM() {
   abSummaryBatterName = document.getElementById('ab-summary-batter-name');
   abSummaryBatterHandBadge = document.getElementById('ab-summary-batter-hand-badge');
   abSummaryPitchList = document.getElementById('ab-summary-pitch-list');
+  abSummaryWeeklyChallengeDetails = document.getElementById('ab-summary-weekly-challenge-details');
+  abSummaryWeeklyProgressText = document.getElementById('ab-summary-weekly-progress-text');
+  abSummaryWeeklyProgressBar = document.getElementById('ab-summary-weekly-progress-bar');
+  abSummaryWeeklyAccuracyText = document.getElementById('ab-summary-weekly-accuracy-text');
 
   // Matchup Walkup card faceoff elements
   abStartPitcherImg = document.getElementById('ab-start-pitcher-img');
@@ -1043,6 +1048,7 @@ function cacheDOM() {
   abStartBatterStats = document.getElementById('ab-start-batter-stats');
   abStartPitcherName = document.getElementById('ab-start-pitcher');
   abStartBatterName = document.getElementById('ab-start-batter');
+  btnAbStartExit = document.getElementById('btn-ab-start-exit');
 
   // Leaderboard Buttons & Table
   leaderBtnWeekly = document.getElementById('leader-btn-weekly');
@@ -1328,6 +1334,17 @@ function attachEvents() {
     });
   }
 
+  if (btnAbStartExit) {
+    btnAbStartExit.addEventListener('click', () => {
+      initAudio();
+      if (abStartOverlay) {
+        abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+        abStartOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+      }
+      goToMainMenu();
+    });
+  }
+
   // At-Bat Summary Home button
   if (btnAbSummaryHome) {
     btnAbSummaryHome.addEventListener('click', () => {
@@ -1610,7 +1627,7 @@ function attachEvents() {
     camBtnUmp, camBtnSide, camBtnTop, selectSpeed, btnSettingsToggle, btnDashboardSettingsToggle,
     btnMainMenu, selectInning, btnAbSummaryAdvance, btnResumeGame,
     settingsTabGen, settingsTabSandbox, rngMannequinOpacity, selectBattersEyeColor,
-    btnViewDetails, btnQuickContinue, btnStartWeeklyChallenge, btnAbStartConfirm, btnAbSummaryHome,
+    btnViewDetails, btnQuickContinue, btnStartWeeklyChallenge, btnAbStartConfirm, btnAbStartExit, btnAbSummaryHome,
     btnWelcomeStart, btnConfirmTeam, btnLoginConfirmCreate, btnLoginConfirmCancel
   ].forEach(btn => {
     if (btn) {
@@ -3010,8 +3027,78 @@ function showAtBatStartScreen(onConfirmCallback) {
     const matchup = getMatchupNames(pitch);
     if (abStartPitcher) abStartPitcher.textContent = matchup.pitcher;
     if (abStartBatter) abStartBatter.textContent = matchup.batter;
-    if (abStartPitcherHand) abStartPitcherHand.textContent = pitch.pitcher_hand || 'RHP';
-    if (abStartBatterHand) abStartBatterHand.textContent = pitch.batter_hand || 'RHB';
+
+    const pH = pitch.pitcher_hand || 'RHP';
+    const bH = pitch.batter_hand || 'RHB';
+    if (abStartPitcherHand) {
+      abStartPitcherHand.textContent = pH;
+      if (pH.includes("R")) {
+        abStartPitcherHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25";
+      } else {
+        abStartPitcherHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/25";
+      }
+    }
+    if (abStartBatterHand) {
+      abStartBatterHand.textContent = bH;
+      if (bH.includes("L")) {
+        abStartBatterHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25";
+      } else {
+        abStartBatterHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25";
+      }
+    }
+
+    // Dynamic headshot lookup
+    fetchPlayerMlbId(matchup.pitcher).then(pitcherId => {
+      if (abStartPitcherImg) {
+        abStartPitcherImg.src = pitcherId > 0 
+          ? `https://midfield.mlbstatic.com/v1/people/${pitcherId}/spots/120` 
+          : 'https://midfield.mlbstatic.com/v1/people/generic/spots/120';
+      }
+    });
+    fetchPlayerMlbId(matchup.batter).then(batterId => {
+      if (abStartBatterImg) {
+        abStartBatterImg.src = batterId > 0 
+          ? `https://midfield.mlbstatic.com/v1/people/${batterId}/spots/120` 
+          : 'https://midfield.mlbstatic.com/v1/people/generic/spots/120';
+      }
+    });
+
+    // Dynamic team logos
+    let pitcherTeam = getPlayerTeam(matchup.pitcher);
+    let batterTeam = getPlayerTeam(matchup.batter);
+    if (!pitcherTeam || !batterTeam) {
+      let titleText = "ACTIVE MATCHUP";
+      if (gameMode === 'weekly_challenge') {
+        const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
+        if (gameData) titleText = gameData.title;
+      }
+      const parts = titleText.split(' vs. ');
+      const awayTeam = parts[0] || "Orioles";
+      const homeTeam = parts[1] || "Tigers";
+      const pitchIsTop = pitch.is_top !== undefined ? pitch.is_top : activeIsTop;
+      if (!pitcherTeam) pitcherTeam = pitchIsTop ? homeTeam : awayTeam;
+      if (!batterTeam) batterTeam = pitchIsTop ? awayTeam : homeTeam;
+    }
+    if (abStartPitcherLogo) abStartPitcherLogo.src = getTeamLogoUrl(pitcherTeam);
+    if (abStartBatterLogo) abStartBatterLogo.src = getTeamLogoUrl(batterTeam);
+
+    // Dynamic stats
+    if (abStartPitcherStats) {
+      const isLHP = pH === "LHP";
+      if (matchup.pitcher === "Corbin Burnes") abStartPitcherStats.textContent = "ERA: 2.94 | SO: 200 | WHIP: 1.07";
+      else if (matchup.pitcher === "Tarik Skubal") abStartPitcherStats.textContent = "ERA: 2.58 | SO: 228 | WHIP: 0.95";
+      else if (matchup.pitcher === "Gerrit Cole") abStartPitcherStats.textContent = "ERA: 3.12 | SO: 180 | WHIP: 1.10";
+      else if (matchup.pitcher === "Zack Wheeler") abStartPitcherStats.textContent = "ERA: 2.70 | SO: 224 | WHIP: 0.96";
+      else abStartPitcherStats.textContent = `ERA: 3.24 | SO: 165 | WHIP: 1.12 (${isLHP ? 'LHP' : 'RHP'})`;
+    }
+    if (abStartBatterStats) {
+      if (matchup.batter === "Aaron Judge") abStartBatterStats.textContent = "AVG: .322 | HR: 58 | OPS: 1.159";
+      else if (matchup.batter === "Juan Soto") abStartBatterStats.textContent = "AVG: .288 | HR: 41 | OPS: .989";
+      else if (matchup.batter === "Gunnar Henderson") abStartBatterStats.textContent = "AVG: .281 | HR: 37 | OPS: .893";
+      else if (matchup.batter === "Shohei Ohtani") abStartBatterStats.textContent = "AVG: .310 | HR: 54 | OPS: 1.036";
+      else if (matchup.batter === "Francisco Lindor") abStartBatterStats.textContent = "AVG: .273 | HR: 33 | OPS: .844";
+      else abStartBatterStats.textContent = `AVG: .268 | HR: 18 | OPS: .795 (${bH})`;
+    }
 
     // Populate live game context
     if (abStartInning) {
@@ -3376,9 +3463,27 @@ function renderScoreboardDashboard() {
   
   const umpCorrectCount = calledPitches.filter(x => x.realCorrect).length;
   const umpAcc = calledPitches.length > 0 ? Math.round((umpCorrectCount / calledPitches.length) * 100) : 100;
+
+  let displayPitchesCount = calledPitches.length;
+  let displayCorrectCount = userCorrectCount;
+  let displayAcc = userAcc;
+
+  if (gameMode === 'weekly_challenge') {
+    let overallCorrect = 0;
+    let overallTotal = 0;
+    weeklyPlaylistABs.forEach(ab => {
+      if (ab.completed) {
+        overallCorrect += ab.userCorrectCount || 0;
+        overallTotal += ab.userTotalCount || 0;
+      }
+    });
+    displayPitchesCount = overallTotal;
+    displayCorrectCount = overallCorrect;
+    displayAcc = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
+  }
   
-  finalUserAccuracy.textContent = `${userAcc}%`;
-  finalUserStats.textContent = `${userCorrectCount} OF ${calledPitches.length} CORRECT`;
+  finalUserAccuracy.textContent = `${displayAcc}%`;
+  finalUserStats.textContent = `${displayCorrectCount} OF ${displayPitchesCount} CORRECT`;
   
   finalUmpAccuracy.textContent = `${umpAcc}%`;
   finalUmpStats.textContent = `${umpCorrectCount} OF ${calledPitches.length} CORRECT`;
@@ -3395,8 +3500,8 @@ function renderScoreboardDashboard() {
     userStats.dnfs = dnfDisconnectsCount;
     
     // Calculate new overall accuracy combining all history sessions
-    let totalCallsSum = calledPitches.length;
-    let totalCorrectSum = userCorrectCount;
+    let totalCallsSum = (gameMode === 'weekly_challenge') ? displayPitchesCount : calledPitches.length;
+    let totalCorrectSum = (gameMode === 'weekly_challenge') ? displayCorrectCount : userCorrectCount;
     if (userStats.history) {
       userStats.history.forEach(h => {
         totalCallsSum += h.totalCalls;
@@ -3441,14 +3546,27 @@ function renderScoreboardDashboard() {
     userStats.history.push({
       gameName,
       matchup,
-      correctCalls: userCorrectCount,
-      totalCalls: calledPitches.length,
-      accuracy: userAcc,
+      correctCalls: (gameMode === 'weekly_challenge') ? displayCorrectCount : userCorrectCount,
+      totalCalls: (gameMode === 'weekly_challenge') ? displayPitchesCount : calledPitches.length,
+      accuracy: (gameMode === 'weekly_challenge') ? displayAcc : userAcc,
       date: new Date().toLocaleDateString()
     });
     
     localStorage.setItem(statsKey, JSON.stringify(userStats));
     updateProfileStatsUI();
+
+    // Submit global scores to KVDB
+    if (gameMode === 'weekly_challenge') {
+      const weeklyPoints = displayCorrectCount * 10;
+      submitGlobalScore('weekly', username, activeFavoriteTeam || 'None', `${displayAcc}%`, `${weeklyPoints} pts`, weeklyPoints);
+    } else if (gameMode === 'daily_streak') {
+      submitGlobalScore('daily', username, activeFavoriteTeam || 'None', `${userAcc}%`, `${userCorrectCount} Streak`, userCorrectCount);
+    }
+    
+    // Always sync overall stats to all-time leaderboard
+    const totalGames = userStats.history ? userStats.history.length : 1;
+    const alltimeScore = Math.round((userStats.overallAccuracy || 90) * 10 + totalGames * 5);
+    submitGlobalScore('alltime', username, activeFavoriteTeam || 'None', `${userStats.overallAccuracy || 90}%`, `${alltimeScore} pts`, alltimeScore);
   }
 
   let rating = 'ROOKIE BALL';
@@ -3823,6 +3941,7 @@ function startWeeklyChallengeGame(gameIdx) {
   gameMode = 'weekly_challenge';
   activeGameIndex = gameIdx;
   isGamePaused = false;
+  isSessionOver = false;
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
@@ -3843,7 +3962,10 @@ function startWeeklyChallengeGame(gameIdx) {
         umpScorecardUrl: gameData.ump_scorecard_url,
         pitches: currentPitches,
         batter: currentPitches[0].batter,
-        pitcher: currentPitches[0].pitcher
+        pitcher: currentPitches[0].pitcher,
+        completed: false,
+        userCorrectCount: 0,
+        userTotalCount: 0
       });
       currentPitches = [];
     }
@@ -3859,7 +3981,10 @@ function startWeeklyChallengeGame(gameIdx) {
       umpScorecardUrl: gameData.ump_scorecard_url,
       pitches: currentPitches,
       batter: currentPitches[0].batter,
-      pitcher: currentPitches[0].pitcher
+      pitcher: currentPitches[0].pitcher,
+      completed: false,
+      userCorrectCount: 0,
+      userTotalCount: 0
     });
   }
   
@@ -3878,6 +4003,7 @@ function startDailyStreakChallenge() {
 
   gameMode = 'daily_streak';
   isGamePaused = false;
+  isSessionOver = false;
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
@@ -3967,10 +4093,22 @@ async function showAtBatSummaryScreen(outcomeText) {
   
   const targetPitch = lastCompletedPitch || currentPitch;
   if (abSummaryPitcherHandBadge && targetPitch) {
-    abSummaryPitcherHandBadge.textContent = (targetPitch.pitcher_hand || "R") === "L" ? "LHP" : "RHP";
+    const pH = (targetPitch.pitcher_hand || "R") === "L" ? "LHP" : "RHP";
+    abSummaryPitcherHandBadge.textContent = pH;
+    if (pH === "RHP") {
+      abSummaryPitcherHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25";
+    } else {
+      abSummaryPitcherHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/25";
+    }
   }
   if (abSummaryBatterHandBadge && targetPitch) {
-    abSummaryBatterHandBadge.textContent = (targetPitch.batter_hand || "R") === "L" ? "LHB" : "RHB";
+    const bH = (targetPitch.batter_hand || "R") === "L" ? "LHB" : "RHB";
+    abSummaryBatterHandBadge.textContent = bH;
+    if (bH === "LHB") {
+      abSummaryBatterHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25";
+    } else {
+      abSummaryBatterHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25";
+    }
   }
 
   fetchPlayerMlbId(pitcher).then(pitcherId => {
@@ -4049,6 +4187,70 @@ async function showAtBatSummaryScreen(outcomeText) {
     highlightPitchInSummary(abPitches.length - 1);
   }
   
+  // Handle weekly challenge stats saving and EXP bar animation
+  if (gameMode === 'weekly_challenge') {
+    if (abSummaryWeeklyChallengeDetails) {
+      abSummaryWeeklyChallengeDetails.classList.remove('hidden');
+      abSummaryWeeklyChallengeDetails.classList.add('flex');
+    }
+    
+    const completedCount = activeWeeklyAbIndex + 1;
+    const totalCount = weeklyPlaylistABs.length || 1;
+    const prevPercent = Math.round((activeWeeklyAbIndex / totalCount) * 100);
+    const newPercent = Math.round((completedCount / totalCount) * 100);
+    
+    // Save accuracy stats for this AB in the playlist so overall accuracy calculates correctly
+    if (weeklyPlaylistABs[activeWeeklyAbIndex]) {
+      const correctCount = abPitches.filter(x => x.userCorrect).length;
+      weeklyPlaylistABs[activeWeeklyAbIndex].userCorrectCount = correctCount;
+      weeklyPlaylistABs[activeWeeklyAbIndex].userTotalCount = abPitches.length;
+      weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
+      saveChallengeSessionToLocal();
+    }
+    
+    // Compute overall accuracy
+    let overallCorrect = 0;
+    let overallTotal = 0;
+    weeklyPlaylistABs.forEach(ab => {
+      if (ab.completed) {
+        overallCorrect += ab.userCorrectCount || 0;
+        overallTotal += ab.userTotalCount || 0;
+      }
+    });
+    const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
+    
+    if (abSummaryWeeklyAccuracyText) {
+      abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+    }
+    
+    // Animate the EXP bar: start at previous progress
+    if (abSummaryWeeklyProgressBar) {
+      abSummaryWeeklyProgressBar.style.transition = 'none';
+      abSummaryWeeklyProgressBar.style.width = `${prevPercent}%`;
+      
+      // Update text to show new progress
+      if (abSummaryWeeklyProgressText) {
+        abSummaryWeeklyProgressText.textContent = `${activeWeeklyAbIndex} / ${totalCount} AT-BATS (${prevPercent}% COMPLETE)`;
+      }
+      
+      // Force repaint, then animate to new progress with a spring effect
+      setTimeout(() => {
+        if (abSummaryWeeklyProgressBar) {
+          abSummaryWeeklyProgressBar.style.transition = 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)';
+          abSummaryWeeklyProgressBar.style.width = `${newPercent}%`;
+        }
+        if (abSummaryWeeklyProgressText) {
+          abSummaryWeeklyProgressText.textContent = `${completedCount} / ${totalCount} AT-BATS (${newPercent}% COMPLETE)`;
+        }
+      }, 150);
+    }
+  } else {
+    if (abSummaryWeeklyChallengeDetails) {
+      abSummaryWeeklyChallengeDetails.classList.add('hidden');
+      abSummaryWeeklyChallengeDetails.classList.remove('flex');
+    }
+  }
+
   // Connect film room and umpire scorecard URLs specifically to this at-bat's game
   let urls;
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs[activeWeeklyAbIndex]) {
@@ -4652,14 +4854,14 @@ function startSummaryTimerCounter() {
     overviewTimerInterval = null;
   }
   if (btnAbSummaryAdvance) {
-    const isEnd = (gameMode === 'weekly_challenge' && activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) || isSessionOver;
+    const isEnd = (gameMode === 'weekly_challenge') ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) : isSessionOver;
     btnAbSummaryAdvance.textContent = isEnd ? "VIEW FINAL SCOREBOARD" : "ADVANCE TO NEXT AB";
   }
 }
 
 function updateSummaryTimerUI() {
   if (btnAbSummaryAdvance) {
-    const isEnd = (gameMode === 'weekly_challenge' && activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) || isSessionOver;
+    const isEnd = (gameMode === 'weekly_challenge') ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) : isSessionOver;
     btnAbSummaryAdvance.textContent = isEnd ? "VIEW FINAL SCOREBOARD" : "ADVANCE TO NEXT AB";
   }
 }
@@ -5606,7 +5808,48 @@ function highlightPitchInSummary(index) {
   }
 }
 
-function renderLeaderboard(type) {
+const KVDB_BASE_URL = 'https://kvdb.io/8xQ1K9aM2cR5yV7d';
+
+async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScore) {
+  if (!name || name.toUpperCase() === 'YOU' || name.toUpperCase() === 'GUEST' || name.trim() === "") return;
+  try {
+    const res = await fetch(`${KVDB_BASE_URL}/${type}`);
+    let list = [];
+    if (res.ok) {
+      list = await res.json();
+    }
+    if (!Array.isArray(list)) list = [];
+    
+    // Remove old entry for same user
+    list = list.filter(item => item.name.toUpperCase() !== name.toUpperCase());
+    
+    // Add new entry
+    list.push({
+      name: name,
+      team: team || 'None',
+      accuracy: accuracy,
+      scoreText: scoreValue,
+      scoreRaw: rawScore,
+      timestamp: Date.now()
+    });
+    
+    // Sort descending by scoreRaw
+    list.sort((a, b) => b.scoreRaw - a.scoreRaw);
+    list = list.slice(0, 50); // Keep top 50
+    
+    await fetch(`${KVDB_BASE_URL}/${type}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(list)
+    });
+  } catch (err) {
+    console.warn("Failed to sync score to global leaderboard:", err);
+  }
+}
+
+async function renderLeaderboard(type) {
   if (!leaderboardTableBody || !leaderboardDivisionTitle) return;
   
   const buttons = [
@@ -5640,31 +5883,62 @@ function renderLeaderboard(type) {
 
   const activeHandle = localStorage.getItem('ump_username') || "YOU";
 
+  // Display loading
+  leaderboardTableBody.innerHTML = `
+    <tr>
+      <td colspan="5" class="p-6 text-center text-purple-400 font-mono-tech text-[10px] animate-pulse">
+        CONNECTING TO GLOBAL DATABASE & FETCHING LIVE STANDINGS...
+      </td>
+    </tr>
+  `;
+
   let rows = [];
-  if (type === 'weekly') {
-    rows = [
-      { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "98.8%", score: "990 pts" },
-      { rank: 2, name: "Miller_Crew", team: "Dodgers", accuracy: "97.2%", score: "972 pts" },
-      { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "95.5%", score: "955 pts" },
-      { rank: 4, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "94.8%", score: "948 pts", isUser: true },
-      { rank: 5, name: "Angel_H", team: "Astros", accuracy: "81.2%", score: "812 pts" },
-    ];
-  } else if (type === 'daily') {
-    rows = [
-      { rank: 1, name: "PerfectCall_99", team: "Yankees", accuracy: "98.5%", score: "24 Streak" },
-      { rank: 2, name: "LaserEye", team: "Rangers", accuracy: "96.4%", score: "19 Streak" },
-      { rank: 3, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.3%", score: "15 Streak", isUser: true },
-      { rank: 4, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
-      { rank: 5, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
-    ];
-  } else if (type === 'alltime') {
-    rows = [
-      { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "99.4%", score: "2,450 pts" },
-      { rank: 2, name: "PerfectCall_99", team: "Yankees", accuracy: "97.8%", score: "2,120 pts" },
-      { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "96.9%", score: "1,980 pts" },
-      { rank: 4, name: "Miller_Crew", team: "Dodgers", accuracy: "96.2%", score: "1,890 pts" },
-      { rank: 5, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.5%", score: "1,750 pts", isUser: true },
-    ];
+  try {
+    const res = await fetch(`${KVDB_BASE_URL}/${type}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        rows = data.map((item, idx) => ({
+          rank: idx + 1,
+          name: item.name,
+          team: item.team,
+          accuracy: item.accuracy,
+          score: item.scoreText,
+          isUser: item.name.toUpperCase() === activeHandle.toUpperCase()
+        }));
+      }
+    }
+  } catch (err) {
+    console.warn("Error loading global leaderboard, falling back to local mocks:", err);
+  }
+
+  // Fallback to local mock data if fetch failed or returned nothing
+  if (rows.length === 0) {
+    if (type === 'weekly') {
+      rows = [
+        { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "98.8%", score: "990 pts" },
+        { rank: 2, name: "Miller_Crew", team: "Dodgers", accuracy: "97.2%", score: "972 pts" },
+        { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "95.5%", score: "955 pts" },
+        { rank: 4, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "94.8%", score: "948 pts", isUser: true },
+        { rank: 5, name: "Angel_H", team: "Astros", accuracy: "81.2%", score: "812 pts" },
+      ];
+    } else if (type === 'daily') {
+      rows = [
+        { rank: 1, name: "PerfectCall_99", team: "Yankees", accuracy: "98.5%", score: "24 Streak" },
+        { rank: 2, name: "LaserEye", team: "Rangers", accuracy: "96.4%", score: "19 Streak" },
+        { rank: 3, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.3%", score: "15 Streak", isUser: true },
+        { rank: 4, name: "BlueLover", team: "Mets", accuracy: "92.0%", score: "12 Streak" },
+        { rank: 5, name: "RoboUmpWho", team: "RedSox", accuracy: "91.5%", score: "10 Streak" },
+      ];
+    } else if (type === 'alltime') {
+      rows = [
+        { rank: 1, name: "Pat Hoberg", team: "Orioles", accuracy: "99.4%", score: "2,450 pts" },
+        { rank: 2, name: "PerfectCall_99", team: "Yankees", accuracy: "97.8%", score: "2,120 pts" },
+        { rank: 3, name: "West_Coast_Ump", team: "Giants", accuracy: "96.9%", score: "1,980 pts" },
+        { rank: 4, name: "Miller_Crew", team: "Dodgers", accuracy: "96.2%", score: "1,890 pts" },
+        { rank: 5, name: activeHandle, team: activeFavoriteTeam || "Phillies", accuracy: "93.5%", score: "1,750 pts", isUser: true },
+      ];
+    }
   }
 
   leaderboardTableBody.innerHTML = '';

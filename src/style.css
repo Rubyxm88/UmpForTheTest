@@ -303,18 +303,25 @@ body.ui-mode-cinematic #hud-header > div:first-child {
 }
 
 /* Hide other non-essential widgets from header in Cinematic */
-body.ui-mode-cinematic #hud-header > div:not(:first-child):not(.font-mono-tech) {
+body.ui-mode-cinematic #inning-card,
+body.ui-mode-cinematic #hud-header > div:nth-child(3),
+body.ui-mode-cinematic #btn-main-menu,
+body.ui-mode-cinematic #btn-settings-toggle {
   display: none !important;
 }
 
 /* Reposition UI Switcher to Top Right in Cinematic */
-body.ui-mode-cinematic #hud-header .font-mono-tech {
+body.ui-mode-cinematic #ui-mode-switcher-container {
   position: fixed !important;
   top: 20px !important;
   right: 20px !important;
   display: flex !important;
-  background: rgba(10, 16, 26, 0.7) !important;
+  background: rgba(10, 16, 26, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px !important;
+  padding: 4px !important;
   backdrop-filter: blur(12px) !important;
+  z-index: 50 !important;
 }
 
 /* Cinematic Broadcast walk-up lower-third banner */
@@ -412,11 +419,23 @@ body.ui-mode-cinematic #countdown-timer-container {
 }
 
 /* Media Query overrides for mobile viewport */
-@media (max-w: 640px) {
+@media (max-width: 640px) {
+  #matchup-card,
   body.ui-mode-adaptive #matchup-card,
   body.ui-mode-cinematic #matchup-card {
+    top: 75px !important;
+    bottom: auto !important;
+    left: 3% !important;
+    right: 3% !important;
     width: 94% !important;
-    bottom: 90px !important;
+    transform: none !important;
+  }
+  
+  #camera-controls-panel {
+    right: 5% !important;
+    left: 5% !important;
+    width: 90% !important;
+    top: 75px !important;
   }
   
   body.ui-mode-cinematic #btn-call-ball {
@@ -434,10 +453,26 @@ body.ui-mode-cinematic #countdown-timer-container {
   }
   
   /* Keep switcher visible on mobile but scale down padding slightly */
-  body.ui-mode-cinematic #hud-header .font-mono-tech {
+  body.ui-mode-cinematic #ui-mode-switcher-container {
     padding: 2px !important;
     top: 12px !important;
     right: 12px !important;
+  }
+}
+
+/* Scroll and layout scaling for overlays on small heights or mobile viewports */
+@media (max-height: 580px), (max-width: 640px) {
+  #welcome-screen,
+  #team-select-screen,
+  #start-screen,
+  #scoreboard-screen,
+  #ab-start-overlay,
+  #ab-summary-overlay,
+  #pause-screen {
+    justify-content: flex-start !important;
+    overflow-y: auto !important;
+    padding-top: 2.5rem !important;
+    padding-bottom: 2.5rem !important;
   }
 }
 
