@@ -707,6 +707,8 @@ async function saveGlobalUserStats(handle, stats) {
 function loginUserSession(handleVal) {
   localStorage.setItem('ump_username', handleVal);
   localStorage.setItem('pitch_ump_last_handle', handleVal);
+  
+  loadSavedSessionFromLocal();
   updateProfileStatsUI();
   playCoinSound();
   
@@ -845,6 +847,13 @@ export function startGameSession() {
       const statsKey = `pitch_ump_stats_${storedUser.toUpperCase()}`;
       localStorage.setItem(statsKey, JSON.stringify(globalStats));
       
+      const sessionKey = `pitch_ump_challenge_mvp_${storedUser.toUpperCase()}`;
+      if (globalStats.challengeProgress) {
+        localStorage.setItem(sessionKey, JSON.stringify(globalStats.challengeProgress));
+      } else {
+        localStorage.removeItem(sessionKey);
+      }
+      
       if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
         activeFavoriteTeam = globalStats.favoriteTeam;
         localStorage.setItem('pitch_ump_favorite_team', globalStats.favoriteTeam);
@@ -852,6 +861,7 @@ export function startGameSession() {
           userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${globalStats.favoriteTeam.toUpperCase()}`;
         }
       }
+      loadSavedSessionFromLocal();
       updateProfileStatsUI();
       initProfileSettingsUI();
     });
@@ -1203,6 +1213,13 @@ async function submitLoginAction() {
       const globalStats = await getGlobalUserStats(handleValNormalized);
       const statsKey = `pitch_ump_stats_${handleValNormalized}`;
       localStorage.setItem(statsKey, JSON.stringify(globalStats));
+      
+      const sessionKey = `pitch_ump_challenge_mvp_${handleValNormalized}`;
+      if (globalStats.challengeProgress) {
+        localStorage.setItem(sessionKey, JSON.stringify(globalStats.challengeProgress));
+      } else {
+        localStorage.removeItem(sessionKey);
+      }
       
       if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
         activeFavoriteTeam = globalStats.favoriteTeam;
@@ -1659,7 +1676,7 @@ function attachEvents() {
       e.stopPropagation();
       initAudio();
       localStorage.removeItem('ump_username');
-      localStorage.removeItem('pitch_ump_challenge_mvp');
+      loadSavedSessionFromLocal();
       activeFavoriteTeam = null;
       if (loginHandleInput) loginHandleInput.value = "";
       if (loginPinInput) loginPinInput.value = "";
@@ -4460,12 +4477,29 @@ function saveChallengeSessionToLocal() {
     data.activeChallenge = null;
   }
   
-  localStorage.setItem('pitch_ump_challenge_mvp', JSON.stringify(data));
+  const username = localStorage.getItem('ump_username');
+  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  localStorage.setItem(key, JSON.stringify(data));
+  
+  if (username) {
+    getGlobalUserStats(username).then(stats => {
+      stats.challengeProgress = data;
+      saveGlobalUserStats(username, stats);
+    });
+  }
 }
 
 function loadSavedSessionFromLocal() {
-  const raw = localStorage.getItem('pitch_ump_challenge_mvp');
-  if (!raw) return;
+  const username = localStorage.getItem('ump_username');
+  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  const raw = localStorage.getItem(key);
+  if (!raw) {
+    completedABsCount = [0, 0, 0, 0, 0];
+    activeWeeklyAbIndex = 0;
+    activeGameIndex = 0;
+    updateChallengeProgressUI();
+    return;
+  }
   
   try {
     const data = JSON.parse(raw);
@@ -4992,14 +5026,16 @@ function updateSummaryTimerUI() {
 }
 
 function extractAtBatsFromWeeklyData() {
-  const list = [];
+  const borderlineABs = [];
+  const normalABs = [];
+  
   WEEKLY_CHALLENGE_DATA.forEach((game, gameIdx) => {
     let currentPitches = [];
     let currentBatter = '';
     
     game.pitches.forEach(pitch => {
       if (pitch.batter !== currentBatter && currentPitches.length > 0) {
-        list.push({
+        const abObj = {
           gameIndex: gameIdx,
           gameTitle: game.title,
           filmRoomUrl: game.film_room_url,
@@ -5007,7 +5043,26 @@ function extractAtBatsFromWeeklyData() {
           pitches: currentPitches,
           batter: currentPitches[0].batter,
           pitcher: currentPitches[0].pitcher
+        };
+        
+        let hasBorderline = false;
+        currentPitches.forEach(p => {
+          const t_cross = getCrossingTime(p);
+          const crossPoint = getBallPositionAtTime(p, t_cross);
+          const xEdgeDist = Math.abs(Math.abs(crossPoint.x) - 0.8283);
+          const yBotDist = Math.abs(crossPoint.y - (p.sz_bot - 0.12));
+          const yTopDist = Math.abs(crossPoint.y - (p.sz_top + 0.12));
+          const yEdgeDist = Math.min(yBotDist, yTopDist);
+          if (xEdgeDist <= 0.15 || yEdgeDist <= 0.15) {
+            hasBorderline = true;
+          }
         });
+        
+        if (hasBorderline) {
+          borderlineABs.push(abObj);
+        } else {
+          normalABs.push(abObj);
+        }
         currentPitches = [];
       }
       currentBatter = pitch.batter;
@@ -5015,7 +5070,7 @@ function extractAtBatsFromWeeklyData() {
     });
     
     if (currentPitches.length > 0) {
-      list.push({
+      const abObj = {
         gameIndex: gameIdx,
         gameTitle: game.title,
         filmRoomUrl: game.film_room_url,
@@ -5023,10 +5078,56 @@ function extractAtBatsFromWeeklyData() {
         pitches: currentPitches,
         batter: currentPitches[0].batter,
         pitcher: currentPitches[0].pitcher
+      };
+      
+      let hasBorderline = false;
+      currentPitches.forEach(p => {
+        const t_cross = getCrossingTime(p);
+        const crossPoint = getBallPositionAtTime(p, t_cross);
+        const xEdgeDist = Math.abs(Math.abs(crossPoint.x) - 0.8283);
+        const yBotDist = Math.abs(crossPoint.y - (p.sz_bot - 0.12));
+        const yTopDist = Math.abs(crossPoint.y - (p.sz_top + 0.12));
+        const yEdgeDist = Math.min(yBotDist, yTopDist);
+        if (xEdgeDist <= 0.15 || yEdgeDist <= 0.15) {
+          hasBorderline = true;
+        }
       });
+      
+      if (hasBorderline) {
+        borderlineABs.push(abObj);
+      } else {
+        normalABs.push(abObj);
+      }
     }
   });
-  return list;
+  
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+  
+  shuffle(borderlineABs);
+  shuffle(normalABs);
+  
+  const targetBorderline = 100;
+  const targetNormal = 100;
+  
+  let selectedBorderline = borderlineABs.slice(0, targetBorderline);
+  let selectedNormal = normalABs.slice(0, targetNormal);
+  
+  if (selectedBorderline.length < targetBorderline) {
+    const needed = targetBorderline - selectedBorderline.length;
+    selectedNormal = selectedNormal.concat(normalABs.slice(targetNormal, targetNormal + needed));
+  } else if (selectedNormal.length < targetNormal) {
+    const needed = targetNormal - selectedNormal.length;
+    selectedBorderline = selectedBorderline.concat(borderlineABs.slice(targetBorderline, targetBorderline + needed));
+  }
+  
+  const finalPlaylist = selectedBorderline.concat(selectedNormal).slice(0, 200);
+  return shuffle(finalPlaylist);
 }
 
 function startWeeklyChallenge() {
@@ -5499,7 +5600,7 @@ function renderDashboardGamesList() {
     const totalABs = gameABs.length || 3;
     
     const card = document.createElement('div');
-    card.className = 'glass-panel p-3.5 rounded-xl border border-white/5 hover:border-purple-500/40 flex flex-col justify-between transition-all select-none hover:scale-[1.01]';
+    card.className = 'glass-panel p-3.5 rounded-xl border border-white/5 flex flex-col justify-between transition-all select-none';
     
     let rivalBadgeHtml = '';
     if (activeFavoriteTeam) {
@@ -5514,22 +5615,18 @@ function renderDashboardGamesList() {
     card.style.position = 'relative';
     card.innerHTML = `
       ${rivalBadgeHtml}
-      <div class="flex flex-col">
-        <span class="text-[9px] font-mono-tech text-purple-400 font-bold uppercase tracking-wider">GAME #${idx + 1}</span>
-        <span class="text-xs font-black text-white mt-1 uppercase tracking-wide leading-tight">${game.title}</span>
-        <span class="text-[9px] text-gray-400 mt-1 font-mono-tech uppercase">${totalABs} AT-BATS</span>
+      <div class="flex flex-col h-full justify-between">
+        <div>
+          <span class="text-[9px] font-mono-tech text-purple-400 font-bold uppercase tracking-wider">MATCH #${idx + 1}</span>
+          <span class="text-xs font-black text-white mt-1 uppercase tracking-wide leading-tight block">${game.title}</span>
+          <p class="text-[9px] text-gray-400 mt-1 font-mono-tech uppercase leading-relaxed">${game.description || 'Live Match Details'}</p>
+        </div>
+        <div class="mt-3 pt-2 border-t border-white/5 flex justify-between items-center text-[9px] font-mono-tech text-gray-500">
+          <span>${totalABs} AT-BATS</span>
+          <span class="text-purple-400 font-bold">INGESTED</span>
+        </div>
       </div>
-      <button class="btn-play-game-ab w-full mt-3 py-1.5 bg-purple-600/20 hover:bg-purple-600 border border-purple-500/30 rounded text-[9px] font-extrabold uppercase tracking-widest text-white transition-colors cursor-pointer" data-game-idx="${idx}">
-        Select Game
-      </button>
     `;
-    
-    const playBtn = card.querySelector('.btn-play-game-ab');
-    playBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      startWeeklyChallengeGame(idx);
-    });
 
     dashboardGamesList.appendChild(card);
   });
