@@ -661,9 +661,17 @@ function playStrikeoutSirenSound() {
   });
 }
 
+const JSONBIN_BASE_URL = 'https://jsonbin-zeta.vercel.app/api/bins';
+const BINS = {
+  users: 'po-AXvhkN8',
+  weekly: '1xVZn2Uhux',
+  daily: '8qpribJqAX',
+  alltime: 'lx5zghwYkO'
+};
+
 async function getGlobalUsers() {
   try {
-    const res = await fetch(`${KVDB_BASE_URL}/users`);
+    const res = await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`);
     if (res.ok) {
       const users = await res.json();
       if (users && typeof users === 'object') return users;
@@ -677,10 +685,14 @@ async function getGlobalUsers() {
 async function saveGlobalUser(handle, pin) {
   try {
     const users = await getGlobalUsers();
-    users[handle.toUpperCase()] = pin;
+    if (!users[handle.toUpperCase()] || typeof users[handle.toUpperCase()] !== 'object') {
+      users[handle.toUpperCase()] = { pin: pin, statsBinId: null };
+    } else {
+      users[handle.toUpperCase()].pin = pin;
+    }
     localStorage.setItem('pitch_ump_users', JSON.stringify(users));
-    await fetch(`${KVDB_BASE_URL}/users`, {
-      method: 'POST',
+    await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(users)
     });
@@ -691,10 +703,14 @@ async function saveGlobalUser(handle, pin) {
 
 async function getGlobalUserStats(handle) {
   try {
-    const res = await fetch(`${KVDB_BASE_URL}/stats_${handle.toUpperCase()}`);
-    if (res.ok) {
-      const stats = await res.json();
-      if (stats && typeof stats === 'object') return stats;
+    const users = await getGlobalUsers();
+    const userRecord = users[handle.toUpperCase()];
+    if (userRecord && typeof userRecord === 'object' && userRecord.statsBinId) {
+      const res = await fetch(`${JSONBIN_BASE_URL}/${userRecord.statsBinId}`);
+      if (res.ok) {
+        const stats = await res.json();
+        if (stats && typeof stats === 'object') return stats;
+      }
     }
   } catch (e) {
     console.warn(`Error fetching stats for ${handle}:`, e);
@@ -707,11 +723,35 @@ async function saveGlobalUserStats(handle, stats) {
   const statsKey = `pitch_ump_stats_${handle.toUpperCase()}`;
   localStorage.setItem(statsKey, JSON.stringify(stats));
   try {
-    await fetch(`${KVDB_BASE_URL}/stats_${handle.toUpperCase()}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(stats)
-    });
+    const users = await getGlobalUsers();
+    const userRecord = users[handle.toUpperCase()];
+    
+    if (userRecord && typeof userRecord === 'object') {
+      if (userRecord.statsBinId) {
+        await fetch(`${JSONBIN_BASE_URL}/${userRecord.statsBinId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(stats)
+        });
+      } else {
+        const createRes = await fetch(JSONBIN_BASE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(stats)
+        });
+        if (createRes.ok) {
+          const createData = await createRes.json();
+          userRecord.statsBinId = createData.id;
+          
+          await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(users)
+          });
+          localStorage.setItem('pitch_ump_users', JSON.stringify(users));
+        }
+      }
+    }
   } catch (e) {
     console.warn(`Error saving stats for ${handle} globally:`, e);
   }
@@ -1264,7 +1304,14 @@ async function submitLoginAction() {
     }
   } else {
     // User exists, verify PIN
-    if (users[handleValNormalized] === pinVal) {
+    const record = users[handleValNormalized];
+    let pinMatched = false;
+    if (record && typeof record === 'object') {
+      pinMatched = (record.pin === pinVal);
+    } else {
+      pinMatched = (record === pinVal); // legacy
+    }
+    if (pinMatched) {
       if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
       if (loginConfirmBox) {
         loginConfirmBox.classList.add('hidden');
@@ -5739,7 +5786,7 @@ async function updateDailyStreakStatusUI() {
   if (rankEl && username !== 'GUEST_UMPIRE') {
     rankEl.textContent = "FETCHING...";
     try {
-      const res = await fetch(`${KVDB_BASE_URL}/daily`);
+      const res = await fetch(`${JSONBIN_BASE_URL}/${BINS.daily}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -6427,12 +6474,13 @@ function highlightPitchInSummary(index) {
   }
 }
 
-const KVDB_BASE_URL = 'https://kvdb.io/8xQ1K9aM2cR5yV7d';
-
+// Submit global scores to JSONBin
 async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScore) {
   if (!name || name.toUpperCase() === 'YOU' || name.toUpperCase() === 'GUEST' || name.trim() === "") return;
   try {
-    const res = await fetch(`${KVDB_BASE_URL}/${type}`);
+    const binId = BINS[type];
+    if (!binId) return;
+    const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
     let list = [];
     if (res.ok) {
       list = await res.json();
@@ -6456,8 +6504,8 @@ async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScor
     list.sort((a, b) => b.scoreRaw - a.scoreRaw);
     list = list.slice(0, 50); // Keep top 50
     
-    await fetch(`${KVDB_BASE_URL}/${type}`, {
-      method: 'POST',
+    await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
       },
@@ -6548,18 +6596,21 @@ async function renderLeaderboard(type) {
 
   let rows = [];
   try {
-    const res = await fetch(`${KVDB_BASE_URL}/${type}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        rows = data.map((item, idx) => ({
-          rank: idx + 1,
-          name: item.name,
-          team: item.team,
-          accuracy: item.accuracy,
-          score: item.scoreText,
-          isUser: item.name.toUpperCase() === activeHandle.toUpperCase()
-        }));
+    const binId = BINS[type];
+    if (binId) {
+      const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          rows = data.map((item, idx) => ({
+            rank: idx + 1,
+            name: item.name,
+            team: item.team,
+            accuracy: item.accuracy,
+            score: item.scoreText,
+            isUser: item.name.toUpperCase() === activeHandle.toUpperCase()
+          }));
+        }
       }
     }
   } catch (err) {

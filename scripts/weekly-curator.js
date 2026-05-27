@@ -20,7 +20,7 @@ const path = require('path');
 
 const MLB_SCHEDULE_URL = 'https://statsapi.mlb.com/api/v1/schedule';
 const MLB_GAME_FEED_URL = 'https://statsapi.mlb.com/api/v1.1/game';
-const KVDB_WEEKLY_URL = 'https://kvdb.io/8xQ1K9aM2cR5yV7d/weekly';
+const JSONBIN_WEEKLY_URL = 'https://jsonbin-zeta.vercel.app/api/bins/1xVZn2Uhux';
 const OUTPUT_PATH = path.resolve(__dirname, '..', 'src', 'data', 'weekly_challenge.js');
 const TARGET_GAME_COUNT = 5;
 
@@ -425,20 +425,20 @@ function writeDataFile(games) {
  * Step 4 — Reset the weekly leaderboard on KVDB.
  */
 async function resetLeaderboard() {
-  console.log('\n🏆 Resetting weekly leaderboard on KVDB...');
+  console.log('\n🏆 Resetting weekly leaderboard on JSONBin...');
   try {
-    const res = await fetch(KVDB_WEEKLY_URL, {
-      method: 'POST',
+    const res = await fetch(JSONBIN_WEEKLY_URL, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify([]),
     });
     if (!res.ok) {
-      console.error(`  ⚠️  KVDB responded with HTTP ${res.status}: ${await res.text()}`);
+      console.error(`  ⚠️  JSONBin responded with HTTP ${res.status}: ${await res.text()}`);
     } else {
       console.log('  ✅ Weekly leaderboard reset successfully.');
     }
   } catch (err) {
-    // Don't fail the whole pipeline if KVDB is unreachable
+    // Don't fail the whole pipeline if JSONBin is unreachable
     console.error(`  ⚠️  Failed to reset leaderboard: ${err.message}`);
   }
 }
