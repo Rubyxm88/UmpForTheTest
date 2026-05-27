@@ -1,0 +1,44 @@
+name: Weekly Challenge Reset
+
+on:
+  schedule:
+    # Every Monday at 8:00 AM UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    # Allow manual trigger from GitHub Actions UI
+
+permissions:
+  contents: write
+
+jobs:
+  weekly-reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run weekly curator script
+        run: node scripts/weekly-curator.js
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet src/data/weekly_challenge.js && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/weekly_challenge.js
+          git commit -m "chore: refresh weekly challenge data [$(date -u +'%Y-%m-%d')]"
+          git push origin main

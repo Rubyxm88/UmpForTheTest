@@ -3,6 +3,7 @@ import { getObfuscatedPitches } from '../data/pitches.js';
 import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
 import { WEEKLY_CHALLENGE_DATA } from '../data/weekly_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
+import { fetchTeamSchedule, fetchGameForDate, fetchGamePitches } from './mlb-api.js';
 import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime } from './physics.js';
 import { 
   initScene, 
@@ -113,6 +114,14 @@ let abPitchCounter;
 let btnStartWeeklyChallenge, weeklyChallengeProgressText, weeklyChallengeProgressBar;
 let dailyMatchupTitle, dailyCompeteStatus, btnPlayDailyCompete, dailyHistoricList, dailyCompeteTeamSelect;
 let activeDailyDate = "";
+
+// Game Preview Modal Elements
+let previewModalOverlay, previewModalTitle, previewModalDate;
+let previewAwayLogo, previewAwayName, previewAwayScore;
+let previewHomeLogo, previewHomeName, previewHomeScore;
+let previewModalVenue, previewModalAbs, previewLoadingIndicator;
+let btnPreviewModalStart, btnPreviewModalCancel;
+
 
 // Settings values
 let reviewStyle = 'quick'; // 'quick' or 'full'
@@ -802,12 +811,18 @@ function initProfileSettingsUI() {
       const confirmPinVal = profileNewPinConfirm ? profileNewPinConfirm.value.trim() : "";
       
       if (newPinVal !== confirmPinVal) {
-        alert("ERROR: NEW PIN AND CONFIRM PIN DO NOT MATCH!");
+        if (profilePinMsg) {
+          profilePinMsg.textContent = "ERROR: NEW PIN AND CONFIRM PIN DO NOT MATCH!";
+          profilePinMsg.className = "text-xs font-mono-tech text-red-400 mt-2 font-bold block";
+        }
         return;
       }
       
       if (!/^\d{4,8}$/.test(newPinVal)) {
-        alert("ERROR: PIN MUST BE 4 TO 8 DIGITS");
+        if (profilePinMsg) {
+          profilePinMsg.textContent = "ERROR: PIN MUST BE 4 TO 8 DIGITS";
+          profilePinMsg.className = "text-xs font-mono-tech text-red-400 mt-2 font-bold block";
+        }
         return;
       }
       
@@ -1077,6 +1092,22 @@ function cacheDOM() {
   btnPlayDailyCompete = document.getElementById('btn-play-daily-compete');
   dailyHistoricList = document.getElementById('daily-historic-list');
   dailyCompeteTeamSelect = document.getElementById('daily-compete-team-select');
+
+  // Game Preview Modal Elements
+  previewModalOverlay = document.getElementById('game-preview-modal-overlay');
+  previewModalTitle = document.getElementById('preview-modal-title');
+  previewModalDate = document.getElementById('preview-modal-date');
+  previewAwayLogo = document.getElementById('preview-away-logo');
+  previewAwayName = document.getElementById('preview-away-name');
+  previewAwayScore = document.getElementById('preview-away-score');
+  previewHomeLogo = document.getElementById('preview-home-logo');
+  previewHomeName = document.getElementById('preview-home-name');
+  previewHomeScore = document.getElementById('preview-home-score');
+  previewModalVenue = document.getElementById('preview-modal-venue');
+  previewModalAbs = document.getElementById('preview-modal-abs');
+  previewLoadingIndicator = document.getElementById('preview-loading-indicator');
+  btnPreviewModalStart = document.getElementById('btn-preview-modal-start');
+  btnPreviewModalCancel = document.getElementById('btn-preview-modal-cancel');
 
   matchupCard = document.getElementById('matchup-card');
   cardPitcherName = document.getElementById('card-pitcher-name');
@@ -1482,6 +1513,26 @@ function attachEvents() {
       initAudio();
       const todayStr = new Date().toISOString().split('T')[0];
       startDailyCompeteGame(todayStr);
+    });
+  }
+
+  if (btnPreviewModalCancel) {
+    btnPreviewModalCancel.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      hideGamePreviewModal();
+    });
+  }
+
+  if (btnPreviewModalStart) {
+    btnPreviewModalStart.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      if (window._onPreviewStartCallback) {
+        window._onPreviewStartCallback();
+        window._onPreviewStartCallback = null;
+      }
+      hideGamePreviewModal();
     });
   }
 
@@ -2167,6 +2218,7 @@ function transitionToState(newState) {
     setOverlayVisible(startScreen, true);
     isSettingsOpen = false;
     updateSettingsVisibility();
+    switchTab('play');
   } else {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
@@ -6877,28 +6929,120 @@ function renderDailyCompeteDashboard() {
   });
 }
 
-function startDailyCompeteGame(dateString) {
+async function startDailyCompeteGame(dateString) {
   const username = localStorage.getItem('ump_username');
   if (!username) return;
+
+  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
   
+  // Show preview modal in loading state
+  if (previewModalOverlay) {
+    previewModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+    previewModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
+  if (previewModalTitle) previewModalTitle.textContent = `${team.toUpperCase()} DAILY GAME`;
+  if (previewModalDate) previewModalDate.textContent = dateString.toUpperCase();
+  if (previewAwayName) previewAwayName.textContent = "LOADING...";
+  if (previewHomeName) previewHomeName.textContent = "LOADING...";
+  if (previewAwayScore) previewAwayScore.textContent = "-";
+  if (previewHomeScore) previewHomeScore.textContent = "-";
+  if (previewModalVenue) previewModalVenue.textContent = "LOADING...";
+  if (previewModalAbs) previewModalAbs.textContent = "";
+  if (previewLoadingIndicator) previewLoadingIndicator.classList.remove('hidden');
+  if (btnPreviewModalStart) btnPreviewModalStart.disabled = true;
+
+  try {
+    // 1. Fetch team schedule from MLB Stats API
+    console.log(`MLB API: Fetching schedule for ${team} on ${dateString}`);
+    const games = await fetchTeamSchedule(team, dateString, dateString);
+    let gameData = null;
+    let playlistABs = null;
+
+    if (games && games.length > 0) {
+      gameData = games[0];
+      console.log(`MLB API: Found gamePk ${gameData.gamePk} - ${gameData.awayTeam} @ ${gameData.homeTeam}`);
+      
+      // Update UI with real game data
+      if (previewAwayName) previewAwayName.textContent = gameData.awayTeam.toUpperCase();
+      if (previewHomeName) previewHomeName.textContent = gameData.homeTeam.toUpperCase();
+      if (previewAwayScore) previewAwayScore.textContent = gameData.awayScore;
+      if (previewHomeScore) previewHomeScore.textContent = gameData.homeScore;
+      if (previewModalVenue) previewModalVenue.textContent = gameData.venue.toUpperCase();
+      if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(gameData.awayTeam);
+      if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(gameData.homeTeam);
+
+      // Fetch pitch data
+      console.log(`MLB API: Fetching play-by-play for gamePk ${gameData.gamePk}`);
+      playlistABs = await fetchGamePitches(gameData.gamePk);
+    }
+
+    // If no real game data, or fetch failed, fall back to procedural generation
+    if (!gameData || !playlistABs || playlistABs.length === 0) {
+      console.log("MLB API: No game found or failed to parse. Falling back to procedurally generated game.");
+      
+      // Procedural fallback details
+      const seed = hashString(team + dateString);
+      const rand = mulberry32(seed);
+      const oppTeams = TEAMS_LIST.filter(t => t.name !== team);
+      const oppIdx = Math.floor(rand() * oppTeams.length);
+      const opponent = oppTeams[oppIdx];
+      const isHome = rand() < 0.5;
+      const awayName = isHome ? opponent.name : team;
+      const homeName = isHome ? team : opponent.name;
+      const awayScore = Math.floor(rand() * 8);
+      const homeScore = Math.floor(rand() * 8);
+
+      if (previewAwayName) previewAwayName.textContent = awayName.toUpperCase();
+      if (previewHomeName) previewHomeName.textContent = homeName.toUpperCase();
+      if (previewAwayScore) previewAwayScore.textContent = awayScore;
+      if (previewHomeScore) previewHomeScore.textContent = homeScore;
+      if (previewModalVenue) previewModalVenue.textContent = (isHome ? `${team} STADIUM` : `${opponent.name} STADIUM`).toUpperCase();
+      if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(awayName);
+      if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(homeName);
+
+      playlistABs = generateDailyCondensedGame(team, dateString);
+    }
+
+    if (previewModalAbs) previewModalAbs.textContent = `${playlistABs.length} MATCHUPS`;
+    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
+    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
+
+    // Define the launch function when they confirm
+    window._onPreviewStartCallback = () => {
+      launchGame(playlistABs, team, dateString);
+    };
+
+  } catch (err) {
+    console.error("Error setting up daily compete game preview:", err);
+    // Secure fallback
+    const playlistABs = generateDailyCondensedGame(team, dateString);
+    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
+    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
+    window._onPreviewStartCallback = () => {
+      launchGame(playlistABs, team, dateString);
+    };
+  }
+}
+
+function launchGame(rawABs, team, dateString) {
+  const username = localStorage.getItem('ump_username');
+  if (!username) return;
+
   gameMode = 'daily_compete';
   activeDailyDate = dateString;
+  activeDailyTeam = team;
   isGamePaused = false;
-  
+
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
-  
-  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
-  activeDailyTeam = team;
-  const rawABs = generateDailyCondensedGame(team, dateString);
-  
+
   const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${dateString}`;
   const rawSession = localStorage.getItem(key);
   let savedPlaylist = null;
   let savedAbIndex = 0;
-  
+
   if (rawSession) {
     try {
       const savedData = JSON.parse(rawSession);
@@ -6914,7 +7058,7 @@ function startDailyCompeteGame(dateString) {
       console.error("Failed to restore daily compete playlist", e);
     }
   }
-  
+
   if (savedPlaylist) {
     weeklyPlaylistABs = savedPlaylist;
     activeWeeklyAbIndex = savedAbIndex;
@@ -6946,7 +7090,14 @@ function startDailyCompeteGame(dateString) {
     abStrikes = 0;
     pitchHistory = [];
   }
-  
+
   loadWeeklyAtBat(activeWeeklyAbIndex);
+}
+
+function hideGamePreviewModal() {
+  if (previewModalOverlay) {
+    previewModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+    previewModalOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
 }
 
