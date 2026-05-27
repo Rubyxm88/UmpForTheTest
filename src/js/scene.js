@@ -1374,11 +1374,11 @@ export function updateHolographicBatter(handedness, sz_bot, sz_top) {
 
   // Position batter in the box relative to plate midpoint (z = 0.7083)
   if (handedness === 'RHB') {
+    batterGroup.position.set(-2.2, 0, 0.7083);
+    batterGroup.rotation.y = Math.PI / 2; // face plate
+  } else {
     batterGroup.position.set(2.2, 0, 0.7083);
     batterGroup.rotation.y = -Math.PI / 2; // face plate
-  } else {
-    batterGroup.position.set(-2.2, 0, 0.7083);
-    batterGroup.rotation.y = Math.PI / 2;
     bat.rotation.y = Math.PI / 6;
   }
 
@@ -1407,7 +1407,7 @@ export function animateBatterSwing(progress, handedness) {
     }
   });
 
-  const baseGroupRotation = handedness === 'RHB' ? -Math.PI / 2 : Math.PI / 2;
+  const baseGroupRotation = handedness === 'RHB' ? Math.PI / 2 : -Math.PI / 2;
 
   if (progress < 0) {
     // Reset to normal batting stance
@@ -1417,7 +1417,7 @@ export function animateBatterSwing(progress, handedness) {
       torso.rotation.z = 0;
     }
     if (bat) {
-      bat.rotation.set(-Math.PI / 4.5, handedness === 'RHB' ? -Math.PI / 6 : Math.PI / 6, Math.PI / 3.2);
+      bat.rotation.set(-Math.PI / 4.5, handedness === 'RHB' ? Math.PI / 6 : -Math.PI / 6, Math.PI / 3.2);
       bat.position.set(-0.4, currentSzTop + 1.1, -0.32);
     }
     return;
@@ -1433,13 +1433,13 @@ export function animateBatterSwing(progress, handedness) {
       // Phase 1: Stance to Contact
       const p = progress / 0.5; // 0 to 1
       rx = -Math.PI / 4.5 + p * (-Math.PI / 12 - (-Math.PI / 4.5));
-      ry = (isRHB ? -Math.PI / 6 : Math.PI / 6) + p * (isRHB ? Math.PI * 0.5 : -Math.PI * 0.5);
+      ry = (isRHB ? Math.PI / 6 : -Math.PI / 6) + p * (isRHB ? -Math.PI * 0.5 : Math.PI * 0.5);
       rz = Math.PI / 3.2 + p * (Math.PI / 4 - Math.PI / 3.2);
     } else {
       // Phase 2: Contact to Follow-through
       const p = (progress - 0.5) / 0.5; // 0 to 1
       rx = -Math.PI / 12 + p * (Math.PI / 6 - (-Math.PI / 12));
-      ry = (isRHB ? Math.PI / 3 : -Math.PI / 3) + p * ((isRHB ? Math.PI * 0.8 : -Math.PI * 0.8) - (isRHB ? Math.PI / 3 : -Math.PI / 3));
+      ry = (isRHB ? -Math.PI / 3 : Math.PI / 3) + p * ((isRHB ? -Math.PI * 0.8 : Math.PI * 0.8) - (isRHB ? -Math.PI / 3 : Math.PI / 3));
       rz = Math.PI / 4 + p * (-Math.PI / 6 - Math.PI / 4);
     }
     
@@ -1448,16 +1448,16 @@ export function animateBatterSwing(progress, handedness) {
     bat.rotation.z = rz;
     
     // Whip bat forward and outward through contact zone
-    const handOffset = isRHB ? 1 : -1;
+    const handOffset = isRHB ? -1 : 1;
     bat.position.x = -0.4 + progress * 0.45 * handOffset;
     bat.position.z = -0.32 + progress * 0.35;
   }
   
   if (torso) {
-    torso.rotation.y = progress * (handedness === 'RHB' ? 0.6 : -0.6);
+    torso.rotation.y = progress * (handedness === 'RHB' ? -0.6 : 0.6);
   }
   
-  batterGroup.rotation.y = baseGroupRotation + progress * (handedness === 'RHB' ? 0.55 : -0.55);
+  batterGroup.rotation.y = baseGroupRotation + progress * (handedness === 'RHB' ? -0.55 : 0.55);
 }
 
 /**

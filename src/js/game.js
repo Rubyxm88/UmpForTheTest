@@ -4,6 +4,17 @@ import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
 import { WEEKLY_CHALLENGE_DATA } from '../data/weekly_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
 import { fetchTeamSchedule, fetchGameForDate, fetchGamePitches } from './mlb-api.js';
+import { 
+  hashPIN, 
+  getProfile, 
+  saveProfile, 
+  getActiveSession, 
+  saveActiveSession, 
+  clearActiveSession, 
+  getCachedGame, 
+  saveCachedGame,
+  migrateLegacyData
+} from './db.js';
 import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime } from './physics.js';
 import { 
   initScene, 
@@ -121,6 +132,10 @@ let previewAwayLogo, previewAwayName, previewAwayScore;
 let previewHomeLogo, previewHomeName, previewHomeScore;
 let previewModalVenue, previewModalAbs, previewLoadingIndicator;
 let btnPreviewModalStart, btnPreviewModalCancel;
+let selectRateOfPlay;
+let rateOfPlay = 'standard';
+let recentGamesGrid, recentGamesDate, gameFinderDate, btnFindGames, gameFinderResults;
+let detailModalInningsRow, detailModalAbGrid;
 
 
 // Settings values
@@ -895,11 +910,15 @@ function initProfileSettingsUI() {
 /**
  * Initialize all DOM queries and attach event listeners
  */
-export function startGameSession() {
+export async function startGameSession() {
   if (WEEKLY_CHALLENGE_DATA.length < 6) {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
   cacheDOM();
+  
+  // Migrate local storage users to IndexedDB
+  await migrateLegacyData();
+  
   const lastHandle = localStorage.getItem('pitch_ump_last_handle');
   if (lastHandle && loginHandleInput) {
     loginHandleInput.value = lastHandle;
@@ -907,34 +926,29 @@ export function startGameSession() {
   attachEvents();
   initUiModeSwitcher();
   
-  loadSavedSessionFromLocal();
+  await loadSavedSessionFromLocal();
   loadFavoriteTeam();
   
   const storedUser = localStorage.getItem('ump_username');
   if (storedUser) {
-    getGlobalUserStats(storedUser).then(globalStats => {
-      const statsKey = `pitch_ump_stats_${storedUser.toUpperCase()}`;
-      localStorage.setItem(statsKey, JSON.stringify(globalStats));
+    const handleNormalized = storedUser.toUpperCase();
+    const profile = await getProfile(handleNormalized);
+    if (profile) {
+      const statsKey = `pitch_ump_stats_${handleNormalized}`;
+      localStorage.setItem(statsKey, JSON.stringify(profile));
       
-      const sessionKey = `pitch_ump_challenge_mvp_${storedUser.toUpperCase()}`;
-      if (globalStats.challengeProgress) {
-        localStorage.setItem(sessionKey, JSON.stringify(globalStats.challengeProgress));
-      } else {
-        localStorage.removeItem(sessionKey);
-      }
-      
-      if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
-        activeFavoriteTeam = globalStats.favoriteTeam;
-        localStorage.setItem('pitch_ump_favorite_team', globalStats.favoriteTeam);
+      if (profile.favoriteTeam && profile.favoriteTeam !== "none") {
+        activeFavoriteTeam = profile.favoriteTeam;
+        localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
         if (userFavoriteTeamBadge) {
-          userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${globalStats.favoriteTeam.toUpperCase()}`;
+          userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${profile.favoriteTeam.toUpperCase()}`;
         }
       }
-      loadSavedSessionFromLocal();
-      updateProfileStatsUI();
-      initProfileSettingsUI();
-      updateDailyStreakStatusUI();
-    });
+    }
+    await loadSavedSessionFromLocal();
+    updateProfileStatsUI();
+    initProfileSettingsUI();
+    updateDailyStreakStatusUI();
   }
   
   initProfileSettingsUI();
@@ -1148,6 +1162,15 @@ function cacheDOM() {
   previewLoadingIndicator = document.getElementById('preview-loading-indicator');
   btnPreviewModalStart = document.getElementById('btn-preview-modal-start');
   btnPreviewModalCancel = document.getElementById('btn-preview-modal-cancel');
+  selectRateOfPlay = document.getElementById('select-rate-of-play');
+  recentGamesGrid = document.getElementById('recent-games-grid');
+  recentGamesDate = document.getElementById('recent-games-date');
+  gameFinderDate = document.getElementById('game-finder-date');
+  btnFindGames = document.getElementById('btn-find-games');
+  gameFinderResults = document.getElementById('game-finder-results');
+  detailModalInningsRow = document.getElementById('detail-modal-innings-row');
+  detailModalAbGrid = document.getElementById('detail-modal-ab-grid');
+
 
   matchupCard = document.getElementById('matchup-card');
   cardPitcherName = document.getElementById('card-pitcher-name');
@@ -1293,9 +1316,9 @@ async function submitLoginAction() {
     loginErrorMsg.classList.remove('hidden');
   }
 
-  const users = await getGlobalUsers();
+  const profile = await getProfile(handleValNormalized);
   
-  if (users[handleValNormalized] === undefined) {
+  if (!profile) {
     // User does not exist, show confirm registration overlay
     if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
     if (loginConfirmBox) {
@@ -1303,14 +1326,10 @@ async function submitLoginAction() {
       loginConfirmBox.classList.add('flex');
     }
   } else {
-    // User exists, verify PIN
-    const record = users[handleValNormalized];
-    let pinMatched = false;
-    if (record && typeof record === 'object') {
-      pinMatched = (record.pin === pinVal);
-    } else {
-      pinMatched = (record === pinVal); // legacy
-    }
+    // User exists, verify PIN using SHA-256 hash
+    const enteredHash = await hashPIN(pinVal);
+    let pinMatched = (profile.pinHash === enteredHash) || (profile.pin === pinVal);
+    
     if (pinMatched) {
       if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
       if (loginConfirmBox) {
@@ -1318,21 +1337,19 @@ async function submitLoginAction() {
         loginConfirmBox.classList.remove('flex');
       }
       
-      // Load user stats from global DB
-      const globalStats = await getGlobalUserStats(handleValNormalized);
-      const statsKey = `pitch_ump_stats_${handleValNormalized}`;
-      localStorage.setItem(statsKey, JSON.stringify(globalStats));
-      
-      const sessionKey = `pitch_ump_challenge_mvp_${handleValNormalized}`;
-      if (globalStats.challengeProgress) {
-        localStorage.setItem(sessionKey, JSON.stringify(globalStats.challengeProgress));
-      } else {
-        localStorage.removeItem(sessionKey);
+      // Auto-migrate plaintext pin to hashed PIN
+      if (profile.pin === pinVal && !profile.pinHash) {
+        profile.pinHash = enteredHash;
+        delete profile.pin;
+        await saveProfile(profile);
       }
       
-      if (globalStats.favoriteTeam && globalStats.favoriteTeam !== "none") {
-        activeFavoriteTeam = globalStats.favoriteTeam;
-        localStorage.setItem('pitch_ump_favorite_team', globalStats.favoriteTeam);
+      const statsKey = `pitch_ump_stats_${handleValNormalized}`;
+      localStorage.setItem(statsKey, JSON.stringify(profile));
+      
+      if (profile.favoriteTeam && profile.favoriteTeam !== "none") {
+        activeFavoriteTeam = profile.favoriteTeam;
+        localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
       }
       
       loginUserSession(handleValNormalized);
@@ -1563,6 +1580,22 @@ function attachEvents() {
     });
   }
 
+  if (btnFindGames) {
+    btnFindGames.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      handleFindGames();
+    });
+  }
+
+  const btnClose = document.getElementById('btn-preview-modal-close');
+  if (btnClose) {
+    btnClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideGamePreviewModal();
+    });
+  }
+
   if (btnPreviewModalCancel) {
     btnPreviewModalCancel.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1725,6 +1758,13 @@ function attachEvents() {
     selectReviewStyle.addEventListener('change', function(e) {
       e.stopPropagation();
       reviewStyle = this.value;
+    });
+  }
+
+  if (selectRateOfPlay) {
+    selectRateOfPlay.addEventListener('change', function(e) {
+      e.stopPropagation();
+      rateOfPlay = this.value;
     });
   }
 
@@ -2582,6 +2622,9 @@ function transitionToState(newState) {
       // Update count and check if AB ended
       const abEnded = updateCountAndCheckABEnd(userHistoryItem);
       
+      // Save game progress after each called pitch decision
+      saveGameProgress();
+      
       // Stop any existing overview timer
       if (overviewTimerInterval) {
         clearInterval(overviewTimerInterval);
@@ -2654,29 +2697,85 @@ function transitionToState(newState) {
           setReviewingState(false); // Do not dim character mannequins
           setCrossingMarkerVisible(false);
           
-          if (loggedIn) {
-            if (btnViewDetails) btnViewDetails.classList.remove('hidden');
-            populatePitchDetailBug();
-            showDecisionToast(isCorrect, userHistoryItem.absCall);
-            if (isCorrect) {
-              if (abEnded && abStrikes === 3) {
-                playStrikeoutSirenSound();
-              } else {
-                if (userHistoryItem.absCall === 'S') {
-                  playStrikeCallSound();
-                } else {
-                  playBallCallSound();
-                }
-              }
-            } else {
-              playErrorBuzz();
-            }
-          }
-          
           // Draw the crossing marker and trace
           drawTrajectoryTrace(pitchTrajectory.points, currentPitch.release_pos_y || 54.0);
           const isStrikeABSVal = userHistoryItem.absCall === 'S';
           drawCrossingMarker(pitchTrajectory.crossPoint, isStrikeABSVal);
+          
+          if (rateOfPlay === 'updated' && !isCorrect) {
+            // Draw 3D offset challenge visual immediately on missed calls
+            if (pitchTrajectory && pitchTrajectory.crossPoint) {
+              drawDimensionLine(pitchTrajectory.crossPoint);
+            }
+          }
+          
+          if (loggedIn) {
+            if (btnViewDetails) btnViewDetails.classList.remove('hidden');
+            populatePitchDetailBug();
+            
+            // Award correct-call XP
+            if (isCorrect) {
+              awardXP(100);
+              showFloatingXP(100);
+            }
+            
+            if (rateOfPlay === 'updated') {
+              if (isCorrect) {
+                // Fast correct-call transition
+                showDecisionToast(isCorrect, userHistoryItem.absCall);
+                if (abEnded && abStrikes === 3) {
+                  playStrikeoutSirenSound();
+                } else {
+                  if (userHistoryItem.absCall === 'S') {
+                    playStrikeCallSound();
+                  } else {
+                    playBallCallSound();
+                  }
+                }
+              } else {
+                // Delayed popups on incorrect calls
+                playErrorBuzz();
+                if (quickPreviewControls) {
+                  quickPreviewControls.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
+                  quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+                }
+                setTimeout(() => {
+                  if (currentState !== STATES.ABS_REVIEW) return;
+                  showDecisionToast(isCorrect, userHistoryItem.absCall);
+                  if (quickPreviewControls && !abEnded) {
+                    quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
+                    quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+                  }
+                }, 1000);
+              }
+            } else {
+              // Standard behavior
+              showDecisionToast(isCorrect, userHistoryItem.absCall);
+              if (isCorrect) {
+                if (abEnded && abStrikes === 3) {
+                  playStrikeoutSirenSound();
+                } else {
+                  if (userHistoryItem.absCall === 'S') {
+                    playStrikeCallSound();
+                  } else {
+                    playBallCallSound();
+                  }
+                }
+              } else {
+                playErrorBuzz();
+              }
+            }
+          }
+          
+          // Adjust advance timings based on rate of play
+          let effectiveMinPreviewMs = minPreviewMs;
+          if (rateOfPlay === 'updated') {
+            if (isCorrect) {
+              effectiveMinPreviewMs = 1000; // Fast transition
+            } else {
+              effectiveMinPreviewMs = minPreviewMs + 1000; // Extra time to view 3D offset
+            }
+          }
           
           if (!loggedIn) {
             startQuickReviewAutoAdvance(2000);
@@ -2688,13 +2787,15 @@ function transitionToState(newState) {
               summaryTimeout = null;
               isTransitioningToSummary = false;
               advanceGameFlow();
-            }, minPreviewMs);
+            }, effectiveMinPreviewMs);
           } else {
-            if (quickPreviewControls) {
-              quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
-              quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+            if (rateOfPlay !== 'updated' || isCorrect) {
+              if (quickPreviewControls) {
+                quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
+                quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+              }
             }
-            startQuickReviewAutoAdvance(minPreviewMs);
+            startQuickReviewAutoAdvance(effectiveMinPreviewMs);
           }
           
         } else {
@@ -2707,6 +2808,12 @@ function transitionToState(newState) {
     case STATES.SCOREBOARD:
       isSettingsOpen = false;
       updateSettingsVisibility();
+      {
+        const username = localStorage.getItem('ump_username');
+        if (username) {
+          clearActiveSession(username);
+        }
+      }
       document.body.classList.remove('split-screen-active');
       const containerScoreboard = document.getElementById('canvas-container');
       onResize(containerScoreboard.clientWidth, containerScoreboard.clientHeight);
@@ -4302,6 +4409,7 @@ function switchTab(tabName) {
     renderLeaderboard('weekly');
   } else if (tabName === 'play') {
     renderDailyCompeteDashboard();
+    loadPlayTabRecentGames();
   }
 }
 
@@ -4732,10 +4840,43 @@ function saveChallengeSessionToLocal() {
   }
 }
 
-function loadSavedSessionFromLocal() {
+async function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
+  if (!username) {
+    completedABsCount = [0, 0, 0, 0, 0];
+    activeWeeklyAbIndex = 0;
+    activeGameIndex = 0;
+    weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+    updateChallengeProgressUI();
+    return;
+  }
   
-  const weeklyKey = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  try {
+    const session = await getActiveSession(username);
+    if (session) {
+      console.log("Restoring active session from IndexedDB...");
+      gameMode = session.gameMode;
+      activeWeeklyAbIndex = session.activeWeeklyAbIndex;
+      currentPitchIndex = session.currentPitchIndex;
+      abBalls = session.abBalls;
+      abStrikes = session.abStrikes;
+      pitchHistory = session.pitchHistory || [];
+      weeklyPlaylistABs = session.weeklyPlaylistABs || [];
+      activeDailyDate = session.activeDailyDate;
+      activeDailyTeam = session.activeDailyTeam;
+      
+      if (weeklyPlaylistABs.length > 0) {
+        if (welcomeScreen) welcomeScreen.classList.add('hidden');
+        if (teamSelectScreen) teamSelectScreen.classList.add('hidden');
+        loadWeeklyAtBat(activeWeeklyAbIndex);
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("Failed to restore session from IndexedDB", e);
+  }
+  
+  const weeklyKey = `pitch_ump_challenge_mvp_${username.toUpperCase()}`;
   const rawWeekly = localStorage.getItem(weeklyKey);
   if (rawWeekly) {
     try {
@@ -5763,26 +5904,14 @@ async function updateDailyStreakStatusUI() {
     }
   }
 
-  if (lastPlayed === today) {
-    if (status) {
-      status.textContent = "COMPLETED TODAY";
-      status.className = "text-xs font-bold text-red-400 uppercase";
-    }
-    if (btn) {
-      btn.setAttribute('disabled', 'true');
-      btn.className = "px-5 py-2 bg-gray-800 text-gray-500 border border-gray-700/30 rounded-lg text-xs font-bold uppercase tracking-wider cursor-not-allowed opacity-50";
-    }
-  } else {
-    if (status) {
-      status.textContent = "Available (Free)";
-      status.className = "text-xs font-bold text-green-400 uppercase";
-    }
-    if (btn) {
-      btn.removeAttribute('disabled');
-      btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20";
-    }
+  if (status) {
+    status.textContent = "Available (Replayable)";
+    status.className = "text-xs font-bold text-green-400 uppercase";
   }
-  
+  if (btn) {
+    btn.removeAttribute('disabled');
+    btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20";
+  }
   if (rankEl && username !== 'GUEST_UMPIRE') {
     rankEl.textContent = "FETCHING...";
     try {
@@ -6978,6 +7107,434 @@ function renderDailyCompeteDashboard() {
       });
     }
   });
+}
+
+async function fetchYesterdayGames() {
+  const team = activeFavoriteTeam && activeFavoriteTeam !== "none" ? activeFavoriteTeam : "Orioles";
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().split('T')[0];
+  
+  let teamsToFetch = [];
+  if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
+    teamsToFetch = [activeFavoriteTeam];
+  } else {
+    teamsToFetch = ["Orioles", "Yankees", "Red Sox", "Dodgers", "Braves"];
+  }
+  
+  const allGames = [];
+  const seenPks = new Set();
+  
+  for (const tName of teamsToFetch) {
+    const games = await fetchTeamSchedule(tName, dateStr, dateStr);
+    for (const g of games) {
+      if (!seenPks.has(g.gamePk)) {
+        seenPks.add(g.gamePk);
+        allGames.push(g);
+      }
+    }
+  }
+  return allGames;
+}
+
+async function getGamePitchesWithCache(gamePk) {
+  const cached = await getCachedGame(gamePk);
+  if (cached) {
+    console.log(`Loaded game ${gamePk} from IndexedDB cache`);
+    return cached.data;
+  }
+  const gameData = await fetchGamePitches(gamePk);
+  if (gameData) {
+    await saveCachedGame(gamePk, gameData);
+    console.log(`Fetched game ${gamePk} from MLB API and saved to IndexedDB cache`);
+  }
+  return gameData;
+}
+
+async function openGameDetailModal(game) {
+  if (previewModalOverlay) {
+    previewModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+    previewModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
+  
+  if (previewModalTitle) previewModalTitle.textContent = "GAME DETAIL HUB";
+  if (previewModalDate) previewModalDate.textContent = new Date(game.date).toLocaleDateString().toUpperCase();
+  if (previewAwayName) previewAwayName.textContent = game.awayTeam.toUpperCase();
+  if (previewHomeName) previewHomeName.textContent = game.homeTeam.toUpperCase();
+  if (previewAwayScore) previewAwayScore.textContent = game.awayScore;
+  if (previewHomeScore) previewHomeScore.textContent = game.homeScore;
+  if (previewModalVenue) previewModalVenue.textContent = game.venue.toUpperCase();
+  if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(game.awayTeam);
+  if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(game.homeTeam);
+  
+  if (previewLoadingIndicator) previewLoadingIndicator.classList.remove('hidden');
+  if (btnPreviewModalStart) btnPreviewModalStart.disabled = true;
+  if (detailModalInningsRow) detailModalInningsRow.innerHTML = '';
+  if (detailModalAbGrid) detailModalAbGrid.innerHTML = '';
+  
+  try {
+    const allAtBats = await getGamePitchesWithCache(game.gamePk);
+    if (!allAtBats || allAtBats.length === 0) {
+      if (previewModalAbs) previewModalAbs.textContent = "0 AT-BATS";
+      if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
+      return;
+    }
+    
+    if (previewModalAbs) previewModalAbs.textContent = `${allAtBats.length} AT-BATS`;
+    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
+    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
+    
+    if (detailModalInningsRow) {
+      const innings = [...new Set(allAtBats.map(ab => ab[0]?.inning))].filter(Boolean).sort((a,b) => a - b);
+      innings.forEach(inn => {
+        const btn = document.createElement('button');
+        btn.className = 'px-3 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-[9px] font-mono-tech font-bold hover:bg-purple-600/30 hover:border-purple-500/50 transition-all text-white cursor-pointer pointer-events-auto shrink-0';
+        btn.textContent = `INN ${inn}`;
+        btn.addEventListener('click', () => {
+          detailModalInningsRow.querySelectorAll('button').forEach(b => {
+            b.classList.remove('bg-purple-600', 'border-purple-500');
+            b.classList.add('bg-slate-900', 'border-white/10');
+          });
+          btn.classList.remove('bg-slate-900', 'border-white/10');
+          btn.classList.add('bg-purple-600', 'border-purple-500');
+          renderAtBatsForInning(inn, allAtBats, game);
+        });
+        detailModalInningsRow.appendChild(btn);
+      });
+      if (innings.length > 0) {
+        detailModalInningsRow.children[0].click();
+      }
+    }
+    
+    btnPreviewModalStart.onclick = () => {
+      hideGamePreviewModal();
+      const condensedABs = selectCondensedAtBats(allAtBats, 15);
+      launchGame(condensedABs, game.awayTeam, new Date(game.date).toISOString().split('T')[0]);
+    };
+  } catch (err) {
+    console.error(err);
+    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
+  }
+}
+
+function renderAtBatsForInning(inning, allAtBats, game) {
+  if (!detailModalAbGrid) return;
+  detailModalAbGrid.innerHTML = '';
+  
+  const inningABs = allAtBats.filter(ab => ab[0]?.inning === inning);
+  
+  if (inningABs.length === 0) {
+    detailModalAbGrid.innerHTML = '<span class="text-xs text-gray-500 font-mono-tech text-center py-8">No matchups in this inning</span>';
+    return;
+  }
+  
+  inningABs.forEach((ab, idx) => {
+    const firstPitch = ab[0];
+    if (!firstPitch) return;
+    
+    const abDiv = document.createElement('div');
+    abDiv.className = 'flex justify-between items-center p-2.5 bg-slate-900/60 hover:bg-slate-900 border border-white/5 hover:border-blue-500/50 rounded-xl transition-all gap-2';
+    
+    const sideText = firstPitch.is_top ? 'TOP' : 'BOT';
+    const matchupText = `${firstPitch.pitcher} vs ${firstPitch.batter}`;
+    const pitchCountText = `${ab.length} Pitch${ab.length > 1 ? 'es' : ''}`;
+    
+    abDiv.innerHTML = `
+      <div class="flex flex-col text-left">
+        <span class="text-[8px] font-mono-tech text-blue-400 font-extrabold uppercase tracking-wider">${sideText} ${inning} • ${pitchCountText}</span>
+        <span class="text-[10px] font-bold text-white uppercase">${matchupText}</span>
+      </div>
+      <button class="btn-play-ab px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[8px] font-bold uppercase transition-all cursor-pointer pointer-events-auto">Play AB</button>
+    `;
+    
+    abDiv.querySelector('.btn-play-ab').addEventListener('click', () => {
+      hideGamePreviewModal();
+      launchGame([ab], game.awayTeam, new Date().toISOString().split('T')[0]);
+    });
+    
+    detailModalAbGrid.appendChild(abDiv);
+  });
+}
+
+function selectCondensedAtBats(allAtBats, limit = 15) {
+  const scored = allAtBats.map((ab, originalIndex) => {
+    let score = 0;
+    const firstPitch = ab[0];
+    if (!firstPitch) return { ab, score: 0, originalIndex };
+
+    const scoreDiff = Math.abs(firstPitch.score_away - firstPitch.score_home);
+    score += Math.max(0, 8 - scoreDiff) * 3;
+
+    if (firstPitch.inning >= 7) {
+      score += 10;
+    } else if (firstPitch.inning >= 4) {
+      score += 5;
+    }
+
+    score += firstPitch.outs * 4;
+
+    const calledPitchesCount = ab.filter(p => !p.is_swing).length;
+    score += calledPitchesCount * 5;
+
+    return { ab, score, originalIndex };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  
+  const selected = scored.slice(0, limit);
+  selected.sort((a, b) => a.originalIndex - b.originalIndex);
+  
+  return selected.map(s => s.ab);
+}
+
+async function findGamesForDate(dateStr) {
+  let teamsToFetch = [];
+  if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
+    teamsToFetch = [activeFavoriteTeam];
+  } else {
+    teamsToFetch = ["Orioles", "Yankees", "Red Sox", "Dodgers", "Braves"];
+  }
+  
+  const allGames = [];
+  const seenPks = new Set();
+  
+  for (const tName of teamsToFetch) {
+    const games = await fetchTeamSchedule(tName, dateStr, dateStr);
+    for (const g of games) {
+      if (!seenPks.has(g.gamePk)) {
+        seenPks.add(g.gamePk);
+        allGames.push(g);
+      }
+    }
+  }
+  return allGames;
+}
+
+async function handleFindGames() {
+  const dateVal = gameFinderDate ? gameFinderDate.value : "";
+  if (!dateVal) {
+    alert("Please select a date first!");
+    return;
+  }
+  
+  if (gameFinderResults) {
+    gameFinderResults.classList.remove('hidden');
+    gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-blue-400 py-4 animate-pulse">⚡ SEARCHING MLB SCHEDULE...</div>';
+  }
+  
+  try {
+    const games = await findGamesForDate(dateVal);
+    if (!games || games.length === 0) {
+      gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-gray-500 py-4">No games found for this date. Try another date.</div>';
+      return;
+    }
+    
+    gameFinderResults.innerHTML = '';
+    games.forEach(g => {
+      const card = document.createElement('div');
+      card.className = 'glass-panel p-3 rounded-lg border border-white/5 flex flex-col justify-between hover:border-blue-500/50 hover:scale-[1.01] transition-all select-none gap-2 text-left';
+      
+      card.innerHTML = `
+        <div class="flex justify-between items-center text-[8px] font-mono-tech text-gray-400">
+          <span>${g.venue}</span>
+        </div>
+        <div class="text-[10px] font-black text-white uppercase">${g.awayTeam} (${g.awayScore}) @ ${g.homeTeam} (${g.homeScore})</div>
+        <div class="flex justify-between items-center text-[8px] font-mono-tech mt-1 pt-1.5 border-t border-white/5">
+          <span class="text-emerald-400 font-bold">${g.status.toUpperCase()}</span>
+          <button class="btn-inspect-game-find px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-[8px] font-bold uppercase transition-all cursor-pointer pointer-events-auto" data-gamepk="${g.gamePk}">Inspect</button>
+        </div>
+      `;
+      
+      gameFinderResults.appendChild(card);
+    });
+    
+    gameFinderResults.querySelectorAll('.btn-inspect-game-find').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const gamePk = e.target.getAttribute('data-gamepk');
+        const game = games.find(x => String(x.gamePk) === gamePk);
+        if (game) {
+          await openGameDetailModal(game);
+        }
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-red-400 py-4">Failed to load games.</div>';
+  }
+}
+
+async function loadPlayTabRecentGames() {
+  if (recentGamesDate) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    recentGamesDate.textContent = yesterday.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
+  }
+  
+  if (!recentGamesGrid) return;
+  recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-purple-400 py-4 animate-pulse">⚡ LOADING YESTERDAY\'S MLB GAMES...</div>';
+
+  try {
+    const games = await fetchYesterdayGames();
+    if (!games || games.length === 0) {
+      recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-gray-500 py-4">No MLB games found for yesterday.</div>';
+      return;
+    }
+    
+    recentGamesGrid.innerHTML = '';
+    games.forEach(g => {
+      const card = document.createElement('div');
+      card.className = 'glass-panel p-4 rounded-xl border border-white/10 flex flex-col justify-between hover:border-purple-500/50 hover:scale-[1.01] transition-all select-none gap-3';
+      
+      const awayLogo = getTeamLogoUrl(g.awayTeam);
+      const homeLogo = getTeamLogoUrl(g.homeTeam);
+      
+      card.innerHTML = `
+        <div class="flex justify-between items-center text-[9px] font-mono-tech text-gray-400">
+          <span class="text-purple-400 font-bold">LIVE METRIC</span>
+          <span>${g.venue}</span>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <img src="${awayLogo}" class="w-6 h-6 object-contain bg-slate-900/60 rounded-full p-0.5" />
+            <span class="text-xs font-black text-white uppercase">${g.awayTeam}</span>
+          </div>
+          <span class="text-xs font-mono-tech font-black text-white">${g.awayScore}</span>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <img src="${homeLogo}" class="w-6 h-6 object-contain bg-slate-900/60 rounded-full p-0.5" />
+            <span class="text-xs font-black text-white uppercase">${g.homeTeam}</span>
+          </div>
+          <span class="text-xs font-mono-tech font-black text-white">${g.homeScore}</span>
+        </div>
+        <div class="flex justify-between items-center text-[9px] font-mono-tech mt-1 pt-2 border-t border-white/5">
+          <span class="text-emerald-400 font-bold">${g.status.toUpperCase()}</span>
+          <button class="btn-inspect-game px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[9px] font-bold uppercase transition-all cursor-pointer pointer-events-auto" data-gamepk="${g.gamePk}">Inspect Game</button>
+        </div>
+      `;
+      
+      recentGamesGrid.appendChild(card);
+    });
+
+    recentGamesGrid.querySelectorAll('.btn-inspect-game').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const gamePk = e.target.getAttribute('data-gamepk');
+        const game = games.find(x => String(x.gamePk) === gamePk);
+        if (game) {
+          await openGameDetailModal(game);
+        }
+      });
+    });
+  } catch (e) {
+    console.error(e);
+    recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-red-400 py-4">Failed to load recent MLB games.</div>';
+  }
+}
+
+async function awardXP(amount) {
+  const username = localStorage.getItem('ump_username');
+  if (!username) return;
+
+  const stats = await getGlobalUserStats(username);
+  stats.xp = (stats.xp || 0) + amount;
+  
+  const oldLevel = stats.level || 1;
+  const newLevel = Math.floor(stats.xp / 1000) + 1;
+  stats.level = newLevel;
+
+  await saveGlobalUserStats(username, stats);
+  updateProfileStatsUI();
+
+  if (newLevel > oldLevel) {
+    showLevelUpToast(newLevel);
+  }
+}
+
+function showFloatingXP(amount) {
+  const container = document.body;
+  const el = document.createElement('div');
+  el.textContent = `+${amount} XP`;
+  el.className = 'fixed text-emerald-400 font-mono-tech font-black text-xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2';
+  
+  el.style.left = '50%';
+  el.style.top = '60%';
+  el.style.opacity = '1';
+  
+  container.appendChild(el);
+  
+  requestAnimationFrame(() => {
+    el.style.top = '45%';
+    el.style.opacity = '0';
+  });
+  
+  setTimeout(() => {
+    el.remove();
+  }, 1000);
+}
+
+function showLevelUpToast(newLevel) {
+  playLevelUpSound();
+  const container = document.body;
+  const toast = document.createElement('div');
+  toast.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 font-black px-6 py-3 rounded-full text-sm font-mono-tech z-[400] shadow-2xl border-2 border-yellow-300 uppercase tracking-widest animate-bounce';
+  toast.innerHTML = `⭐ LEVEL UP! NOW LEVEL ${newLevel} ⭐`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.remove();
+  }, 3000);
+}
+
+function playLevelUpSound() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const frequencies = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00]; // C5, E5, G5, C6, E6, G6, C7
+  frequencies.forEach((freq, idx) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.2, now + idx * 0.05 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.4);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now + idx * 0.05);
+    osc.stop(now + idx * 0.05 + 0.45);
+  });
+}
+
+async function saveGameProgress() {
+  const username = localStorage.getItem('ump_username');
+  if (!username) return;
+
+  const sessionData = {
+    gameMode,
+    activeWeeklyAbIndex,
+    currentPitchIndex,
+    abBalls,
+    abStrikes,
+    pitchHistory: pitchHistory.map(h => ({
+      pitchNum: h.pitchNum,
+      pitchType: h.pitchType,
+      speedMph: h.speedMph,
+      userCall: h.userCall,
+      absCall: h.absCall,
+      realCall: h.realCall,
+      userCorrect: h.userCorrect,
+      realCorrect: h.realCorrect,
+      isSwingPlay: h.isSwingPlay,
+      swingOutcome: h.swingOutcome,
+      swingHitType: h.swingHitType
+    })),
+    weeklyPlaylistABs,
+    activeDailyDate,
+    activeDailyTeam
+  };
+  
+  await saveActiveSession(username, sessionData);
+  console.log("Game progress saved to IndexedDB session storage.");
 }
 
 async function startDailyCompeteGame(dateString) {

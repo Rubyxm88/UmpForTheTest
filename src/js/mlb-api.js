@@ -325,19 +325,7 @@ export async function fetchGamePitches(gamePk) {
     });
     if (currentAB.length > 0) atBats.push(currentAB);
 
-    // Select up to 15 at-bats spread across the game
-    let selectedABs;
-    if (atBats.length <= 15) {
-      selectedABs = atBats;
-    } else {
-      const step = atBats.length / 15;
-      selectedABs = [];
-      for (let i = 0; i < 15; i++) {
-        selectedABs.push(atBats[Math.floor(i * step)]);
-      }
-    }
-
-    return selectedABs;
+    return atBats;
   } catch (err) {
     console.warn('MLB API: Failed to fetch game pitches:', err);
     return null;
