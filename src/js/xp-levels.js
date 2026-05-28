@@ -46,6 +46,19 @@ export function formatLevelLabel(level) {
   return `LVL ${level} · ${tier.short}`;
 }
 
+export function getAbXpBreakdown(correctCount, isPerfect) {
+  const pitchXp = Math.max(0, correctCount) * 10;
+  const bonusXp = isPerfect && correctCount > 0 ? 50 : 0;
+  return { pitchXp, bonusXp, total: pitchXp + bonusXp };
+}
+
+/** Apply unified XP bar fill to any bar element */
+export function setXpBarPercent(barEl, pct, animate = true) {
+  if (!barEl) return;
+  barEl.style.transition = animate ? 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none';
+  barEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+}
+
 export function applyLevelBadgeElement(el, level, options = {}) {
   if (!el) return;
   const tier = getLevelTier(level);

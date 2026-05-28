@@ -1924,6 +1924,19 @@ export function setCameraAngle(angleName) {
 }
 
 /**
+ * Positions the summary-review camera (post-AB chart 3D replay).
+ */
+export function setSummaryReviewCameraPose(x, y, z, lookAtY) {
+  if (!summaryReviewCamera) return;
+  const lookY = lookAtY !== undefined ? lookAtY : (strikeZoneMesh ? strikeZoneMesh.position.y : 2.5);
+  summaryReviewCamera.position.set(x, y, z);
+  summaryReviewCamera.lookAt(0, lookY, 0.7083);
+  if (activeCamera === summaryReviewCamera) {
+    targetCameraPos.copy(summaryReviewCamera.position);
+  }
+}
+
+/**
  * Returns the name of the active camera
  */
 export function getActiveCameraName() {
@@ -2145,16 +2158,31 @@ export function getDistanceToABSZone(x, y) {
 export function drawDimensionLine(crossPos) {
   clearDimensionLine();
   
-  const xMin = -0.8283;
-  const xMax = 0.8283;
-  const yMin = currentSzBot - 0.12;
-  const yMax = currentSzTop + 0.12;
+  // Visual ruler should match the visible strike-zone plane (rulebook),
+  // otherwise it looks like the line extends past the zone.
+  const xMin = -0.7083;
+  const xMax = 0.7083;
+  const yMin = currentSzBot;
+  const yMax = currentSzTop;
   
   const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
   
   let targetX, targetY;
   
-  const dist = getDistanceToABSZone(crossPos.x, crossPos.y);
+  // Compute distance relative to the visual (rulebook) zone for this ruler.
+  const dist = (() => {
+    const dx = Math.max(0, xMin - crossPos.x, crossPos.x - xMax);
+    const dy = Math.max(0, yMin - crossPos.y, crossPos.y - yMax);
+    if (dx === 0 && dy === 0) {
+      const distToLeft = crossPos.x - xMin;
+      const distToRight = xMax - crossPos.x;
+      const distToBottom = crossPos.y - yMin;
+      const distToTop = yMax - crossPos.y;
+      const minEdgeDist = Math.min(distToLeft, distToRight, distToBottom, distToTop);
+      return -minEdgeDist;
+    }
+    return Math.sqrt(dx * dx + dy * dy);
+  })();
   if (dist < 0) {
     const distToLeft = crossPos.x - xMin;
     const distToRight = xMax - crossPos.x;
@@ -2307,7 +2335,7 @@ export function drawDimensionLine(crossPos) {
   
   // Place label above or below the zone (flip if it would cover the pitch)
   const zoneMidY = (currentSzTop + currentSzBot) / 2;
-  const labelOffset = 0.16;
+  const labelOffset = 0.22;
   let labelWorldY = crossPos.y >= zoneMidY ? currentSzTop + labelOffset : currentSzBot - labelOffset;
   if (Math.abs(labelWorldY - crossPos.y) < 0.22) {
     labelWorldY = crossPos.y >= zoneMidY ? currentSzBot - labelOffset : currentSzTop + labelOffset;
@@ -2770,6 +2798,21 @@ export function showSummaryPitchReview(pitches) {
  */
 export function highlightSummaryPitch(index) {
   if (!summaryReviewGroup) return;
+
+  if (index < 0) {
+    summaryReviewGroup.children.forEach((group) => {
+      group.scale.set(1, 1, 1);
+      group.traverse((child) => {
+        if (child.material) {
+          const origOpacity = child.userData.originalOpacity || 1.0;
+          child.material.opacity = origOpacity;
+        }
+      });
+    });
+    clearTrajectoryTrace();
+    clearDimensionLine();
+    return;
+  }
   
   let selectedPitch = null;
   

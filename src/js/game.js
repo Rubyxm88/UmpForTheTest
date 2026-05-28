@@ -15,6 +15,16 @@ import {
   saveCachedGame,
   migrateLegacyData
 } from './db.js';
+import {
+  apiLogin,
+  apiRegister,
+  apiLogout,
+  apiMe,
+  apiSaveStats,
+  apiFetchLeaderboard,
+  apiSubmitLeaderboard,
+  apiUpdatePin,
+} from './api-client.js';
 import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime } from './physics.js';
 import { 
   initScene, 
@@ -55,7 +65,7 @@ import {
   highlightSummaryPitch,
   clearSummaryPitchReview,
   updateWelcomeCamera,
-  getActiveCameraName
+  getActiveCameraName,
 } from './scene.js';
 import {
   XP_PER_LEVEL,
@@ -65,6 +75,8 @@ import {
   isMilestoneLevel,
   applyLevelBadgeElement,
   formatLevelLabel,
+  getAbXpBreakdown,
+  setXpBarPercent,
 } from './xp-levels.js';
 
 
@@ -269,7 +281,8 @@ let bgmNextNoteTime = 0.0;
 let bgmCurrentBeatIndex = 0;
 let bgmMelodyNoteIndex = 0;
 let bgmMelodyBeatRemaining = 0;
-let bgmEnabled = true;
+let bgmEnabled = false;
+let audioFocusMuted = false;
 let chkBgmEnabled = null;
 let activeBgmTrack = 0;
 let selBgmTrack = null;
@@ -384,6 +397,7 @@ let abSummaryWeeklyCount, abSummaryWeeklyTotal, abSummaryLeaderboardSnippet;
 let btnAbSummaryToggleReview, abSummaryReviewSection, challengeTrackerHud;
 let levelUpOverlay, levelUpBadge, levelUpTitle, levelUpSubtitle;
 let abSummaryReviewExpanded = false;
+let abSummarySelectedPitchIndex = null;
 
 // Matchup Walkup card (ab-start-overlay) faceoff elements
 let abStartPitcherImg, abStartPitcherLogo, abStartPitcherStats;
@@ -412,11 +426,189 @@ function initAudio() {
   }
 }
 
+function isGameAudioAllowed() {
+  return !audioFocusMuted && document.visibilityState === 'visible' && document.hasFocus();
+}
+
+/** True when a menu screen or blocking overlay is up — no pitch/glove SFX. */
+function isOverlayUiBlockingAudio() {
+  const visible = (el) =>
+    el && el.classList.contains('opacity-100') && !el.classList.contains('hidden');
+  return (
+    isGamePaused ||
+    visible(pauseScreen) ||
+    visible(welcomeScreen) ||
+    visible(teamSelectScreen) ||
+    visible(startScreen) ||
+    visible(scoreboardScreen) ||
+    visible(abStartOverlay) ||
+    visible(abSummaryOverlay)
+  );
+}
+
+function isMenuGameState() {
+  return (
+    currentState === STATES.WELCOME ||
+    currentState === STATES.TEAM_SELECT ||
+    currentState === STATES.START ||
+    currentState === STATES.SCOREBOARD
+  );
+}
+
+/** Pitch-flight / glove / whoosh — only during live at-bat, not menus or overlays. */
+function isGameplayAudioAllowed() {
+  if (!isGameAudioAllowed()) return false;
+  if (isMenuGameState()) return false;
+  if (isOverlayUiBlockingAudio()) return false;
+  return true;
+}
+
+function setGameAudioFocusMuted(muted) {
+  audioFocusMuted = muted;
+  if (bgmInterval) {
+    clearInterval(bgmInterval);
+    bgmInterval = null;
+  }
+  if (!audioCtx) return;
+  if (muted) {
+    audioCtx.suspend().catch(() => {});
+  } else if (document.hasFocus() && document.visibilityState === 'visible') {
+    audioCtx.resume().catch(() => {});
+  }
+}
+
+function updateHudKeyboardHelpVisibility() {
+  if (!hudKeyboardHelp) return;
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (isMobile) {
+    hudKeyboardHelp.classList.add('hidden');
+    return;
+  }
+  hudKeyboardHelp.classList.remove('hidden');
+}
+
+function setMarqueePlayerName(primaryEl, dupSelectorOrEl, name, options = {}) {
+  if (!primaryEl) return;
+  const raw = name || '--';
+  const text = options.uppercase ? raw.toUpperCase() : raw;
+  primaryEl.textContent = text;
+  const wrap = primaryEl.closest('.name-marquee-wrap');
+  let dupEl = null;
+  if (typeof dupSelectorOrEl === 'string' && wrap) {
+    dupEl = wrap.querySelector(dupSelectorOrEl);
+  } else if (dupSelectorOrEl instanceof Element) {
+    dupEl = dupSelectorOrEl;
+  }
+  if (dupEl) dupEl.textContent = text;
+  if (!wrap) return;
+
+  const measureMarquee = () => {
+    wrap.classList.remove('name-marquee-wrap--scroll');
+    const textWidth = primaryEl.scrollWidth;
+    const needsScroll = textWidth > wrap.clientWidth + 2;
+    wrap.classList.toggle('name-marquee-wrap--scroll', needsScroll);
+  };
+
+  requestAnimationFrame(measureMarquee);
+  requestAnimationFrame(() => requestAnimationFrame(measureMarquee));
+}
+
+function hideAbSummaryXpPopover() {
+  const pop = document.getElementById('ab-summary-xp-popover');
+  const btn = document.getElementById('ab-summary-xp-earned');
+  if (pop) pop.classList.add('hidden');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleAbSummaryXpPopover() {
+  const pop = document.getElementById('ab-summary-xp-popover');
+  const btn = document.getElementById('ab-summary-xp-earned');
+  if (!pop || !btn) return;
+  const open = pop.classList.contains('hidden');
+  if (open) {
+    pop.classList.remove('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    hideAbSummaryXpPopover();
+  }
+}
+
+function renderAbSummaryXpPopover(xpBreakdown, correctCount, isPerfect) {
+  const list = document.getElementById('ab-summary-xp-popover-list');
+  const totalEl = document.getElementById('ab-summary-xp-popover-total');
+  if (!list) return;
+
+  list.innerHTML = '';
+  const rows = [
+    { label: `Correct calls (${correctCount})`, pts: `+${xpBreakdown.pitchXp}`, sub: '10 XP each' },
+  ];
+  if (xpBreakdown.bonusXp > 0) {
+    rows.push({ label: 'Perfect at-bat bonus', pts: `+${xpBreakdown.bonusXp}`, sub: 'All calls correct' });
+  }
+
+  rows.forEach((row) => {
+    const li = document.createElement('li');
+    li.className = 'ab-summary-xp-popover-row';
+    li.innerHTML = `
+      <div class="ab-summary-xp-popover-row-label">
+        <span>${row.label}</span>
+        <span class="ab-summary-xp-popover-row-sub">${row.sub}</span>
+      </div>
+      <span class="ab-summary-xp-popover-row-pts">${row.pts}</span>
+    `;
+    list.appendChild(li);
+  });
+
+  if (totalEl) totalEl.textContent = `+${xpBreakdown.total}`;
+  hideAbSummaryXpPopover();
+}
+
+let abSummaryXpPopoverBound = false;
+function bindAbSummaryXpPopoverOnce() {
+  if (abSummaryXpPopoverBound) return;
+  abSummaryXpPopoverBound = true;
+  const btn = document.getElementById('ab-summary-xp-earned');
+  if (btn) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleAbSummaryXpPopover();
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const wrap = document.querySelector('.ab-summary-xp-earned-wrap');
+    if (wrap && !wrap.contains(e.target)) hideAbSummaryXpPopover();
+  });
+}
+
+function hideGameplayHudForSummary(hide) {
+  document.body.classList.toggle('ab-summary-active', hide);
+  const profileHud = document.getElementById('persistent-profile-hud');
+  if (profileHud && hide) {
+    profileHud.classList.add('hidden');
+  } else if (profileHud && !hide && localStorage.getItem('ump_username')) {
+    profileHud.classList.remove('hidden');
+  }
+  if (matchupCard) {
+    if (hide) setOverlayVisible(matchupCard, false);
+  }
+  if (gameStatusBadge) {
+    gameStatusBadge.classList.toggle('opacity-0', hide);
+    gameStatusBadge.classList.toggle('pointer-events-none', hide);
+    if (hide) gameStatusBadge.classList.add('!hidden');
+    else gameStatusBadge.classList.remove('!hidden');
+  }
+  if (closeCallPill && hide) {
+    closeCallPill.classList.add('opacity-0', 'scale-95');
+    closeCallPill.classList.remove('opacity-100', 'scale-100');
+  }
+  setChallengeTrackerHudVisible(!hide);
+}
+
 /**
  * Plays a procedurally synthesized catcher's leather glove "pop" sound
  */
 function playGlovePopSound() {
-  if (!audioCtx) return;
+  if (!audioCtx || !isGameplayAudioAllowed()) return;
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
@@ -611,6 +803,8 @@ function playFanfareSound() {
 }
 
 function playCoinSound() {
+  return; // Removed — no login/start coin sound
+  /* eslint-disable no-unreachable */
   if (!audioCtx) return;
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
@@ -756,32 +950,16 @@ function updateMuteButtonUI() {
 }
 
 function startBgm() {
-  if (bgmInterval) return;
-  initAudio();
-  if (!audioCtx) return;
-  
-  bgmNextNoteTime = audioCtx.currentTime + 0.1;
-  bgmMelodyNoteIndex = 0;
-  
-  const melody = getCurrentMelodyArray();
-  bgmMelodyBeatRemaining = melody.length > 0 ? melody[0].beats : 1;
-  bgmCurrentBeatIndex = 0;
-  
-  const saved = localStorage.getItem('pitch_ump_bgm_enabled');
-  if (saved !== null) {
-    bgmEnabled = saved === 'true';
-    if (chkBgmEnabled) chkBgmEnabled.checked = bgmEnabled;
+  // Background music removed — keep stub so callers don't break
+  bgmEnabled = false;
+  if (bgmInterval) {
+    clearInterval(bgmInterval);
+    bgmInterval = null;
   }
-  updateMuteButtonUI();
-  
-  activeBgmTrack = Math.floor(Math.random() * 3);
-  if (selBgmTrack) selBgmTrack.value = activeBgmTrack;
-  
-  bgmInterval = setInterval(bgmScheduler, 25);
 }
 
 function playBallWhooshSound(speedMph) {
-  if (!audioCtx) return;
+  if (!audioCtx || !isGameplayAudioAllowed()) return;
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
@@ -1542,14 +1720,6 @@ function bindRetroAudioToElements() {
 }
 
 
-const JSONBIN_BASE_URL = 'https://jsonbin-zeta.vercel.app/api/bins';
-const BINS = {
-  users: 'po-AXvhkN8',
-  weekly: '1xVZn2Uhux',
-  daily: '8qpribJqAX',
-  alltime: 'lx5zghwYkO'
-};
-
 function normalizeHandle(handle) {
   return (handle || '').trim().toUpperCase();
 }
@@ -1576,92 +1746,71 @@ function requireLoggedInUser() {
   return username;
 }
 
-async function getGlobalUsers() {
-  try {
-    const res = await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`);
-    if (res.ok) {
-      const users = await res.json();
-      if (users && typeof users === 'object') return users;
-    }
-  } catch (e) {
-    console.warn("Error fetching global users map:", e);
+async function applyCloudSessionToLocal(handle, pinVal, cloud) {
+  const normalized = normalizeHandle(handle);
+  const stats = cloud.stats || {};
+  const statsKey = getStatsStorageKey(normalized);
+  localStorage.setItem(statsKey, JSON.stringify(stats));
+
+  const pinHash = pinVal ? await hashPIN(pinVal) : (await getProfile(normalized))?.pinHash;
+  await saveProfile({
+    handle: normalized,
+    pinHash: pinHash || '',
+    favoriteTeam: cloud.favoriteTeam || stats.favoriteTeam || 'none',
+    xp: stats.xp || 0,
+    overallAccuracy: stats.overallAccuracy ?? null,
+    maxStreak: stats.maxStreak || 0,
+    completedWeekly: stats.completedWeekly || 0,
+    dnfs: stats.dnfs || 0,
+    history: stats.history || [],
+  });
+
+  if (cloud.favoriteTeam && cloud.favoriteTeam !== 'none') {
+    activeFavoriteTeam = cloud.favoriteTeam;
+    localStorage.setItem('pitch_ump_favorite_team', cloud.favoriteTeam);
   }
-  return JSON.parse(localStorage.getItem('pitch_ump_users') || '{}');
 }
 
 async function saveGlobalUser(handle, pin) {
   try {
+    await apiUpdatePin(pin);
     const normalized = normalizeHandle(handle);
-    const pinHash = await hashPIN(pin);
-    const users = await getGlobalUsers();
-    const existing = users[normalized];
-    const statsBinId = (existing && typeof existing === 'object') ? existing.statsBinId : null;
-    users[normalized] = { pinHash, statsBinId };
-    delete users[normalized].pin;
-    localStorage.setItem('pitch_ump_users', JSON.stringify(users));
-    await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(users)
-    });
+    const profile = await getProfile(normalized);
+    if (profile) {
+      profile.pinHash = await hashPIN(pin);
+      delete profile.pin;
+      await saveProfile(profile);
+    }
   } catch (e) {
-    console.warn("Error saving user globally:", e);
+    console.warn('Error saving PIN to cloud:', e);
   }
 }
 
 async function getGlobalUserStats(handle) {
+  const statsKey = getStatsStorageKey(handle);
+  const fallback = JSON.parse(
+    localStorage.getItem(statsKey) ||
+      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}'
+  );
   try {
-    const users = await getGlobalUsers();
-    const userRecord = users[handle.toUpperCase()];
-    if (userRecord && typeof userRecord === 'object' && userRecord.statsBinId) {
-      const res = await fetch(`${JSONBIN_BASE_URL}/${userRecord.statsBinId}`);
-      if (res.ok) {
-        const stats = await res.json();
-        if (stats && typeof stats === 'object') return stats;
-      }
+    const me = await apiMe();
+    if (me?.stats && normalizeHandle(me.handle) === normalizeHandle(handle)) {
+      localStorage.setItem(statsKey, JSON.stringify(me.stats));
+      return me.stats;
     }
   } catch (e) {
-    console.warn(`Error fetching stats for ${handle}:`, e);
+    console.warn(`Error fetching cloud stats for ${handle}:`, e);
   }
-  const statsKey = getStatsStorageKey(handle);
-  return JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  return fallback;
 }
 
 async function saveGlobalUserStats(handle, stats) {
   const statsKey = getStatsStorageKey(handle);
   localStorage.setItem(statsKey, JSON.stringify(stats));
   try {
-    const users = await getGlobalUsers();
-    const userRecord = users[handle.toUpperCase()];
-    
-    if (userRecord && typeof userRecord === 'object') {
-      if (userRecord.statsBinId) {
-        await fetch(`${JSONBIN_BASE_URL}/${userRecord.statsBinId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(stats)
-        });
-      } else {
-        const createRes = await fetch(JSONBIN_BASE_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(stats)
-        });
-        if (createRes.ok) {
-          const createData = await createRes.json();
-          userRecord.statsBinId = createData.id;
-          
-          await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(users)
-          });
-          localStorage.setItem('pitch_ump_users', JSON.stringify(users));
-        }
-      }
-    }
+    await apiSaveStats(stats);
   } catch (e) {
-    console.warn(`Error saving stats for ${handle} globally:`, e);
+    console.warn(`Error saving stats for ${handle} to cloud:`, e);
   }
 }
 
@@ -1674,8 +1823,6 @@ function loginUserSession(handleVal) {
   loadFavoriteTeam();
   updateProfileStatsUI();
   updateDailyStreakStatusUI();
-  playCoinSound();
-  
   if (autoPlayTimeout) {
     clearTimeout(autoPlayTimeout);
     autoPlayTimeout = null;
@@ -1833,12 +1980,15 @@ export async function startGameSession() {
   const storedUser = localStorage.getItem('ump_username');
   if (storedUser) {
     const handleNormalized = storedUser.toUpperCase();
-    const profile = await getProfile(handleNormalized);
-    if (profile) {
-      const statsKey = `pitch_ump_stats_${handleNormalized}`;
-      localStorage.setItem(statsKey, JSON.stringify(profile));
-      
-      if (profile.favoriteTeam && profile.favoriteTeam !== "none") {
+    try {
+      const me = await apiMe();
+      if (me?.handle) {
+        await applyCloudSessionToLocal(me.handle, null, me);
+      }
+    } catch (e) {
+      console.warn('Could not refresh session from cloud:', e);
+      const profile = await getProfile(handleNormalized);
+      if (profile?.favoriteTeam && profile.favoriteTeam !== 'none') {
         activeFavoriteTeam = profile.favoriteTeam;
         localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
         if (userFavoriteTeamBadge) {
@@ -2218,6 +2368,14 @@ function cacheDOM() {
   abSummaryLeaderboardSnippet = document.getElementById('ab-summary-leaderboard-snippet');
   btnAbSummaryToggleReview = document.getElementById('btn-ab-summary-toggle-review');
   abSummaryReviewSection = document.getElementById('ab-summary-review');
+  const abSummaryZoneFrame = document.getElementById('ab-summary-zone-frame');
+  if (abSummaryZoneFrame) {
+    abSummaryZoneFrame.addEventListener('click', (e) => {
+      if (e.target === abSummaryZoneFrame || e.target.id === 'ab-summary-matrix-svg') {
+        clearAbSummaryPitchSelection();
+      }
+    });
+  }
   challengeTrackerHud = document.getElementById('challenge-tracker-hud');
   levelUpOverlay = document.getElementById('level-up-overlay');
   levelUpBadge = document.getElementById('level-up-badge');
@@ -2278,54 +2436,63 @@ async function submitLoginAction() {
     loginErrorMsg.classList.remove('hidden');
   }
 
+  try {
+    const cloud = await apiLogin(handleValNormalized, pinVal);
+    if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+    if (loginConfirmBox) {
+      loginConfirmBox.classList.add('hidden');
+      loginConfirmBox.classList.remove('flex');
+    }
+    await applyCloudSessionToLocal(handleValNormalized, pinVal, cloud);
+    loginUserSession(handleValNormalized);
+    return;
+  } catch (err) {
+    if (err.status === 404) {
+      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+      if (loginConfirmBox) {
+        loginConfirmBox.classList.remove('hidden');
+        loginConfirmBox.classList.add('flex');
+      }
+      return;
+    }
+    if (err.status === 401) {
+      if (loginErrorMsg) {
+        loginErrorMsg.textContent = 'ERROR: INVALID PIN FOR THIS HANDLE';
+        loginErrorMsg.classList.remove('hidden');
+      }
+      return;
+    }
+    console.warn('Cloud login unavailable, trying local profile:', err);
+  }
+
   const profile = await getProfile(handleValNormalized);
-  
   if (!profile) {
-    // User does not exist, show confirm registration overlay
     if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
     if (loginConfirmBox) {
       loginConfirmBox.classList.remove('hidden');
       loginConfirmBox.classList.add('flex');
     }
-  } else {
-    // User exists, verify PIN using SHA-256 hash
-    const enteredHash = await hashPIN(pinVal);
-    let pinMatched = (profile.pinHash === enteredHash) || (profile.pin === pinVal);
-    
-    if (pinMatched) {
-      if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
-      if (loginConfirmBox) {
-        loginConfirmBox.classList.add('hidden');
-        loginConfirmBox.classList.remove('flex');
-      }
-      
-      // Auto-migrate plaintext pin to hashed PIN
-      if (profile.pin === pinVal && !profile.pinHash) {
-        profile.pinHash = enteredHash;
-        delete profile.pin;
-        await saveProfile(profile);
-      }
-      
-      const statsKey = `pitch_ump_stats_${handleValNormalized}`;
-      localStorage.setItem(statsKey, JSON.stringify(profile));
-      
-      if (profile.favoriteTeam && profile.favoriteTeam !== "none") {
-        activeFavoriteTeam = profile.favoriteTeam;
-        localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
-      }
-      
-      loginUserSession(handleValNormalized);
-    } else {
-      if (loginErrorMsg) {
-        loginErrorMsg.textContent = "ERROR: INVALID PIN FOR THIS HANDLE";
-        loginErrorMsg.classList.remove('hidden');
-      }
-      if (loginConfirmBox) {
-        loginConfirmBox.classList.add('hidden');
-        loginConfirmBox.classList.remove('flex');
-      }
-    }
+    return;
   }
+
+  const enteredHash = await hashPIN(pinVal);
+  const pinMatched = profile.pinHash === enteredHash || profile.pin === pinVal;
+  if (!pinMatched) {
+    if (loginErrorMsg) {
+      loginErrorMsg.textContent = 'ERROR: INVALID PIN FOR THIS HANDLE';
+      loginErrorMsg.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (profile.pin === pinVal && !profile.pinHash) {
+    profile.pinHash = enteredHash;
+    delete profile.pin;
+    await saveProfile(profile);
+  }
+
+  if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
+  loginUserSession(handleValNormalized);
 }
 
 function attachEvents() {
@@ -2635,10 +2802,18 @@ function attachEvents() {
   // Do NOT auto-resume on focus — user must explicitly resume via pause overlay or ESC
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+      setGameAudioFocusMuted(true);
       pauseGameOnFocusLoss();
+    } else if (document.hasFocus()) {
+      setGameAudioFocusMuted(false);
     }
-    // Do NOT auto-resume when tab becomes visible — user must use pause screen
   });
+
+  window.addEventListener('focus', () => setGameAudioFocusMuted(false));
+  window.addEventListener('blur', () => setGameAudioFocusMuted(true));
+
+  updateHudKeyboardHelpVisibility();
+  window.addEventListener('resize', updateHudKeyboardHelpVisibility);
 
   // At-Bat Start Overlay confirm button
   if (btnAbStartConfirm) {
@@ -2673,8 +2848,7 @@ function attachEvents() {
         clearInterval(overviewTimerInterval);
         overviewTimerInterval = null;
       }
-      setChallengeTrackerHudVisible(true);
-      document.body.classList.remove('ab-summary-active');
+      hideGameplayHudForSummary(false);
       setAbSummaryReviewExpanded(false);
       clearSummaryPitchReview();
       setCameraAngle('umpire');
@@ -2907,30 +3081,21 @@ function attachEvents() {
         loginErrorMsg.classList.remove('hidden');
       }
 
-      const pinHash = await hashPIN(pinVal);
-      await saveGlobalUser(handleValNormalized, pinVal);
-      await saveProfile({
-        handle: handleValNormalized,
-        pinHash,
-        favoriteTeam: 'none',
-        xp: 0,
-        overallAccuracy: null,
-        maxStreak: 0,
-        completedWeekly: 0,
-        dnfs: 0,
-        history: []
-      });
-      
-      // Initialize blank stats template globally
-      const blankStats = {
-        overallAccuracy: null,
-        maxStreak: 0,
-        completedWeekly: 0,
-        dnfs: 0,
-        favoriteTeam: "none",
-        history: []
-      };
-      await saveGlobalUserStats(handleValNormalized, blankStats);
+      let cloud;
+      try {
+        cloud = await apiRegister(handleValNormalized, pinVal);
+      } catch (regErr) {
+        if (loginErrorMsg) {
+          loginErrorMsg.textContent =
+            regErr.status === 409
+              ? 'ERROR: HANDLE ALREADY TAKEN — LOG IN INSTEAD'
+              : 'ERROR: COULD NOT REGISTER — CHECK CONNECTION';
+          loginErrorMsg.classList.remove('hidden');
+        }
+        return;
+      }
+
+      await applyCloudSessionToLocal(handleValNormalized, pinVal, cloud);
       
       if (loginConfirmBox) {
         loginConfirmBox.classList.add('hidden');
@@ -2958,6 +3123,7 @@ function attachEvents() {
       e.stopPropagation();
     }
     initAudio();
+    apiLogout().catch(() => {});
     goToMainMenu();
     localStorage.removeItem('ump_username');
     loadSavedSessionFromLocal();
@@ -3412,12 +3578,7 @@ function updateWelcomeScreenState() {
     
     if (welcomeLevel) applyLevelBadgeElement(welcomeLevel, xpProgress.level);
     if (welcomeXpText) welcomeXpText.textContent = `${xpProgress.progress} / ${XP_PER_LEVEL} XP`;
-    if (welcomeXpBar) {
-      welcomeXpBar.style.width = '0%';
-      setTimeout(() => {
-        welcomeXpBar.style.width = `${xpProgress.pct}%`;
-      }, 100);
-    }
+    setXpBarPercent(welcomeXpBar, xpProgress.pct, true);
     if (welcomeAccuracy) {
       welcomeAccuracy.textContent = userStats.overallAccuracy !== null && userStats.overallAccuracy !== undefined 
         ? `${userStats.overallAccuracy}%` 
@@ -3689,7 +3850,7 @@ function transitionToState(newState) {
         const bH = currentPitch.batter_hand || "RHB";
         
         if (cardPitcherName) {
-          cardPitcherName.textContent = matchup.pitcher;
+          setMarqueePlayerName(cardPitcherName, '.card-pitcher-name-dup', matchup.pitcher);
           const pParts = matchup.pitcher.trim().split(/\s+/);
           cardPitcherName.setAttribute('data-lastname', pParts[pParts.length - 1].toUpperCase());
         }
@@ -3702,7 +3863,7 @@ function transitionToState(newState) {
           }
         }
         if (cardBatterName) {
-          cardBatterName.textContent = matchup.batter;
+          setMarqueePlayerName(cardBatterName, '.card-batter-name-dup', matchup.batter);
           const bParts = matchup.batter.trim().split(/\s+/);
           cardBatterName.setAttribute('data-lastname', bParts[bParts.length - 1].toUpperCase());
         }
@@ -3733,8 +3894,11 @@ function transitionToState(newState) {
         replayBadge.classList.add('opacity-0', 'pointer-events-none');
         replayBadge.classList.remove('opacity-100');
       }
-      hudKeyboardHelp.classList.remove('opacity-0');
-      hudKeyboardHelp.innerHTML = 'REAL-TIME AUTOPLAY ACTIVE | CALLED PITCHES PAUSE FOR DECISION';
+      updateHudKeyboardHelpVisibility();
+      if (!window.matchMedia('(max-width: 768px)').matches) {
+        hudKeyboardHelp.classList.remove('opacity-0');
+        hudKeyboardHelp.innerHTML = '<span class="keyboard-hints">Autoplay on · <kbd class="kbd-hint">A</kbd> ball · <kbd class="kbd-hint">D</kbd> strike · <kbd class="kbd-hint">Space</kbd> continue</span>';
+      }
       
       document.body.classList.remove('split-screen-active');
       const container = document.getElementById('canvas-container');
@@ -3858,7 +4022,10 @@ function transitionToState(newState) {
       showBall(false);
       playGlovePopSound();
       showStrikeZone(false);
-      hudKeyboardHelp.innerHTML = 'SHORTCUTS: [← / A] BALL &nbsp;|&nbsp; [→ / D] STRIKE &nbsp;|&nbsp; MOBILE: SWIPE LEFT/RIGHT';
+      updateHudKeyboardHelpVisibility();
+      if (!window.matchMedia('(max-width: 768px)').matches) {
+        hudKeyboardHelp.innerHTML = '<span class="keyboard-hints"><kbd class="kbd-hint">A</kbd> ball · <kbd class="kbd-hint">D</kbd> strike · swipe on mobile</span>';
+      }
       
       // Initially hide the decision prompt to allow the pitch to finish and glove pop to settle
       setElementVisibility(decisionPrompt, false);
@@ -3904,7 +4071,8 @@ function transitionToState(newState) {
       // Close call check for taken pitch
       if (userHistoryItem && !userHistoryItem.isSwingPlay && pitchTrajectory && pitchTrajectory.crossPoint) {
         const cross = pitchTrajectory.crossPoint;
-        const absDist = Math.abs(getDistanceToABSZone(cross.x, cross.y));
+        const distFt = getDistanceToABSZone(cross.x, cross.y);
+        const absDist = Math.abs(distFt);
         const isCloseCall = absDist <= 0.15;
         
         if (isCloseCall) {
@@ -3913,7 +4081,7 @@ function transitionToState(newState) {
           drawDimensionLine(cross);
           if (closeCallPill && closeCallDistText) {
             const distInches = absDist * 12.0;
-            closeCallDistText.textContent = `${distInches.toFixed(1)}″ ${absDist <= 0 ? 'IN' : 'OUT'}`;
+            closeCallDistText.textContent = `${distInches.toFixed(1)}″ ${distFt < 0 ? 'IN' : 'OUT'}`;
             positionCloseCallPill(cross);
             closeCallPill.classList.remove('opacity-0', 'scale-95');
             closeCallPill.classList.add('opacity-100', 'scale-100', 'animate-pulse');
@@ -4215,7 +4383,7 @@ function updateSettingsVisibility() {
 }
 
 function playBatCrackSound() {
-  if (!audioCtx) return;
+  if (!audioCtx || !isGameplayAudioAllowed()) return;
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
@@ -4408,7 +4576,7 @@ function tick() {
     render();
     return;
   }
-  
+
   if (isGamePaused) {
     render();
     return;
@@ -4596,6 +4764,9 @@ function submitSwingDecision() {
 function startCountdownTimer() {
   timerSecondsLeft = 3;
   timerCountdownText.textContent = timerSecondsLeft;
+  if (timerCountdownText) {
+    timerCountdownText.classList.remove('countdown-timer-text--hurry');
+  }
   
   timerProgressRing.classList.remove('animate-timer-ring');
   void timerProgressRing.offsetWidth;
@@ -4606,6 +4777,9 @@ function startCountdownTimer() {
     
     if (timerSecondsLeft > 0) {
       timerCountdownText.textContent = timerSecondsLeft;
+      if (timerCountdownText) {
+        timerCountdownText.classList.toggle('countdown-timer-text--hurry', timerSecondsLeft === 1);
+      }
       playTimerTickSound();
     } else {
       clearInterval(timerInterval);
@@ -4923,8 +5097,8 @@ function showAtBatStartScreen(onConfirmCallback) {
   const pitch = pitchesList[currentPitchIndex] || currentPitch;
   if (pitch) {
     const matchup = getMatchupNames(pitch);
-    if (abStartPitcher) abStartPitcher.textContent = matchup.pitcher;
-    if (abStartBatter) abStartBatter.textContent = matchup.batter;
+    setMarqueePlayerName(abStartPitcher, '.ab-start-pitcher-dup', matchup.pitcher);
+    setMarqueePlayerName(abStartBatter, '.ab-start-batter-dup', matchup.batter);
 
     const pH = pitch.pitcher_hand || 'RHP';
     const bH = pitch.batter_hand || 'RHB';
@@ -5036,6 +5210,36 @@ function showAtBatStartScreen(onConfirmCallback) {
     });
   }
 
+  const challengeBadge = document.getElementById('ab-start-challenge-badge');
+  const startTitle = document.getElementById('ab-start-title');
+  const startSubtitle = document.getElementById('ab-start-subtitle');
+  if (challengeBadge) {
+    if (gameMode === 'weekly_challenge') {
+      challengeBadge.textContent = 'Weekly Challenge';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/25';
+    } else if (gameMode === 'daily_streak') {
+      challengeBadge.textContent = 'Daily Streak';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-amber-600 to-orange-600 rounded-full shadow-lg';
+    } else if (gameMode === 'daily_compete') {
+      challengeBadge.textContent = 'Daily Compete';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-cyan-600 to-blue-600 rounded-full shadow-lg';
+    } else {
+      challengeBadge.textContent = 'Standard Mode';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-slate-600 to-slate-700 rounded-full';
+    }
+  }
+  if (startSubtitle) {
+    if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+      const total = weeklyPlaylistABs.length || 200;
+      startSubtitle.textContent = `At-bat ${activeWeeklyAbIndex + 1} of ${total}`;
+    } else {
+      startSubtitle.textContent = 'Make the call';
+    }
+  }
+  if (startTitle) {
+    startTitle.textContent = gameMode === 'weekly_challenge' ? 'Next weekly at-bat' : 'Upcoming at-bat';
+  }
+
   // Show overlay with transition
   abStartOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
   abStartOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
@@ -5043,9 +5247,8 @@ function showAtBatStartScreen(onConfirmCallback) {
     setOverlayVisible(matchupCard, false);
   }
 
-  // No countdown! Just show static text
   if (abStartTimerText) {
-    abStartTimerText.textContent = "Ready to start the next matchup.";
+    abStartTimerText.textContent = "Ready when you are.";
   }
 
   // Store callback for confirm
@@ -5936,11 +6139,13 @@ function switchTab(tabName) {
     const btn = document.getElementById(`tab-btn-${t}`);
     const content = document.getElementById(`tab-content-${t}`);
     if (t === tabName) {
-      btn.className = "flex-1 py-4 text-center text-xs font-bold uppercase tracking-widest tab-btn-active transition-all cursor-pointer";
+      btn.className = 'ump-tab ump-tab--active';
+      btn.setAttribute('aria-selected', 'true');
       content.classList.remove('hidden');
       content.classList.add('flex');
     } else {
-      btn.className = "flex-1 py-4 text-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/2 transition-all cursor-pointer";
+      btn.className = 'ump-tab';
+      btn.setAttribute('aria-selected', 'false');
       content.classList.add('hidden');
       content.classList.remove('flex');
     }
@@ -6103,15 +6308,21 @@ function setAbSummaryReviewExpanded(expanded) {
   abSummaryReviewExpanded = expanded;
   if (btnAbSummaryToggleReview) {
     btnAbSummaryToggleReview.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    btnAbSummaryToggleReview.textContent = expanded ? 'Hide pitch chart' : 'Review pitch chart';
+    btnAbSummaryToggleReview.textContent = expanded ? '▼ HIDE CHART' : '▶ PITCH CHART';
   }
   if (!abSummaryReviewSection) return;
+  const cabinet = document.querySelector('.arcade-cabinet');
+  if (cabinet) cabinet.classList.toggle('arcade-cabinet--chart-open', expanded);
   if (expanded) {
     abSummaryReviewSection.hidden = false;
     abSummaryReviewSection.classList.remove('is-collapsed');
+    abSummarySelectedPitchIndex = null;
     drawAbSummarySVGMatrix();
-    const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter((x) => !x.isSwingPlay);
-    if (abPitches.length > 0) highlightPitchInSummary(abPitches.length - 1);
+    clearAbSummaryPitchSelection();
+    requestAnimationFrame(() => {
+      setMarqueePlayerName(abSummaryPitcherName, '.ab-summary-pitcher-name-dup', abSummaryPitcherName?.textContent || '', { uppercase: true });
+      setMarqueePlayerName(abSummaryBatterName, '.ab-summary-batter-name-dup', abSummaryBatterName?.textContent || '', { uppercase: true });
+    });
   } else {
     abSummaryReviewSection.classList.add('is-collapsed');
     abSummaryReviewSection.hidden = true;
@@ -6187,9 +6398,10 @@ async function showAtBatSummaryScreen(outcomeText) {
 
   activeAbEnded = true;
   cancelAutoPlayPitch();
+  abSummarySelectedPitchIndex = null;
   setAbSummaryReviewExpanded(false);
-  setChallengeTrackerHudVisible(false);
-  document.body.classList.add('ab-summary-active');
+  hideGameplayHudForSummary(true);
+  hideAbSummaryXpPopover();
   
   // Reset zoom and dimension line when showing summary (keep umpire camera — no summary angle rotation)
   setZoomedIn(false);
@@ -6211,8 +6423,8 @@ async function showAtBatSummaryScreen(outcomeText) {
   abSummaryMatchup.textContent = `P: ${pitcher.toUpperCase()} vs B: ${batter.toUpperCase()}`;
   
   // Fetch headshot images and logos
-  if (abSummaryPitcherName) abSummaryPitcherName.textContent = pitcher.toUpperCase();
-  if (abSummaryBatterName) abSummaryBatterName.textContent = batter.toUpperCase();
+  setMarqueePlayerName(abSummaryPitcherName, '.ab-summary-pitcher-name-dup', pitcher, { uppercase: true });
+  setMarqueePlayerName(abSummaryBatterName, '.ab-summary-batter-name-dup', batter, { uppercase: true });
   
   const targetPitch = lastCompletedPitch || currentPitch;
   if (abSummaryPitcherHandBadge && targetPitch) {
@@ -6267,52 +6479,58 @@ async function showAtBatSummaryScreen(outcomeText) {
   if (abSummaryCorrectCount) {
     abSummaryCorrectCount.textContent = abPitches.length > 0 ? `${correctCount}/${abPitches.length}` : '—';
   }
+  renderAbSummaryCallBoard(abPitches);
   abSummaryBlurb.textContent = lastAbBlurb || "No play-by-play description available.";
+
+  requestAnimationFrame(() => {
+    setMarqueePlayerName(abSummaryPitcherName, '.ab-summary-pitcher-name-dup', pitcher, { uppercase: true });
+    setMarqueePlayerName(abSummaryBatterName, '.ab-summary-batter-name-dup', batter, { uppercase: true });
+  });
   
-  // XP rewards calculation and animation
   const isPerfect = (correctCount === abPitches.length) && (abPitches.length > 0);
-  const earnedXp = (correctCount * 10) + (isPerfect ? 50 : 0);
+  const xpBreakdown = getAbXpBreakdown(correctCount, isPerfect);
   const username = localStorage.getItem('ump_username');
   
   const xpEarnedEl = document.getElementById('ab-summary-xp-earned');
   const xpLevelEl = document.getElementById('ab-summary-xp-level');
+  bindAbSummaryXpPopoverOnce();
   const xpProgressEl = document.getElementById('ab-summary-xp-progress');
+  const xpTotalEl = document.getElementById('ab-summary-xp-total');
   const xpProgressBar = document.getElementById('ab-summary-xp-bar');
 
   if (username) {
     const userStats = await getGlobalUserStats(username);
     const totalXp = userStats.xp || 0;
-    const previousXp = Math.max(0, totalXp - earnedXp);
+    const previousXp = Math.max(0, totalXp - xpBreakdown.total);
     const prev = getXpProgressInLevel(previousXp);
     const next = getXpProgressInLevel(totalXp);
 
+    renderAbSummaryXpPopover(xpBreakdown, correctCount, isPerfect);
     if (xpEarnedEl) {
-      xpEarnedEl.textContent = isPerfect ? `+${earnedXp} XP · Perfect AB` : `+${earnedXp} XP this AB`;
-      xpEarnedEl.className = isPerfect ? 'ab-summary-xp-earned ab-summary-xp-earned--bonus' : 'ab-summary-xp-earned';
+      xpEarnedEl.disabled = false;
+      xpEarnedEl.textContent = `+${xpBreakdown.total} XP`;
+      xpEarnedEl.className = isPerfect ? 'ab-summary-xp-earned-btn ab-summary-xp-earned-btn--bonus' : 'ab-summary-xp-earned-btn';
+      xpEarnedEl.title = 'Tap for XP breakdown';
     }
-    applyLevelBadgeElement(xpLevelEl, prev.level);
-    if (xpProgressEl) xpProgressEl.textContent = `${prev.progress} / ${XP_PER_LEVEL} XP`;
-    if (xpProgressBar) {
-      xpProgressBar.style.transition = 'none';
-      xpProgressBar.style.width = `${prev.pct}%`;
-      setTimeout(() => {
-        if (xpProgressBar) {
-          xpProgressBar.style.transition = 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)';
-          xpProgressBar.style.width = `${next.pct}%`;
-        }
-        setTimeout(() => {
-          applyLevelBadgeElement(xpLevelEl, next.level);
-          if (xpProgressEl) xpProgressEl.textContent = `${next.progress} / ${XP_PER_LEVEL} XP`;
-          if (next.level > prev.level) {
-            showLevelUpCelebration(next.level, prev.level);
-          }
-        }, 500);
-      }, 150);
-    }
+    applyLevelBadgeElement(xpLevelEl, next.level);
+    if (xpTotalEl) xpTotalEl.textContent = `${totalXp.toLocaleString()} XP total`;
+    if (xpProgressEl) xpProgressEl.textContent = `${prev.progress} → ${next.progress} / ${XP_PER_LEVEL} XP`;
+    setXpBarPercent(xpProgressBar, prev.pct, false);
+    setTimeout(() => {
+      setXpBarPercent(xpProgressBar, next.pct, true);
+      if (xpProgressEl) xpProgressEl.textContent = `${next.progress} / ${XP_PER_LEVEL} XP`;
+      applyLevelBadgeElement(xpLevelEl, next.level);
+      updateProfileStatsUI();
+      if (next.level > prev.level) {
+        showLevelUpCelebration(next.level, prev.level);
+      }
+    }, 200);
   } else {
+    hideAbSummaryXpPopover();
     if (xpEarnedEl) {
-      xpEarnedEl.textContent = 'Log in to earn XP';
-      xpEarnedEl.className = 'ab-summary-xp-earned';
+      xpEarnedEl.textContent = 'Log in for XP';
+      xpEarnedEl.className = 'ab-summary-xp-earned-btn';
+      xpEarnedEl.disabled = true;
     }
     if (xpLevelEl) {
       xpLevelEl.textContent = 'GUEST';
@@ -6326,37 +6544,40 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
 
   
-  // Pitch log table rows
+  // Pitch selector chips (shown when chart is expanded)
   if (abSummaryPitchList) {
     abSummaryPitchList.innerHTML = '';
-    
+
     abPitches.forEach((item, index) => {
       const isCorrect = item.userCorrect;
-      const userShort = item.userCall === 'S' ? 'K' : 'B';
-      const absShort = item.absCall === 'S' ? 'K' : 'B';
       const pitchLabel = item.pitchType || 'Pitch';
-      const mph = item.speedMph != null ? Math.round(item.speedMph) : '—';
-      
+
       const btn = document.createElement('button');
       btn.type = 'button';
+      const mphVal = item.speedMph != null ? Math.round(item.speedMph) : '—';
+      const typeShort = (pitchLabel.split(' ')[0] || pitchLabel).slice(0, 5);
+      const youC = formatCallShort(item.userCall);
+      const umpC = formatCallShort(item.realCall);
       btn.className = `ab-summary-pitch-row ${isCorrect ? 'is-correct' : 'is-wrong'}`;
       btn.setAttribute('role', 'option');
-      btn.setAttribute('aria-label', `Pitch ${index + 1}, ${pitchLabel}, ${mph} miles per hour`);
+      btn.setAttribute('aria-label', `Pitch ${index + 1}, ${pitchLabel}, ${mphVal} mph, you ${youC}, ump ${umpC}`);
       btn.innerHTML = `
         <span class="ab-summary-pitch-num">${index + 1}</span>
-        <span class="ab-summary-pitch-type" title="${pitchLabel}">${pitchLabel}</span>
-        <span class="ab-summary-pitch-mph">${mph}</span>
-        <span class="ab-summary-pitch-call ${item.userCall === 'S' ? 'ab-summary-pitch-call--strike' : 'ab-summary-pitch-call--ball'}">${userShort}</span>
-        <span class="ab-summary-pitch-call ${item.absCall === 'S' ? 'ab-summary-pitch-call--strike' : 'ab-summary-pitch-call--ball'}">${absShort}</span>
-        <span class="ab-summary-pitch-verdict ${isCorrect ? 'ab-summary-pitch-verdict--ok' : 'ab-summary-pitch-verdict--miss'}">${isCorrect ? '✓' : '✗'}</span>
+        <span class="ab-summary-pitch-brief" title="${pitchLabel}">${mphVal} ${typeShort}</span>
+        <span class="ab-summary-pitch-calls-mini">${youC}/${umpC}</span>
+        <span class="ab-summary-pitch-verdict ${isCorrect ? 'ab-summary-pitch-verdict--ok' : 'ab-summary-pitch-verdict--miss'}">${isCorrect ? 'OK' : 'X'}</span>
       `;
-      
+
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         initAudio();
-        highlightPitchInSummary(index);
+        if (abSummarySelectedPitchIndex === index) {
+          clearAbSummaryPitchSelection();
+        } else {
+          highlightPitchInSummary(index);
+        }
       });
-      
+
       abSummaryPitchList.appendChild(btn);
     });
   }
@@ -6391,7 +6612,13 @@ async function showAtBatSummaryScreen(outcomeText) {
 
     if (abSummaryWeeklyCount) abSummaryWeeklyCount.textContent = String(completedCount);
     if (abSummaryWeeklyTotal) abSummaryWeeklyTotal.textContent = `/ ${totalCount}`;
-    if (abSummaryWeeklyAccuracyText) abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+    if (abSummaryWeeklyAccuracyText) {
+      abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+    }
+    const weeklyPctEl = document.getElementById('ab-summary-weekly-pct');
+    if (weeklyPctEl) {
+      weeklyPctEl.textContent = `${newPercent}% Complete`;
+    }
     if (abSummaryWeeklyProgressText) {
       abSummaryWeeklyProgressText.textContent = `${completedCount} / ${totalCount} at-bats`;
     }
@@ -6442,9 +6669,9 @@ function advanceNextAtBat() {
     abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
   }
 
-  setChallengeTrackerHudVisible(true);
-  document.body.classList.remove('ab-summary-active');
+  hideGameplayHudForSummary(false);
   setAbSummaryReviewExpanded(false);
+  abSummarySelectedPitchIndex = null;
   
   clearSummaryPitchReview();
   setCameraAngle('umpire');
@@ -6454,7 +6681,7 @@ function advanceNextAtBat() {
     overviewTimerInterval = null;
   }
   if (btnAbSummaryAdvance) {
-    btnAbSummaryAdvance.textContent = 'ADVANCE TO NEXT AB';
+    btnAbSummaryAdvance.textContent = 'Next at-bat';
   }
   
   quickStartNextPitch = true;
@@ -6958,17 +7185,14 @@ function updateProfileStatsUI() {
     });
   }
   
-  const currentLevel = Math.floor(xp / 1000) + 1;
-  const prevLevelXp = (currentLevel - 1) * 1000;
-  const progressXp = xp - prevLevelXp;
-  const pct = xp === 0 ? 0 : Math.min(100, Math.round((progressXp / 1000) * 100));
+  const xpProgress = getXpProgressInLevel(xp);
+  const hudLevelBadge = document.getElementById('hud-user-level-badge');
+  applyLevelBadgeElement(hudLevelBadge, xpProgress.level);
   
   if (hudXpText) {
-    hudXpText.textContent = `Lvl ${currentLevel} Crew Chief | ${xp.toLocaleString()} XP (${progressXp} / 1,000 to next level)`;
+    hudXpText.textContent = `${xpProgress.progress} / ${XP_PER_LEVEL} XP · ${xp.toLocaleString()} total`;
   }
-  if (hudXpBar) {
-    hudXpBar.style.width = `${pct}%`;
-  }
+  setXpBarPercent(hudXpBar, xpProgress.pct, false);
   
   if (avgAccEl) {
     avgAccEl.textContent = userStats.overallAccuracy !== null && userStats.overallAccuracy !== undefined ? `${userStats.overallAccuracy}%` : "--";
@@ -7822,18 +8046,9 @@ async function updateDailyStreakStatusUI() {
   if (rankEl && username !== 'GUEST_UMPIRE') {
     rankEl.textContent = "FETCHING...";
     try {
-      const res = await fetch(`${JSONBIN_BASE_URL}/${BINS.daily}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          const userIdx = data.findIndex(item => item.name.toUpperCase() === username.toUpperCase());
-          if (userIdx !== -1) {
-            rankEl.textContent = `#${userIdx + 1} Global`;
-          } else {
-            rankEl.textContent = "UNRANKED";
-          }
-        }
-      }
+      const { rows } = await apiFetchLeaderboard('daily', username);
+      const me = rows.find((r) => r.isUser);
+      rankEl.textContent = me ? `#${me.rank} Global` : "UNRANKED";
     } catch (e) {
       rankEl.textContent = "OFFLINE";
     }
@@ -8361,19 +8576,289 @@ async function updateMatchupCardImagesAndStats(pitch) {
   }
 }
 
+function getAbSummaryZoneViewBox(szTop, szBot) {
+  const xMin = -0.7083;
+  const xMax = 0.7083;
+  const padX = 0.2;
+  const padTop = 0.18;
+  const padBottom = 0.42;
+  const x = xMin - padX;
+  const y = 4.0 - szTop - padTop;
+  const w = (xMax - xMin) + padX * 2;
+  const h = (szTop - szBot) + padTop + padBottom;
+  return `${x} ${y} ${w} ${h}`;
+}
+
+function formatCallShort(call) {
+  if (call === 'S') return 'K';
+  if (call === 'B') return 'B';
+  if (call === 'TIMEOUT') return 'T';
+  return '—';
+}
+
+function getAbSummaryPitchesViewBox(abPitches, szTop, szBot) {
+  const zoneXMin = -0.7083;
+  const zoneXMax = 0.7083;
+  const zoneYMin = szBot;
+  const zoneYMax = szTop;
+
+  let xMin = zoneXMin;
+  let xMax = zoneXMax;
+  let yMin = zoneYMin;
+  let yMax = zoneYMax;
+
+  abPitches.forEach((p) => {
+    const cross = p?.trajectory?.crossPoint;
+    if (!cross) return;
+    xMin = Math.min(xMin, cross.x);
+    xMax = Math.max(xMax, cross.x);
+    yMin = Math.min(yMin, cross.y);
+    yMax = Math.max(yMax, cross.y);
+  });
+
+  // pad and keep a little room for the plate + label pill
+  const padX = 0.22;
+  const padTop = 0.22;
+  const padBottom = 0.6;
+  const x = xMin - padX;
+  const y = 4.0 - yMax - padTop;
+  const w = (xMax - xMin) + padX * 2;
+  const h = (yMax - yMin) + padTop + padBottom;
+  return `${x} ${y} ${w} ${h}`;
+}
+
+function renderAbSummaryCallBoard(abPitches) {
+  const youEl = document.getElementById('ab-summary-you-calls');
+  const umpEl = document.getElementById('ab-summary-ump-calls');
+  const youAccEl = document.getElementById('ab-summary-you-acc-mini');
+  const umpAccEl = document.getElementById('ab-summary-ump-acc-mini');
+  const umpAccuracyEl = document.getElementById('ab-summary-ump-accuracy');
+  if (!youEl || !umpEl) return;
+
+  const n = abPitches.length;
+  const youCorrect = abPitches.filter((p) => p.userCorrect).length;
+  const umpCorrect = abPitches.filter((p) => p.realCorrect).length;
+  const youAcc = n > 0 ? Math.round((youCorrect / n) * 100) : 100;
+  const umpAcc = n > 0 ? Math.round((umpCorrect / n) * 100) : 100;
+
+  youEl.textContent = `${youCorrect}/${n}`;
+  umpEl.textContent = `${umpCorrect}/${n}`;
+  if (youAccEl) youAccEl.textContent = `${youAcc}%`;
+  if (umpAccEl) umpAccEl.textContent = `${umpAcc}%`;
+  if (umpAccuracyEl) umpAccuracyEl.textContent = n > 0 ? `${umpAcc}%` : '—';
+}
+
+function getAbSummaryPitchStats(item) {
+  const pitch = item.pitchData || item;
+  const traj = item.trajectory;
+  const typeMap = {
+    FF: 'Four-Seam', SL: 'Slider', CU: 'Curveball', KC: 'Knuckle Curve',
+    CH: 'Changeup', FC: 'Cutter', SI: 'Sinker', FS: 'Splitter', ST: 'Sweeper', SV: 'Slurve',
+  };
+  const rawType = item.pitchType || pitch.pitch_type || 'Pitch';
+  const pitchType = typeMap[rawType] || rawType;
+  const mph = item.speedMph != null ? item.speedMph : pitch.speed_mph;
+  const tCross = traj ? traj.t_cross : 0.4;
+  const hBreakVal = 0.5 * (pitch.ax || 0) * Math.pow(tCross, 2) * 12;
+  const vBreakVal = 0.5 * ((pitch.az || 0) + 32.17) * Math.pow(tCross, 2) * 12;
+  const hSign = hBreakVal >= 0 ? '+' : '';
+  const vSign = vBreakVal >= 0 ? '+' : '';
+  let distanceText = '—';
+  if (traj && traj.crossPoint) {
+    const distFeet = getDistanceToABSZone(traj.crossPoint.x, traj.crossPoint.y);
+    const distIn = distFeet * 12;
+    const xMin = -0.7083;
+    const xMax = 0.7083;
+    const yMin = pitch.sz_bot ?? pitch.szBot ?? 1.6;
+    const yMax = pitch.sz_top ?? pitch.szTop ?? 3.4;
+    const inside = traj.crossPoint.x >= xMin && traj.crossPoint.x <= xMax
+      && traj.crossPoint.y >= yMin && traj.crossPoint.y <= yMax;
+    distanceText = `${distIn.toFixed(1)}" ${inside ? 'inside' : 'outside'}`;
+  }
+  return {
+    pitchType,
+    mph: mph != null ? `${Number(mph).toFixed(1)} mph` : '—',
+    break: `H ${hSign}${hBreakVal.toFixed(1)}" · V ${vSign}${vBreakVal.toFixed(1)}"`,
+    distanceText,
+  };
+}
+
+const AB_SUMMARY_COLORS = {
+  ok: '#5cdb95',
+  okStroke: '#7ef0b0',
+  miss: '#e05555',
+  missStroke: '#f08080',
+  zoneStroke: '#f4ecd8',
+  zoneFill: 'rgba(244, 236, 216, 0.06)',
+  distLine: '#e8c547',
+};
+
+function updateAbSummaryZoneDistance(item) {
+  const el = document.getElementById('ab-summary-zone-distance');
+  if (!el) return;
+  if (!item) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+  const stats = getAbSummaryPitchStats(item);
+  el.textContent = stats.distanceText.toUpperCase();
+  el.classList.remove('hidden');
+}
+
+function clearAbSummaryPitchSelection() {
+  abSummarySelectedPitchIndex = null;
+  highlightSummaryPitch(-1);
+  if (abSummaryPitchDetails) {
+    abSummaryPitchDetails.innerHTML = '<p class="ab-summary-pitch-detail-placeholder">TAP A PITCH FOR DETAILS</p>';
+  }
+  if (abSummaryPitchList) {
+    abSummaryPitchList.querySelectorAll('.ab-summary-pitch-row').forEach((row) => {
+      row.classList.remove('is-selected', 'is-dimmed');
+    });
+  }
+  syncAbSummarySvgPitchMarkers(null);
+  const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
+  if (abSummarySvgIndicators) abSummarySvgIndicators.innerHTML = '';
+  updateAbSummaryZoneDistance(null);
+}
+
+function syncAbSummarySvgPitchMarkers(selectedIndex) {
+  if (!abSummarySvgPitches) return;
+  const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter((p) => !p.isSwingPlay);
+  const markers = abSummarySvgPitches.querySelectorAll('.ab-summary-pitch-marker');
+  markers.forEach((group) => {
+    const idx = parseInt(group.getAttribute('data-pitch-index'), 10);
+    const isSelected = selectedIndex != null && idx === selectedIndex;
+    const hasSelection = selectedIndex != null;
+    group.classList.toggle('is-selected', isSelected);
+    group.classList.toggle('is-dimmed', hasSelection && !isSelected);
+    group.removeAttribute('transform');
+    const shape = group.querySelector('polygon, circle');
+    if (shape) {
+      const item = abPitches[idx];
+      const strokeColor = item?.userCorrect ? AB_SUMMARY_COLORS.okStroke : AB_SUMMARY_COLORS.missStroke;
+      const cx = parseFloat(group.getAttribute('data-cx') || '0');
+      const cy = parseFloat(group.getAttribute('data-cy') || '0');
+      const baseR = parseFloat(group.getAttribute('data-radius') || '0.085');
+      const r = isSelected ? baseR * 1.2 : baseR;
+      shape.setAttribute('stroke', isSelected ? AB_SUMMARY_COLORS.distLine : strokeColor);
+      shape.setAttribute('stroke-width', isSelected ? '0.04' : '0.028');
+      if (shape.tagName === 'circle') {
+        shape.setAttribute('r', String(r));
+      } else {
+        const p1 = `${cx},${cy - r}`;
+        const p2 = `${cx + r},${cy}`;
+        const p3 = `${cx},${cy + r}`;
+        const p4 = `${cx - r},${cy}`;
+        shape.setAttribute('points', `${p1} ${p2} ${p3} ${p4}`);
+      }
+    }
+  });
+}
+
+function drawAbSummaryPitchIndicators(item, szTop, szBot) {
+  const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
+  if (!abSummarySvgIndicators || !item?.trajectory?.crossPoint) return;
+  abSummarySvgIndicators.innerHTML = '';
+  const cross = item.trajectory.crossPoint;
+  const px = cross.x;
+  const py = cross.y;
+  const xMin = -0.7083;
+  const xMax = 0.7083;
+  const yMin = szBot;
+  const yMax = szTop;
+  const insideX = px >= xMin && px <= xMax;
+  const insideY = py >= yMin && py <= yMax;
+  const isIn = insideX && insideY;
+  let cx = px;
+  let cy = py;
+  let distFeet = 0;
+  if (isIn) {
+    const dLeft = px - xMin;
+    const dRight = xMax - px;
+    const dBottom = py - yMin;
+    const dTop = yMax - py;
+    distFeet = Math.min(dLeft, dRight, dBottom, dTop);
+    if (distFeet === dLeft) cx = xMin;
+    else if (distFeet === dRight) cx = xMax;
+    else if (distFeet === dBottom) cy = yMin;
+    else cy = yMax;
+  } else {
+    cx = Math.max(xMin, Math.min(px, xMax));
+    cy = Math.max(yMin, Math.min(py, yMax));
+    distFeet = Math.hypot(px - cx, py - cy);
+  }
+  const distInches = distFeet * 12;
+
+  // Only draw the "ruler" when OUTSIDE. When inside, the pill already tells you "inside"
+  // and a line visually cuts through the zone (confusing).
+  if (!isIn) {
+    const pxSvg = px;
+    const pySvg = 4.0 - py;
+    const cxSvg = cx;
+    const cySvg = 4.0 - cy;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', cxSvg);
+    line.setAttribute('y1', cySvg);
+    line.setAttribute('x2', pxSvg);
+    line.setAttribute('y2', pySvg);
+    line.setAttribute('stroke', AB_SUMMARY_COLORS.distLine);
+    line.setAttribute('stroke-width', '0.03');
+    line.setAttribute('stroke-dasharray', '0.055,0.04');
+    line.setAttribute('opacity', '0.95');
+    abSummarySvgIndicators.appendChild(line);
+
+    const edgeDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    edgeDot.setAttribute('cx', cxSvg);
+    edgeDot.setAttribute('cy', cySvg);
+    edgeDot.setAttribute('r', '0.055');
+    edgeDot.setAttribute('fill', 'rgba(232, 197, 71, 0.35)');
+    edgeDot.setAttribute('stroke', AB_SUMMARY_COLORS.distLine);
+    edgeDot.setAttribute('stroke-width', '0.02');
+    abSummarySvgIndicators.appendChild(edgeDot);
+  }
+}
+
+function renderAbSummaryPitchFocus(index, item) {
+  if (!abSummaryPitchDetails || !item) return;
+
+  const isCorrect = item.userCorrect;
+  const youCall = formatCallShort(item.userCall);
+  const absCall = formatCallShort(item.absCall);
+  const umpCall = formatCallShort(item.realCall);
+  const stats = getAbSummaryPitchStats(item);
+  const verdictClass = isCorrect ? 'ab-summary-pitch-detail-verdict--ok' : 'ab-summary-pitch-detail-verdict--miss';
+  const umpMatchAbs = item.realCall === item.absCall;
+
+  abSummaryPitchDetails.innerHTML = `
+    <div class="ab-summary-pitch-detail-inner">
+      <span class="ab-summary-pitch-detail-pill">P${index + 1}</span>
+      <span>${stats.pitchType} · ${stats.mph}</span>
+      <span class="ab-summary-pitch-detail-calls">YOU <strong>${youCall}</strong> · ABS <strong>${absCall}</strong> · UMP <strong>${umpCall}</strong></span>
+      <span class="ab-summary-pitch-detail-verdict ${verdictClass}">${isCorrect ? 'OK' : 'MISS'}</span>
+      <span class="ab-summary-pitch-detail-ump ${umpMatchAbs ? 'ab-summary-pitch-detail-ump--match' : 'ab-summary-pitch-detail-ump--diff'}">UMP ${umpMatchAbs ? '= ABS' : '≠ ABS'}</span>
+      <span class="ab-summary-pitch-detail-dist">${stats.distanceText}</span>
+    </div>
+  `;
+}
+
 function drawAbSummarySVGMatrix() {
   if (!abSummarySvgPitches) return;
   abSummarySvgPitches.innerHTML = '';
-  
+
   const abSummarySvgZone = document.getElementById('ab-summary-svg-zone');
   const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
-  
+  const abSummaryMatrixSvg = document.getElementById('ab-summary-matrix-svg');
+
   if (abSummarySvgZone) abSummarySvgZone.innerHTML = '';
   if (abSummarySvgIndicators) abSummarySvgIndicators.innerHTML = '';
-  
+
   if (abSummaryPitchDetails) {
-    abSummaryPitchDetails.innerHTML = '<p class="ab-summary-pitch-detail-placeholder">Select a pitch to see your call vs. ABS</p>';
+    abSummaryPitchDetails.innerHTML = '<p class="ab-summary-pitch-detail-placeholder">TAP A PITCH FOR DETAILS</p>';
   }
+  updateAbSummaryZoneDistance(null);
 
   const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(p => !p.isSwingPlay);
   if (abPitches.length === 0) return;
@@ -8383,31 +8868,31 @@ function drawAbSummarySVGMatrix() {
   const szTop = pData.sz_top !== undefined ? pData.sz_top : (pData.szTop !== undefined ? pData.szTop : 3.4);
   const szBot = pData.sz_bot !== undefined ? pData.sz_bot : (pData.szBot !== undefined ? pData.szBot : 1.6);
 
+  if (abSummaryMatrixSvg) {
+    // Auto-fit to all pitches in this AB so balls far outside remain visible/selectable.
+    abSummaryMatrixSvg.setAttribute('viewBox', getAbSummaryPitchesViewBox(abPitches, szTop, szBot));
+  }
+
   if (abSummarySvgZone) {
-    // 1. Draw extended zone box (solid line, height = (szTop - szBot) + 0.24)
-    // x = -0.8283, y = 4.0 - (szTop + 0.12), w = 1.6566, h = (szTop - szBot) + 0.24
-    const extZone = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    extZone.setAttribute("x", -0.8283);
-    extZone.setAttribute("y", 4.0 - (szTop + 0.12));
-    extZone.setAttribute("width", 1.6566);
-    extZone.setAttribute("height", (szTop - szBot) + 0.24);
-    extZone.setAttribute("fill", "rgba(59, 130, 246, 0.05)");
-    extZone.setAttribute("stroke", "rgba(59, 130, 246, 0.5)");
-    extZone.setAttribute("stroke-width", "0.03");
-    abSummarySvgZone.appendChild(extZone);
-    
-    // 2. Draw standard zone box (dotted line)
-    // x = -0.7083, y = 4.0 - szTop, w = 1.4166, h = szTop - szBot
-    const stdZone = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    stdZone.setAttribute("x", -0.7083);
-    stdZone.setAttribute("y", 4.0 - szTop);
-    stdZone.setAttribute("width", 1.4166);
-    stdZone.setAttribute("height", szTop - szBot);
-    stdZone.setAttribute("fill", "rgba(168, 85, 247, 0.05)");
-    stdZone.setAttribute("stroke", "rgba(168, 85, 247, 0.7)");
-    stdZone.setAttribute("stroke-width", "0.02");
-    stdZone.setAttribute("stroke-dasharray", "0.08,0.06");
+    const stdZone = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    stdZone.setAttribute('x', -0.7083);
+    stdZone.setAttribute('y', 4.0 - szTop);
+    stdZone.setAttribute('width', 1.4166);
+    stdZone.setAttribute('height', szTop - szBot);
+    stdZone.setAttribute('fill', AB_SUMMARY_COLORS.zoneFill);
+    stdZone.setAttribute('stroke', AB_SUMMARY_COLORS.zoneStroke);
+    stdZone.setAttribute('stroke-width', '0.024');
+    stdZone.setAttribute('stroke-dasharray', '0.07,0.05');
+    stdZone.setAttribute('class', 'ab-summary-zone-rulebook');
     abSummarySvgZone.appendChild(stdZone);
+
+    const plate = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+    const plateY = 4.0 - szBot + 0.55;
+    plate.setAttribute('points', '-0.35,' + plateY + ' 0,' + (plateY + 0.18) + ' 0.35,' + plateY);
+    plate.setAttribute('fill', 'rgba(244, 236, 216, 0.15)');
+    plate.setAttribute('stroke', 'rgba(244, 236, 216, 0.45)');
+    plate.setAttribute('stroke-width', '0.02');
+    abSummarySvgZone.appendChild(plate);
   }
 
   abPitches.forEach((item, index) => {
@@ -8420,43 +8905,54 @@ function drawAbSummarySVGMatrix() {
     const isCorrect = item.userCorrect;
     const isStrikeABSVal = item.absCall === 'S';
     
-    const fillColor = isCorrect ? '#22c55e' : '#ef4444';
-    const strokeColor = isCorrect ? '#4ade80' : '#f87171';
-    
-    let element = null;
-    const radius = 0.12;
-    
+    const fillColor = isCorrect ? AB_SUMMARY_COLORS.ok : AB_SUMMARY_COLORS.miss;
+    const strokeColor = isCorrect ? AB_SUMMARY_COLORS.okStroke : AB_SUMMARY_COLORS.missStroke;
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'ab-summary-pitch-marker');
+    group.setAttribute('data-pitch-index', String(index));
+    group.setAttribute('data-cx', String(x));
+    group.setAttribute('data-cy', String(y));
+    group.setAttribute('data-radius', '0.085');
+    group.style.pointerEvents = 'auto';
+
+    const radius = 0.085;
+    let shape = null;
+
     if (isStrikeABSVal) {
       const p1 = `${x},${y - radius}`;
       const p2 = `${x + radius},${y}`;
       const p3 = `${x},${y + radius}`;
       const p4 = `${x - radius},${y}`;
-      element = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      element.setAttribute("points", `${p1} ${p2} ${p3} ${p4}`);
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      shape.setAttribute('points', `${p1} ${p2} ${p3} ${p4}`);
     } else {
-      element = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      element.setAttribute("cx", x);
-      element.setAttribute("cy", y);
-      element.setAttribute("r", radius);
+      shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      shape.setAttribute('cx', x);
+      shape.setAttribute('cy', y);
+      shape.setAttribute('r', radius);
     }
-    
-    element.setAttribute("fill", fillColor);
-    element.setAttribute("stroke", strokeColor);
-    element.setAttribute("stroke-width", "0.03");
-    element.setAttribute("class", "cursor-pointer transition-all duration-150 hover:scale-110");
-    element.style.pointerEvents = 'auto';
-    
-    element.addEventListener('click', (e) => {
+
+    shape.setAttribute('fill', fillColor);
+    shape.setAttribute('stroke', strokeColor);
+    shape.setAttribute('stroke-width', '0.03');
+    group.appendChild(shape);
+
+    group.addEventListener('click', (e) => {
       e.stopPropagation();
       initAudio();
-      highlightPitchInSummary(index);
+      if (abSummarySelectedPitchIndex === index) {
+        clearAbSummaryPitchSelection();
+      } else {
+        highlightPitchInSummary(index);
+      }
     });
-    
-    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = `Pitch #${index + 1}: ${item.pitchType} (${item.speedMph} MPH) - ABS: ${item.absCall === 'S' ? 'STRIKE' : 'BALL'}, User: ${item.userCall === 'S' ? 'STRIKE' : 'BALL'}`;
-    element.appendChild(title);
-    
-    abSummarySvgPitches.appendChild(element);
+
+    const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    title.textContent = `Pitch ${index + 1}: ${item.pitchType || 'Pitch'} (${item.speedMph != null ? Math.round(item.speedMph) : '—'} mph) — You: ${item.userCall === 'S' ? 'Strike' : 'Ball'}, ABS: ${item.absCall === 'S' ? 'Strike' : 'Ball'}`;
+    group.appendChild(title);
+
+    abSummarySvgPitches.appendChild(group);
   });
 }
 
@@ -8465,34 +8961,21 @@ function highlightPitchInSummary(index) {
   const item = abPitches[index];
   if (!item) return;
 
+  abSummarySelectedPitchIndex = index;
   highlightSummaryPitch(index);
 
   const pData = item.pitchData || item;
   const szTop = pData.sz_top !== undefined ? pData.sz_top : (pData.szTop !== undefined ? pData.szTop : 3.4);
   const szBot = pData.sz_bot !== undefined ? pData.sz_bot : (pData.szBot !== undefined ? pData.szBot : 1.6);
 
-  if (abSummaryPitchDetails) {
-    const isCorrect = item.userCorrect;
-    const resultText = isCorrect ? 'Correct call' : 'Missed call';
-    const callText = item.userCall === 'S' ? 'Strike' : 'Ball';
-    const absText = item.absCall === 'S' ? 'Strike' : 'Ball';
-    const mph = item.speedMph != null ? `${Math.round(item.speedMph)} mph` : '—';
-    
-    abSummaryPitchDetails.innerHTML = `
-      <div class="ab-summary-detail-verdict ${isCorrect ? 'ab-summary-detail-verdict--ok' : 'ab-summary-detail-verdict--miss'}">${resultText}</div>
-      <dl class="ab-summary-detail-grid">
-        <dt>Pitch</dt><dd>#${index + 1} · ${item.pitchType || '—'}</dd>
-        <dt>Velocity</dt><dd>${mph}</dd>
-        <dt>Your call</dt><dd>${callText}</dd>
-        <dt>ABS call</dt><dd>${absText}</dd>
-      </dl>
-    `;
-  }
+  renderAbSummaryPitchFocus(index, item);
 
   if (abSummaryPitchList) {
     const rows = abSummaryPitchList.querySelectorAll('.ab-summary-pitch-row');
-    rows.forEach((row, btnIdx) => {
-      row.classList.toggle('is-selected', btnIdx === index);
+    rows.forEach((row, rowIdx) => {
+      const isSel = rowIdx === index;
+      row.classList.toggle('is-selected', isSel);
+      row.classList.toggle('is-dimmed', !isSel);
     });
     const selectedRow = rows[index];
     if (selectedRow) {
@@ -8500,171 +8983,24 @@ function highlightPitchInSummary(index) {
     }
   }
 
-  // Highlight dot/shape in the SVG and dim others
-  if (abSummarySvgPitches) {
-    const elements = abSummarySvgPitches.children;
-    for (let i = 0; i < elements.length; i++) {
-      const el = elements[i];
-      if (i === index) {
-        el.style.opacity = '1.0';
-        el.setAttribute('stroke-width', '0.07');
-        el.setAttribute('stroke', '#ffffff');
-        if (el.tagName === 'circle') {
-          el.setAttribute('r', '0.16');
-        }
-      } else {
-        el.style.opacity = '0.25';
-        el.setAttribute('stroke-width', '0.03');
-        const isCorrect = abPitches[i].userCorrect;
-        const originalStrokeColor = isCorrect ? '#4ade80' : '#f87171';
-        el.setAttribute('stroke', originalStrokeColor);
-        if (el.tagName === 'circle') {
-          el.setAttribute('r', '0.12');
-        }
-      }
-    }
-  }
-
-  // Draw dynamic closeness indicator line and text
-  const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
-  if (abSummarySvgIndicators) {
-    abSummarySvgIndicators.innerHTML = '';
-    
-    const cross = item.trajectory ? item.trajectory.crossPoint : null;
-    if (cross) {
-      const px = cross.x;
-      const py = cross.y;
-      
-      const xMin = -0.7083;
-      const xMax = 0.7083;
-      const yMin = szBot;
-      const yMax = szTop;
-      
-      const insideX = px >= xMin && px <= xMax;
-      const insideY = py >= yMin && py <= yMax;
-      const isIn = insideX && insideY;
-      
-      let cx = px;
-      let cy = py;
-      let distFeet = 0;
-      
-      if (isIn) {
-        const dLeft = px - xMin;
-        const dRight = xMax - px;
-        const dBottom = py - yMin;
-        const dTop = yMax - py;
-        
-        distFeet = Math.min(dLeft, dRight, dBottom, dTop);
-        if (distFeet === dLeft) {
-          cx = xMin;
-        } else if (distFeet === dRight) {
-          cx = xMax;
-        } else if (distFeet === dBottom) {
-          cy = yMin;
-        } else {
-          cy = yMax;
-        }
-      } else {
-        cx = Math.max(xMin, Math.min(px, xMax));
-        cy = Math.max(yMin, Math.min(py, yMax));
-        distFeet = Math.hypot(px - cx, py - cy);
-      }
-      
-      const distInches = distFeet * 12.0;
-      
-      // Convert to SVG space
-      const pxSvg = px;
-      const pySvg = 4.0 - py;
-      const cxSvg = cx;
-      const cySvg = 4.0 - cy;
-      
-      // Line
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", pxSvg);
-      line.setAttribute("y1", pySvg);
-      line.setAttribute("x2", cxSvg);
-      line.setAttribute("y2", cySvg);
-      line.setAttribute("stroke", "#fbbf24");
-      line.setAttribute("stroke-width", "0.025");
-      line.setAttribute("stroke-dasharray", "0.05,0.03");
-      abSummarySvgIndicators.appendChild(line);
-      
-      const zoneTopSvg = 4.0 - szTop;
-      const zoneBotSvg = 4.0 - szBot;
-      const zoneMidSvg = (zoneTopSvg + zoneBotSvg) / 2;
-      let labelSvgY = pySvg > zoneMidSvg ? zoneTopSvg - 0.22 : zoneBotSvg + 0.22;
-      if (Math.abs(labelSvgY - pySvg) < 0.28) {
-        labelSvgY = pySvg > zoneMidSvg ? zoneBotSvg + 0.22 : zoneTopSvg - 0.22;
-      }
-      const labelSvgX = pxSvg;
-      const labelW = 0.95;
-      const labelH = 0.28;
-
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("x", labelSvgX - labelW / 2);
-      rect.setAttribute("y", labelSvgY - labelH / 2);
-      rect.setAttribute("width", labelW);
-      rect.setAttribute("height", labelH);
-      rect.setAttribute("fill", "#0f172a");
-      rect.setAttribute("stroke", "#fbbf24");
-      rect.setAttribute("stroke-width", "0.015");
-      rect.setAttribute("rx", 0.05);
-      rect.setAttribute("ry", 0.05);
-      abSummarySvgIndicators.appendChild(rect);
-      
-      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("x", labelSvgX);
-      text.setAttribute("y", labelSvgY + 0.06);
-      text.setAttribute("fill", "#fbbf24");
-      text.setAttribute("font-size", "0.20");
-      text.setAttribute("font-family", "monospace");
-      text.setAttribute("font-weight", "bold");
-      text.setAttribute("text-anchor", "middle");
-      text.textContent = `${distInches.toFixed(1)}" ${isIn ? 'IN' : 'OUT'}`;
-      abSummarySvgIndicators.appendChild(text);
-    }
-  }
+  syncAbSummarySvgPitchMarkers(index);
+  drawAbSummaryPitchIndicators(item, szTop, szBot);
+  updateAbSummaryZoneDistance(item);
 }
 
-// Submit global scores to JSONBin
 async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScore) {
-  if (!name || name.toUpperCase() === 'YOU' || name.toUpperCase() === 'GUEST' || name.trim() === "") return;
+  if (!name || name.toUpperCase() === 'YOU' || name.toUpperCase() === 'GUEST' || name.trim() === '') return;
+  const board = type === 'streak' ? 'daily' : type;
   try {
-    const binId = BINS[type];
-    if (!binId) return;
-    const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
-    let list = [];
-    if (res.ok) {
-      list = await res.json();
-    }
-    if (!Array.isArray(list)) list = [];
-    
-    // Remove old entry for same user
-    list = list.filter(item => item.name.toUpperCase() !== name.toUpperCase());
-    
-    // Add new entry
-    list.push({
-      name: name,
+    await apiSubmitLeaderboard({
+      board,
       team: team || 'None',
-      accuracy: accuracy,
+      accuracy,
       scoreText: scoreValue,
       scoreRaw: rawScore,
-      timestamp: Date.now()
-    });
-    
-    // Sort descending by scoreRaw
-    list.sort((a, b) => b.scoreRaw - a.scoreRaw);
-    list = list.slice(0, 50); // Keep top 50
-    
-    await fetch(`${JSONBIN_BASE_URL}/${binId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(list)
     });
   } catch (err) {
-    console.warn("Failed to sync score to global leaderboard:", err);
+    console.warn('Failed to sync score to global leaderboard:', err);
   }
 }
 
@@ -8747,15 +9083,14 @@ async function renderLeaderboard(type) {
   `;
 
   let rows = [];
-  let source = 'demo';
+  let source = 'empty';
   try {
     const result = await getLeaderboardRows(type, activeHandle);
     rows = result.rows;
     source = result.source;
   } catch (err) {
     console.warn("Error loading leaderboard:", err);
-    rows = await buildDemoLeaderboard(type, activeHandle);
-    source = 'demo';
+    source = 'offline';
   }
 
   leaderboardTableBody.innerHTML = '';
@@ -8798,11 +9133,15 @@ async function renderLeaderboard(type) {
     leaderboardTableBody.appendChild(tr);
   });
 
-  if (source === 'demo') {
+  if (rows.length === 0) {
     const note = document.createElement('tr');
+    const msg =
+      source === 'offline'
+        ? 'Could not load standings — check connection or deploy API routes'
+        : 'No scores yet — complete a challenge to appear on the board';
     note.innerHTML = `
-      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-2 text-center text-[9px] font-mono-tech text-gray-500 uppercase tracking-wider">
-        Demo standings shown — connect to sync service for live global boards
+      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-4 text-center text-[9px] font-mono-tech text-gray-500 uppercase tracking-wider">
+        ${msg}
       </td>
     `;
     leaderboardTableBody.appendChild(note);
@@ -9143,150 +9482,13 @@ function getTeamAbbreviation(teamName) {
   return teamName.substring(0, 3).toUpperCase();
 }
 
-async function fetchGlobalLeaderboard(type, username) {
-  const binKey = type === 'streak' ? 'daily' : type;
-  const binId = BINS[binKey];
-  if (!binId) return null;
-
-  try {
-    const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
-    if (!res.ok) return null;
-    const list = await res.json();
-    if (!Array.isArray(list) || list.length === 0) return null;
-
-    const normalizedUser = normalizeHandle(username);
-    const sorted = [...list].sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
-
-    return sorted.slice(0, 50).map((item, idx) => {
-      const isUser = normalizeHandle(item.name) === normalizedUser;
-      const accuracy = typeof item.accuracy === 'string'
-        ? item.accuracy
-        : `${item.accuracy ?? 0}%`;
-      return {
-        rank: idx + 1,
-        name: isUser ? `${normalizedUser} (YOU)` : item.name,
-        accuracy,
-        score: item.scoreText || String(item.scoreRaw ?? ''),
-        team: item.team || 'None',
-        isUser
-      };
-    });
-  } catch (err) {
-    console.warn(`Leaderboard fetch failed (${type}):`, err);
-    return null;
-  }
-}
-
 async function getLeaderboardRows(type, username) {
-  const live = await fetchGlobalLeaderboard(type, username);
-  if (live && live.length > 0) {
-    return { rows: live, source: 'live' };
-  }
-  const rows = await buildDemoLeaderboard(type, username);
-  return { rows, source: 'demo' };
-}
-
-async function buildDemoLeaderboard(type, username) {
-  const profile = await getGlobalUserStats(username);
-  let rows = [];
-  
-  if (type === 'weekly') {
-    let rawList = [
-      { name: "Pat Hoberg", accuracy: 98.8, scoreVal: 990, score: "990 pts" },
-      { name: "Miller_Crew", accuracy: 97.2, scoreVal: 972, score: "972 pts" },
-      { name: "West_Coast_Ump", accuracy: 95.5, scoreVal: 955, score: "955 pts" },
-      { name: "Umpire_Pro", accuracy: 94.1, scoreVal: 941, score: "941 pts" },
-      { name: "Angel_H", accuracy: 81.2, scoreVal: 812, score: "812 pts" },
-    ];
-    
-    let userAcc = 0;
-    let userScore = 0;
-    if (profile) {
-      userAcc = profile.overallAccuracy ? parseFloat(profile.overallAccuracy) : 0;
-      userScore = Math.round(userAcc * 10);
-    }
-    
-    rawList.push({
-      name: username.toUpperCase() + " (YOU)",
-      accuracy: userAcc || 0,
-      scoreVal: userScore || 0,
-      score: `${userScore || 0} pts`,
-      isUser: true
-    });
-    
-    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
-    
-    rows = rawList.map((r, idx) => ({
-      rank: idx + 1,
-      name: r.name,
-      accuracy: `${r.accuracy}%`,
-      score: r.score,
-      isUser: r.isUser
-    }));
-    
-  } else if (type === 'daily' || type === 'streak') {
-    let rawList = [
-      { name: "PerfectCall_99", accuracy: 98.5, scoreVal: 24, score: "24 Streak" },
-      { name: "LaserEye", accuracy: 96.4, scoreVal: 19, score: "19 Streak" },
-      { name: "BlueLover", accuracy: 92.0, scoreVal: 12, score: "12 Streak" },
-      { name: "RoboUmpWho", accuracy: 91.5, scoreVal: 10, score: "10 Streak" },
-      { name: "ZoneMaster", accuracy: 89.2, scoreVal: 8, score: "8 Streak" },
-    ];
-    
-    let userStreak = profile ? profile.maxStreak || 0 : 0;
-    
-    rawList.push({
-      name: username.toUpperCase() + " (YOU)",
-      accuracy: profile && profile.overallAccuracy ? parseFloat(profile.overallAccuracy) : 90.0,
-      scoreVal: userStreak,
-      score: `${userStreak} Streak`,
-      isUser: true
-    });
-    
-    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
-    
-    rows = rawList.map((r, idx) => ({
-      rank: idx + 1,
-      name: r.name,
-      accuracy: `${r.accuracy}%`,
-      score: r.score,
-      isUser: r.isUser
-    }));
-    
-  } else {
-    let rawList = [
-      { name: "Pat Hoberg", team: "Orioles,Yankees,Dodgers,Red Sox,Astros", accuracy: "96.8%", scoreVal: 5096, score: "5 Teams (5096 pts)" },
-      { name: "ZoneMaster", team: "Tigers,Twins,Orioles,Yankees", accuracy: "94.2%", scoreVal: 4094, score: "4 Teams (4094 pts)" },
-      { name: "LaserEye", team: "Rangers,Dodgers,Giants", accuracy: "93.9%", scoreVal: 3093, score: "3 Teams (3093 pts)" },
-      { name: "PerfectCall_99", team: "Yankees,Mets", accuracy: "95.5%", scoreVal: 2095, score: "2 Teams (2095 pts)" },
-      { name: "RoboUmpWho", team: "Red Sox", accuracy: "92.8%", scoreVal: 1092, score: "1 Team (1092 pts)" },
-    ];
-    
-    let completedCount = profile ? (profile.completedWeekly || 0) : 0;
-    let xp = profile ? (profile.xp || 0) : 0;
-    
-    rawList.push({
-      name: username.toUpperCase() + " (YOU)",
-      team: profile && profile.favoriteTeam ? profile.favoriteTeam : "None",
-      accuracy: profile && profile.overallAccuracy ? `${profile.overallAccuracy}%` : "0%",
-      scoreVal: xp,
-      score: `${completedCount} Teams (${xp} pts)`,
-      isUser: true
-    });
-    
-    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
-    
-    rows = rawList.map((r, idx) => ({
-      rank: idx + 1,
-      name: r.name,
-      team: r.team,
-      accuracy: r.accuracy,
-      score: r.score,
-      isUser: r.isUser
-    }));
-  }
-  
-  return rows;
+  const board = type === 'streak' ? 'daily' : type;
+  const result = await apiFetchLeaderboard(board, username);
+  return {
+    rows: result.rows || [],
+    source: result.source === 'live' ? 'live' : 'empty',
+  };
 }
 
 async function fetchYesterdayGames() {
