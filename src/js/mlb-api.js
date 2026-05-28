@@ -331,3 +331,44 @@ export async function fetchGamePitches(gamePk) {
     return null;
   }
 }
+
+/**
+ * Fetch all games played on a specific date (without team restrictions)
+ * @param {string} dateStr - YYYY-MM-DD
+ * @returns {Promise<Array>} Array of game summaries
+ */
+export async function fetchAllGamesForDate(dateStr) {
+  try {
+    const url = `${MLB_API_BASE}/schedule?sportId=1&startDate=${dateStr}&endDate=${dateStr}&hydrate=linescore`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Schedule fetch failed: ${res.status}`);
+    const data = await res.json();
+
+    const games = [];
+    if (data.dates && Array.isArray(data.dates)) {
+      data.dates.forEach(dateEntry => {
+        if (dateEntry.games && Array.isArray(dateEntry.games)) {
+          dateEntry.games.forEach(game => {
+            if (game.status && game.status.abstractGameState === 'Final' && game.gameType === 'R') {
+              games.push({
+                gamePk: game.gamePk,
+                date: dateEntry.date,
+                awayTeam: game.teams.away.team.name,
+                awayScore: game.teams.away.score,
+                homeTeam: game.teams.home.team.name,
+                homeScore: game.teams.home.score,
+                venue: game.venue ? game.venue.name : 'Unknown Venue',
+                status: game.status.detailedState,
+                innings: game.linescore ? game.linescore.currentInning : 9
+              });
+            }
+          });
+        }
+      });
+    }
+    return games;
+  } catch (err) {
+    console.warn('MLB API: Failed to fetch all games for date:', err);
+    return [];
+  }
+}

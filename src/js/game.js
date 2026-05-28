@@ -3,7 +3,7 @@ import { getObfuscatedPitches } from '../data/pitches.js';
 import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
 import { WEEKLY_CHALLENGE_DATA } from '../data/weekly_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
-import { fetchTeamSchedule, fetchGameForDate, fetchGamePitches } from './mlb-api.js';
+import { fetchTeamSchedule, fetchGameForDate, fetchGamePitches, fetchAllGamesForDate } from './mlb-api.js';
 import { 
   hashPIN, 
   getProfile, 
@@ -49,8 +49,24 @@ import {
   setBattersEyeColor,
   setZoomedIn,
   drawDimensionLine,
-  clearDimensionLine
+  clearDimensionLine,
+  pickZoneDistanceLabelScreenPos,
+  showSummaryPitchReview,
+  highlightSummaryPitch,
+  clearSummaryPitchReview,
+  updateWelcomeCamera,
+  getActiveCameraName
 } from './scene.js';
+import {
+  XP_PER_LEVEL,
+  getLevelFromXp,
+  getXpProgressInLevel,
+  getLevelTier,
+  isMilestoneLevel,
+  applyLevelBadgeElement,
+  formatLevelLabel,
+} from './xp-levels.js';
+
 
 // Game State Definitions
 const STATES = {
@@ -66,6 +82,70 @@ const STATES = {
 };
 
 let currentState = STATES.START;
+
+// Welcome screen background demo pitching state
+let demoPitchActive = false;
+let demoPitchStartTime = 0;
+let demoFlightStartTime = 0;
+let demoPitchData = null;
+let demoPitchTrajectory = null;
+let demoPitchState = 'WINDUP';
+let demoCooldownEnd = 0;
+
+const demoPitches = [
+  {
+    pitch_type: 'Fastball',
+    speed_mph: 97,
+    release_pos_x: -1.6,
+    release_pos_y: 50.0,
+    release_pos_z: 5.9,
+    vx0: 4.8,
+    vy0: -142.0,
+    vz0: -4.2,
+    ax: -5.2,
+    ay: 29.5,
+    az: -31.0,
+    sz_top: 3.4,
+    sz_bot: 1.6,
+    pitcher_hand: 'R',
+    batter_hand: 'R'
+  },
+  {
+    pitch_type: 'Slider',
+    speed_mph: 86,
+    release_pos_x: -1.8,
+    release_pos_y: 50.0,
+    release_pos_z: 5.7,
+    vx0: 2.1,
+    vy0: -126.0,
+    vz0: -1.8,
+    ax: 6.8,
+    ay: 25.5,
+    az: -33.5,
+    sz_top: 3.3,
+    sz_bot: 1.5,
+    pitcher_hand: 'R',
+    batter_hand: 'L'
+  },
+  {
+    pitch_type: 'Curveball',
+    speed_mph: 79,
+    release_pos_x: -1.5,
+    release_pos_y: 50.0,
+    release_pos_z: 6.1,
+    vx0: 3.5,
+    vy0: -115.0,
+    vz0: 2.2,
+    ax: -8.0,
+    ay: 23.0,
+    az: -40.5,
+    sz_top: 3.5,
+    sz_bot: 1.7,
+    pitcher_hand: 'R',
+    batter_hand: 'R'
+  }
+];
+
 
 // Game Modes: 'standard', 'orioles_full', 'weekly_challenge', 'daily_streak'
 let gameMode = 'weekly_challenge';
@@ -183,8 +263,52 @@ let pitchSpeedMultiplier = 1.0;
 let replayStartTime = 0;
 const REPLAY_SPEED_MULTIPLIER = 0.18; 
 
-// Web Audio API Context
 let audioCtx = null;
+let bgmInterval = null;
+let bgmNextNoteTime = 0.0;
+let bgmCurrentBeatIndex = 0;
+let bgmMelodyNoteIndex = 0;
+let bgmMelodyBeatRemaining = 0;
+let bgmEnabled = true;
+let chkBgmEnabled = null;
+let activeBgmTrack = 0;
+let selBgmTrack = null;
+let closeCallPill = null;
+let closeCallDistText = null;
+let btnAudioMute = null;
+let svgAudioUnmuted = null;
+let svgAudioMuted = null;
+
+const BALLGAME_MELODY = [
+  { note: 261.63, beats: 4 }, { note: 523.25, beats: 2 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 329.63, beats: 2 }, { note: 392.00, beats: 6 }, { note: 293.66, beats: 6 },
+  { note: 261.63, beats: 4 }, { note: 523.25, beats: 2 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 329.63, beats: 2 }, { note: 392.00, beats: 12 },
+  { note: 440.00, beats: 4 }, { note: 440.00, beats: 2 }, { note: 349.23, beats: 2 }, { note: 392.00, beats: 2 }, { note: 440.00, beats: 2 }, { note: 349.23, beats: 6 }, { note: 293.66, beats: 6 },
+  { note: 440.00, beats: 4 }, { note: 440.00, beats: 2 }, { note: 440.00, beats: 2 }, { note: 493.88, beats: 2 }, { note: 523.25, beats: 2 }, { note: 587.33, beats: 4 }, { note: 493.88, beats: 2 }, { note: 392.00, beats: 6 },
+  { note: 261.63, beats: 4 }, { note: 523.25, beats: 2 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 329.63, beats: 2 }, { note: 392.00, beats: 6 }, { note: 293.66, beats: 6 },
+  { note: 261.63, beats: 4 }, { note: 293.66, beats: 2 }, { note: 311.13, beats: 2 }, { note: 329.63, beats: 2 }, { note: 349.23, beats: 2 }, { note: 392.00, beats: 4 }, { note: 440.00, beats: 2 }, { note: 493.88, beats: 6 },
+  { note: 523.25, beats: 3 }, { note: 493.88, beats: 1 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 349.23, beats: 2 }, { note: 329.63, beats: 2 }, { note: 293.66, beats: 6 },
+  { note: 293.66, beats: 3 }, { note: 329.63, beats: 1 }, { note: 349.23, beats: 2 }, { note: 392.00, beats: 4 }, { note: 493.88, beats: 2 }, { note: 523.25, beats: 6 }
+];
+
+const SUPER_UMPIRE_MELODY = [
+  { note: 261.63, beats: 2 }, { note: 329.63, beats: 2 }, { note: 392.00, beats: 2 }, { note: 440.00, beats: 2 },
+  { note: 466.16, beats: 2 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 329.63, beats: 2 },
+  { note: 293.66, beats: 2 }, { note: 349.23, beats: 2 }, { note: 440.00, beats: 2 }, { note: 493.88, beats: 2 },
+  { note: 523.25, beats: 4 }, { note: 392.00, beats: 4 },
+  { note: 349.23, beats: 2 }, { note: 440.00, beats: 2 }, { note: 523.25, beats: 2 }, { note: 587.33, beats: 2 },
+  { note: 659.25, beats: 2 }, { note: 587.33, beats: 2 }, { note: 523.25, beats: 2 }, { note: 440.00, beats: 2 },
+  { note: 392.00, beats: 2 }, { note: 329.63, beats: 2 }, { note: 293.66, beats: 2 }, { note: 392.00, beats: 2 },
+  { note: 261.63, beats: 4 }, { note: 0, beats: 4 }
+];
+
+const STADIUM_MEDLEY_MELODY = [
+  { note: 392.00, beats: 3 }, { note: 523.25, beats: 3 }, { note: 659.25, beats: 3 }, { note: 783.99, beats: 6 },
+  { note: 659.25, beats: 3 }, { note: 783.99, beats: 12 }, { note: 0, beats: 12 },
+  { note: 392.00, beats: 2 }, { note: 392.00, beats: 2 }, { note: 440.00, beats: 2 }, { note: 392.00, beats: 2 },
+  { note: 523.25, beats: 4 }, { note: 440.00, beats: 4 }, { note: 392.00, beats: 8 }, { note: 0, beats: 8 },
+  { note: 440.00, beats: 2 }, { note: 440.00, beats: 2 }, { note: 493.88, beats: 2 }, { note: 440.00, beats: 2 },
+  { note: 587.33, beats: 4 }, { note: 493.88, beats: 4 }, { note: 440.00, beats: 8 }, { note: 0, beats: 16 }
+];
 
 // Touch Swipe gesture variables
 let touchStartX = 0;
@@ -194,6 +318,7 @@ const SWIPE_THRESHOLD = 50;
 // DOM Elements cache
 let startScreen, btnStartGame;
 let hudHeader, pitchCounterText, ballsIndicator, strikesIndicator;
+let scorebugBase1, scorebugBase2, scorebugBase3, scorebugInning, scorebugScore;
 let userAbAccuracyText, umpAbAccuracyText, userWeeklyAccuracyText, btnShowUmpcard;
 let umpcardOverlay, btnCloseUmpcard, btnCloseUmpcardBottom, umpcardStrikezoneCanvas;
 let umpcardUserAcc, umpcardUmpAcc, umpcardTotalPitches, umpcardTotalCorrect;
@@ -218,6 +343,10 @@ let teamGridContainer, dashboardGamesList, finalScorecardRe24;
 let activeFavoriteTeam = null;
 let activeDailyTeam = null;
 let confirmModalOverlay, btnConfirmModalYes, btnConfirmModalNo;
+let challengeDetailModalOverlay, challengeDetailTitle, challengeDetailSubtitle, challengeDetailDesc;
+let challengeDetailGamesCount, challengeDetailBestStreak, challengeDetailCompleted;
+let btnChallengeDetailClose, btnChallengeDetailPlay, challengeDetailLeaderboardBody;
+let btnInfoWeeklyChallenge, btnInfoStreakChallenge;
 
 // Overlays
 let abSummaryOverlay, abSummaryTitle, abSummaryMatchup, abSummaryAccuracy, abSummaryPitches, abSummaryBlurb, abSummaryFilmLink, abSummaryScorecardLink, btnAbSummaryAdvance;
@@ -249,8 +378,12 @@ let settingsUiClassic, settingsUiAdaptive, settingsUiCinematic;
 // Split Summary card elements
 let abSummaryPitcherImg, abSummaryPitcherLogo, abSummaryPitcherName, abSummaryPitcherHandBadge;
 let abSummaryBatterImg, abSummaryBatterLogo, abSummaryBatterName, abSummaryBatterHandBadge;
-let abSummaryPitchList;
+let abSummaryPitchList, abSummaryCorrectCount;
 let abSummaryWeeklyChallengeDetails, abSummaryWeeklyProgressText, abSummaryWeeklyProgressBar, abSummaryWeeklyAccuracyText;
+let abSummaryWeeklyCount, abSummaryWeeklyTotal, abSummaryLeaderboardSnippet;
+let btnAbSummaryToggleReview, abSummaryReviewSection, challengeTrackerHud;
+let levelUpOverlay, levelUpBadge, levelUpTitle, levelUpSubtitle;
+let abSummaryReviewExpanded = false;
 
 // Matchup Walkup card (ab-start-overlay) faceoff elements
 let abStartPitcherImg, abStartPitcherLogo, abStartPitcherStats;
@@ -500,6 +633,153 @@ function playCoinSound() {
   });
 }
 
+function getCurrentMelodyArray() {
+  if (activeBgmTrack === 1) return SUPER_UMPIRE_MELODY;
+  if (activeBgmTrack === 2) return STADIUM_MEDLEY_MELODY;
+  return BALLGAME_MELODY;
+}
+
+function bgmScheduler() {
+  if (!audioCtx) return;
+  while (bgmNextNoteTime < audioCtx.currentTime + 0.1) {
+    scheduleNextBgmStep(bgmNextNoteTime);
+    advanceBgmStep();
+  }
+}
+
+function advanceBgmStep() {
+  const beatLen = 0.165; // eighth-note steps (approx 180 BPM for waltz, bouncy retro tempo)
+  bgmNextNoteTime += beatLen;
+  
+  bgmMelodyBeatRemaining--;
+  if (bgmMelodyBeatRemaining <= 0) {
+    const melody = getCurrentMelodyArray();
+    bgmMelodyNoteIndex++;
+    if (bgmMelodyNoteIndex >= melody.length) {
+      const oldTrack = activeBgmTrack;
+      let nextTrack = Math.floor(Math.random() * 3);
+      if (nextTrack === oldTrack) {
+        nextTrack = (nextTrack + 1) % 3;
+      }
+      activeBgmTrack = nextTrack;
+      if (selBgmTrack) selBgmTrack.value = activeBgmTrack;
+      bgmMelodyNoteIndex = 0;
+    }
+    const nextMelody = getCurrentMelodyArray();
+    bgmMelodyBeatRemaining = nextMelody[bgmMelodyNoteIndex].beats;
+  }
+  
+  const activeLength = activeBgmTrack === 0 ? 6 : 8;
+  bgmCurrentBeatIndex = (bgmCurrentBeatIndex + 1) % activeLength;
+}
+
+function getBassRootFreqForMelody(melodyFreq) {
+  let freq = melodyFreq;
+  if (freq >= 500) freq /= 2;
+  if (freq < 260) freq *= 2;
+  if (Math.abs(freq - 261.63) < 5) return 130.81; // C3
+  if (Math.abs(freq - 293.66) < 5) return 146.83; // D3
+  if (Math.abs(freq - 311.13) < 5) return 155.56; // D#3
+  if (Math.abs(freq - 329.63) < 5) return 164.81; // E3
+  if (Math.abs(freq - 349.23) < 5) return 174.61; // F3
+  if (Math.abs(freq - 369.99) < 5) return 185.00; // F#3
+  if (Math.abs(freq - 392.00) < 5) return 196.00; // G3
+  if (Math.abs(freq - 440.00) < 5) return 220.00; // A3
+  if (Math.abs(freq - 493.88) < 5) return 246.94; // B3
+  return 130.81;
+}
+
+function scheduleNextBgmStep(time) {
+  if (!bgmEnabled || !audioCtx) return;
+  
+  const melody = getCurrentMelodyArray();
+  const currentMelody = melody[bgmMelodyNoteIndex];
+  if (!currentMelody) return;
+  
+  if (bgmMelodyBeatRemaining === currentMelody.beats) {
+    if (currentMelody.note > 0) {
+      playSynthNote(currentMelody.note, currentMelody.beats * 0.165, 'square', 0.04, time);
+    }
+  }
+  
+  if (currentMelody.note > 0) {
+    const rootFreq = getBassRootFreqForMelody(currentMelody.note);
+    if (activeBgmTrack === 0) {
+      // Waltz 3/4 (6 eighth-note steps)
+      if (bgmCurrentBeatIndex === 0) {
+        playSynthNote(rootFreq / 2, 0.3, 'triangle', 0.06, time);
+      } else if (bgmCurrentBeatIndex === 2 || bgmCurrentBeatIndex === 4) {
+        playSynthNote(rootFreq, 0.15, 'sine', 0.03, time);
+        playSynthNote(rootFreq * 1.5, 0.15, 'sine', 0.02, time);
+      }
+    } else {
+      // 4/4 (8 eighth-note steps)
+      if (bgmCurrentBeatIndex === 0 || bgmCurrentBeatIndex === 4) {
+        playSynthNote(rootFreq / 2, 0.3, 'triangle', 0.06, time);
+      } else if (bgmCurrentBeatIndex === 2 || bgmCurrentBeatIndex === 6) {
+        playSynthNote(rootFreq, 0.15, 'sine', 0.03, time);
+        playSynthNote(rootFreq * 1.5, 0.15, 'sine', 0.02, time);
+      }
+    }
+  }
+}
+
+function playSynthNote(freq, duration, type, gainValue, time) {
+  if (!audioCtx || freq <= 0) return;
+  
+  const osc = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, time);
+  
+  gainNode.gain.setValueAtTime(0, time);
+  gainNode.gain.linearRampToValueAtTime(gainValue, time + 0.01);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, time + duration);
+  
+  osc.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  osc.start(time);
+  osc.stop(time + duration);
+}
+
+function updateMuteButtonUI() {
+  if (!svgAudioUnmuted || !svgAudioMuted) return;
+  if (bgmEnabled) {
+    svgAudioUnmuted.classList.remove('hidden');
+    svgAudioMuted.classList.add('hidden');
+  } else {
+    svgAudioUnmuted.classList.add('hidden');
+    svgAudioMuted.classList.remove('hidden');
+  }
+}
+
+function startBgm() {
+  if (bgmInterval) return;
+  initAudio();
+  if (!audioCtx) return;
+  
+  bgmNextNoteTime = audioCtx.currentTime + 0.1;
+  bgmMelodyNoteIndex = 0;
+  
+  const melody = getCurrentMelodyArray();
+  bgmMelodyBeatRemaining = melody.length > 0 ? melody[0].beats : 1;
+  bgmCurrentBeatIndex = 0;
+  
+  const saved = localStorage.getItem('pitch_ump_bgm_enabled');
+  if (saved !== null) {
+    bgmEnabled = saved === 'true';
+    if (chkBgmEnabled) chkBgmEnabled.checked = bgmEnabled;
+  }
+  updateMuteButtonUI();
+  
+  activeBgmTrack = Math.floor(Math.random() * 3);
+  if (selBgmTrack) selBgmTrack.value = activeBgmTrack;
+  
+  bgmInterval = setInterval(bgmScheduler, 25);
+}
+
 function playBallWhooshSound(speedMph) {
   if (!audioCtx) return;
   if (audioCtx.state === 'suspended') {
@@ -541,7 +821,340 @@ function playBallWhooshSound(speedMph) {
   noiseSource.stop(now + duration);
 }
 
+/**
+ * Synthesizes a robotic 8-bit vowel/consonant syllable using parallel bandpass filters (F1/F2)
+ */
+function playVocalSyllable(options) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime + (options.time || 0);
+  const duration = options.duration || 0.25;
+  const volume = (options.volume || 0.2) * (options.masterVolume || 1.0);
+  
+  // 1. Vocal Source: Sawtooth + Square oscillators for rich, detuned, buzzy 8-bit vocal chords
+  let sourceNode = null;
+  if (options.noiseMix === undefined || options.noiseMix < 1.0) {
+    const osc1 = audioCtx.createOscillator();
+    const osc2 = audioCtx.createOscillator();
+    
+    osc1.type = 'sawtooth';
+    osc2.type = 'square';
+    
+    const baseFreq = options.pitch || 100;
+    osc1.frequency.setValueAtTime(baseFreq, now);
+    osc2.frequency.setValueAtTime(baseFreq * 1.015, now);
+    
+    if (options.pitchEnd) {
+      osc1.frequency.exponentialRampToValueAtTime(options.pitchEnd, now + duration);
+      osc2.frequency.exponentialRampToValueAtTime(options.pitchEnd * 1.015, now + duration);
+    }
+    
+    const voiceGain = audioCtx.createGain();
+    const voiceMix = 1.0 - (options.noiseMix || 0.0);
+    voiceGain.gain.setValueAtTime(volume * voiceMix, now);
+    voiceGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    
+    osc1.connect(voiceGain);
+    osc2.connect(voiceGain);
+    
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + duration);
+    osc2.stop(now + duration);
+    
+    sourceNode = voiceGain;
+  }
+  
+  // 2. Fricative / Consonant Source: White Noise
+  let noiseNode = null;
+  if (options.noiseMix && options.noiseMix > 0.0) {
+    const bufferSize = audioCtx.sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(volume * options.noiseMix, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    
+    source.connect(noiseGain);
+    source.start(now);
+    source.stop(now + duration);
+    
+    noiseNode = noiseGain;
+  }
+  
+  // 3. Formant Bandpass Filters (F1 and F2 resonance peaks)
+  const filter1 = audioCtx.createBiquadFilter();
+  filter1.type = 'bandpass';
+  filter1.frequency.setValueAtTime(options.f1Start || 600, now);
+  if (options.f1End) {
+    filter1.frequency.exponentialRampToValueAtTime(options.f1End, now + duration);
+  }
+  filter1.Q.setValueAtTime(options.q1 || 12, now);
+  
+  const filter2 = audioCtx.createBiquadFilter();
+  filter2.type = 'bandpass';
+  filter2.frequency.setValueAtTime(options.f2Start || 1200, now);
+  if (options.f2End) {
+    filter2.frequency.exponentialRampToValueAtTime(options.f2End, now + duration);
+  }
+  filter2.Q.setValueAtTime(options.q2 || 12, now);
+  
+  // Syllable Out Gain
+  const outGain = audioCtx.createGain();
+  outGain.gain.setValueAtTime(1.0, now);
+  outGain.connect(audioCtx.destination);
+  
+  filter1.connect(outGain);
+  filter2.connect(outGain);
+  
+  if (sourceNode) {
+    sourceNode.connect(filter1);
+    sourceNode.connect(filter2);
+  }
+  
+  if (noiseNode) {
+    if (options.noiseMix === 1.0) {
+      // Pure sibilant ("S", "F", "Sh" - bypass formant filter for better sibilance)
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(options.noiseFreq || 5000, now);
+      noiseFilter.Q.setValueAtTime(3, now);
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(outGain);
+    } else {
+      // Voiced consonant ("Z", "V")
+      noiseNode.connect(filter1);
+      noiseNode.connect(filter2);
+    }
+  }
+}
+
+/**
+ * Procedural 8-bit speech synthesis voice callouts
+ */
+export function playUmpireVocalCall(callType) {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  const mVol = 1.25; // Vocal volume multiplier
+  
+  if (callType === 'STRIKE1' || callType === 'STRIKE2' || callType === 'STRIKE') {
+    const pitch = callType === 'STRIKE2' ? 125 : 110;
+    const pitchEnd = callType === 'STRIKE2' ? 95 : 85;
+    
+    // "S" sibilant
+    playVocalSyllable({
+      time: 0,
+      duration: 0.08,
+      noiseMix: 1.0,
+      noiseFreq: 5500,
+      volume: 0.12,
+      masterVolume: mVol
+    });
+    // "Trai..." (Vowel blend Ah -> Ee)
+    playVocalSyllable({
+      time: 0.05,
+      duration: 0.22,
+      pitch: pitch,
+      pitchEnd: pitchEnd,
+      noiseMix: 0.15,
+      f1Start: 750,
+      f1End: 300,
+      f2Start: 1200,
+      f2End: 2100,
+      volume: 0.25,
+      masterVolume: mVol
+    });
+    // "K" pop
+    playVocalSyllable({
+      time: 0.24,
+      duration: 0.04,
+      noiseMix: 1.0,
+      noiseFreq: 3500,
+      volume: 0.08,
+      masterVolume: mVol
+    });
+  }
+  
+  else if (callType === 'STRIKE3' || callType === 'STRIKE_THREE_OUT') {
+    // "S-T-RAI-K" (high energy, intense)
+    playVocalSyllable({
+      time: 0,
+      duration: 0.09,
+      noiseMix: 1.0,
+      noiseFreq: 6000,
+      volume: 0.15,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.06,
+      duration: 0.24,
+      pitch: 135,
+      pitchEnd: 90,
+      noiseMix: 0.2,
+      f1Start: 800, f1End: 320,
+      f2Start: 1300, f2End: 2200,
+      volume: 0.3,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.27,
+      duration: 0.05,
+      noiseMix: 1.0,
+      noiseFreq: 3800,
+      volume: 0.1,
+      masterVolume: mVol
+    });
+    
+    // "THREE"
+    playVocalSyllable({
+      time: 0.34,
+      duration: 0.07,
+      noiseMix: 1.0,
+      noiseFreq: 4000,
+      volume: 0.1,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.38,
+      duration: 0.25,
+      pitch: 110,
+      pitchEnd: 130,
+      f1Start: 280, f1End: 260,
+      f2Start: 1800, f2End: 2300,
+      volume: 0.24,
+      masterVolume: mVol
+    });
+    
+    // "OUT!"
+    playVocalSyllable({
+      time: 0.65,
+      duration: 0.25,
+      pitch: 130,
+      pitchEnd: 85,
+      noiseMix: 0.15,
+      f1Start: 700, f1End: 350,
+      f2Start: 1100, f2End: 800,
+      volume: 0.32,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.88,
+      duration: 0.05,
+      noiseMix: 1.0,
+      noiseFreq: 4500,
+      volume: 0.12,
+      masterVolume: mVol
+    });
+  }
+  
+  else if (callType === 'BALL') {
+    // "B-AW-L"
+    playVocalSyllable({
+      time: 0,
+      duration: 0.04,
+      pitch: 80,
+      pitchEnd: 95,
+      f1Start: 250, f1End: 350,
+      f2Start: 600, f2End: 800,
+      volume: 0.18,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.03,
+      duration: 0.24,
+      pitch: 95,
+      pitchEnd: 80,
+      f1Start: 650, f1End: 400,
+      f2Start: 850, f2End: 950,
+      volume: 0.28,
+      masterVolume: mVol
+    });
+  }
+  
+  else if (callType === 'WALK' || callType === 'BALL_FOUR_WALK') {
+    // "BALL"
+    playVocalSyllable({
+      time: 0,
+      duration: 0.04,
+      pitch: 85,
+      pitchEnd: 95,
+      f1Start: 250, f1End: 350,
+      f2Start: 600, f2End: 800,
+      volume: 0.18,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.03,
+      duration: 0.22,
+      pitch: 95,
+      pitchEnd: 85,
+      f1Start: 650, f1End: 400,
+      f2Start: 850, f2End: 950,
+      volume: 0.24,
+      masterVolume: mVol
+    });
+    
+    // "FOUR"
+    playVocalSyllable({
+      time: 0.26,
+      duration: 0.08,
+      noiseMix: 1.0,
+      noiseFreq: 4000,
+      volume: 0.08,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.31,
+      duration: 0.22,
+      pitch: 90,
+      pitchEnd: 75,
+      f1Start: 500, f1End: 320,
+      f2Start: 800, f2End: 700,
+      volume: 0.26,
+      masterVolume: mVol
+    });
+    
+    // "WALK"
+    playVocalSyllable({
+      time: 0.56,
+      duration: 0.22,
+      pitch: 100,
+      pitchEnd: 85,
+      f1Start: 400, f1End: 600,
+      f2Start: 700, f2End: 900,
+      volume: 0.24,
+      masterVolume: mVol
+    });
+    playVocalSyllable({
+      time: 0.76,
+      duration: 0.05,
+      noiseMix: 1.0,
+      noiseFreq: 3500,
+      volume: 0.08,
+      masterVolume: mVol
+    });
+  }
+}
+
 function playStrikeCallSound() {
+  if (!bgmEnabled) return;
+  
+  // Vocal speech callout
+  if (abStrikes === 2) {
+    playUmpireVocalCall('STRIKE2');
+  } else {
+    playUmpireVocalCall('STRIKE1');
+  }
+
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   
@@ -597,6 +1210,15 @@ function playStrikeCallSound() {
 }
 
 function playBallCallSound() {
+  if (!bgmEnabled) return;
+  
+  // Vocal speech callout
+  if (abBalls === 4) {
+    playUmpireVocalCall('WALK');
+  } else {
+    playUmpireVocalCall('BALL');
+  }
+
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   
@@ -633,6 +1255,11 @@ function playBallCallSound() {
 }
 
 function playStrikeoutSirenSound() {
+  if (!bgmEnabled) return;
+  
+  // Vocal speech callout
+  playUmpireVocalCall('STRIKE3');
+
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
   const duration = 1.0;
@@ -676,6 +1303,245 @@ function playStrikeoutSirenSound() {
   });
 }
 
+function getNoiseBuffer() {
+  if (!audioCtx) return null;
+  const bufferSize = audioCtx.sampleRate * 1.0;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  return buffer;
+}
+
+function playArcadeStartupSound() {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  const now = audioCtx.currentTime;
+  const noiseBuffer = getNoiseBuffer();
+  
+  // --- "STRIKE!" ---
+  // 1. "S" sibilant (noise bandpassed around 6000Hz)
+  if (noiseBuffer) {
+    const sNode = audioCtx.createBufferSource();
+    sNode.buffer = noiseBuffer;
+    const sFilter = audioCtx.createBiquadFilter();
+    sFilter.type = 'bandpass';
+    sFilter.frequency.setValueAtTime(6000, now);
+    sFilter.Q.setValueAtTime(3, now);
+    const sGain = audioCtx.createGain();
+    sGain.gain.setValueAtTime(0.08, now);
+    sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    
+    sNode.connect(sFilter);
+    sFilter.connect(sGain);
+    sGain.connect(audioCtx.destination);
+    sNode.start(now);
+    sNode.stop(now + 0.08);
+  }
+  
+  // 2. "TR" sweep (low square wave)
+  const trOsc = audioCtx.createOscillator();
+  trOsc.type = 'square';
+  trOsc.frequency.setValueAtTime(450, now + 0.04);
+  trOsc.frequency.exponentialRampToValueAtTime(250, now + 0.12);
+  const trGain = audioCtx.createGain();
+  trGain.gain.setValueAtTime(0, now + 0.04);
+  trGain.gain.linearRampToValueAtTime(0.06, now + 0.06);
+  trGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  trOsc.connect(trGain);
+  trGain.connect(audioCtx.destination);
+  trOsc.start(now + 0.04);
+  trOsc.stop(now + 0.13);
+  
+  // 3. "IKE" sweep (rising sawtooth/square)
+  const ikeOsc = audioCtx.createOscillator();
+  ikeOsc.type = 'sawtooth';
+  ikeOsc.frequency.setValueAtTime(300, now + 0.12);
+  ikeOsc.frequency.linearRampToValueAtTime(800, now + 0.28);
+  const ikeGain = audioCtx.createGain();
+  ikeGain.gain.setValueAtTime(0, now + 0.12);
+  ikeGain.gain.linearRampToValueAtTime(0.07, now + 0.14);
+  ikeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  ikeOsc.connect(ikeGain);
+  ikeGain.connect(audioCtx.destination);
+  ikeOsc.start(now + 0.12);
+  ikeOsc.stop(now + 0.29);
+  
+  // --- "THREE!" ---
+  // 4. "TH" sibilant (noise bandpassed around 4000Hz)
+  if (noiseBuffer) {
+    const thNode = audioCtx.createBufferSource();
+    thNode.buffer = noiseBuffer;
+    const thFilter = audioCtx.createBiquadFilter();
+    thFilter.type = 'bandpass';
+    thFilter.frequency.setValueAtTime(4000, now + 0.38);
+    thFilter.Q.setValueAtTime(2, now + 0.38);
+    const thGain = audioCtx.createGain();
+    thGain.gain.setValueAtTime(0.04, now + 0.38);
+    thGain.gain.exponentialRampToValueAtTime(0.001, now + 0.44);
+    
+    thNode.connect(thFilter);
+    thFilter.connect(thGain);
+    thGain.connect(audioCtx.destination);
+    thNode.start(now + 0.38);
+    thNode.stop(now + 0.44);
+  }
+  
+  // 5. "REE!" (Detuned square wave trill)
+  const osc1 = audioCtx.createOscillator();
+  const osc2 = audioCtx.createOscillator();
+  osc1.type = 'square';
+  osc2.type = 'square';
+  
+  osc1.frequency.setValueAtTime(220, now + 0.42);
+  osc2.frequency.setValueAtTime(223, now + 0.42);
+  
+  osc1.frequency.linearRampToValueAtTime(140, now + 0.55);
+  osc2.frequency.linearRampToValueAtTime(142, now + 0.55);
+  osc1.frequency.linearRampToValueAtTime(320, now + 0.95);
+  osc2.frequency.linearRampToValueAtTime(323, now + 0.95);
+  
+  const lfo = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.setValueAtTime(12, now + 0.42);
+  lfoGain.gain.value = 15;
+  lfo.connect(lfoGain);
+  lfoGain.connect(osc1.frequency);
+  lfoGain.connect(osc2.frequency);
+  
+  const reeGain = audioCtx.createGain();
+  reeGain.gain.setValueAtTime(0, now + 0.42);
+  reeGain.gain.linearRampToValueAtTime(0.09, now + 0.48);
+  reeGain.gain.linearRampToValueAtTime(0.09, now + 0.75);
+  reeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
+  
+  osc1.connect(reeGain);
+  osc2.connect(reeGain);
+  reeGain.connect(audioCtx.destination);
+  
+  lfo.start(now + 0.42);
+  osc1.start(now + 0.42);
+  osc2.start(now + 0.42);
+  
+  lfo.stop(now + 0.96);
+  osc1.stop(now + 0.96);
+  osc2.stop(now + 0.96);
+}
+
+function playCloseCallSound() {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(200, now);
+  osc.frequency.linearRampToValueAtTime(600, now + 0.4);
+  
+  gain.gain.setValueAtTime(0.04, now);
+  gain.gain.linearRampToValueAtTime(0.02, now + 0.2);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.41);
+}
+
+function playMenuHoverSound() {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600, now);
+  osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
+  
+  gain.gain.setValueAtTime(0.015, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+  
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.06);
+}
+
+function playMenuClickSound() {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const osc1 = audioCtx.createOscillator();
+  const gain1 = audioCtx.createGain();
+  osc1.type = 'square';
+  osc1.frequency.setValueAtTime(523.25, now);
+  osc1.frequency.setValueAtTime(659.25, now + 0.06);
+  
+  gain1.gain.setValueAtTime(0.02, now);
+  gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  
+  osc1.connect(gain1);
+  gain1.connect(audioCtx.destination);
+  osc1.start(now);
+  osc1.stop(now + 0.16);
+}
+
+function playMenuTransitionSound() {
+  if (!bgmEnabled) return;
+  initAudio();
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(300, now);
+  osc.frequency.exponentialRampToValueAtTime(1200, now + 0.25);
+  
+  gain.gain.setValueAtTime(0.04, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.26);
+}
+
+function bindRetroAudioToElements() {
+  document.body.addEventListener('mouseenter', (e) => {
+    const target = e.target.closest('button, a, select, input[type="checkbox"], input[type="radio"], .settings-tab');
+    if (target) {
+      playMenuHoverSound();
+    }
+  }, true);
+  
+  document.body.addEventListener('click', (e) => {
+    const target = e.target.closest('button, a, select, input[type="checkbox"], input[type="radio"], .settings-tab');
+    if (target) {
+      if (target.disabled || target.classList.contains('pointer-events-none')) return;
+      playMenuClickSound();
+    }
+  });
+  
+  document.body.addEventListener('change', (e) => {
+    const target = e.target.closest('select, input[type="checkbox"], input[type="radio"]');
+    if (target) {
+      playMenuClickSound();
+    }
+  });
+}
+
+
 const JSONBIN_BASE_URL = 'https://jsonbin-zeta.vercel.app/api/bins';
 const BINS = {
   users: 'po-AXvhkN8',
@@ -683,6 +1549,32 @@ const BINS = {
   daily: '8qpribJqAX',
   alltime: 'lx5zghwYkO'
 };
+
+function normalizeHandle(handle) {
+  return (handle || '').trim().toUpperCase();
+}
+
+function getStatsStorageKey(handle) {
+  return `pitch_ump_stats_${normalizeHandle(handle)}`;
+}
+
+function requireLoggedInUser() {
+  const username = normalizeHandle(localStorage.getItem('ump_username') || '');
+  if (!username) {
+    if (toastMessage) {
+      toastMessage.innerHTML = '<span class="text-amber-300 font-bold font-mono-tech">LOG IN REQUIRED TO PLAY</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 2800);
+    }
+    transitionToState(STATES.WELCOME);
+    return null;
+  }
+  return username;
+}
 
 async function getGlobalUsers() {
   try {
@@ -699,12 +1591,13 @@ async function getGlobalUsers() {
 
 async function saveGlobalUser(handle, pin) {
   try {
+    const normalized = normalizeHandle(handle);
+    const pinHash = await hashPIN(pin);
     const users = await getGlobalUsers();
-    if (!users[handle.toUpperCase()] || typeof users[handle.toUpperCase()] !== 'object') {
-      users[handle.toUpperCase()] = { pin: pin, statsBinId: null };
-    } else {
-      users[handle.toUpperCase()].pin = pin;
-    }
+    const existing = users[normalized];
+    const statsBinId = (existing && typeof existing === 'object') ? existing.statsBinId : null;
+    users[normalized] = { pinHash, statsBinId };
+    delete users[normalized].pin;
     localStorage.setItem('pitch_ump_users', JSON.stringify(users));
     await fetch(`${JSONBIN_BASE_URL}/${BINS.users}`, {
       method: 'PUT',
@@ -730,12 +1623,12 @@ async function getGlobalUserStats(handle) {
   } catch (e) {
     console.warn(`Error fetching stats for ${handle}:`, e);
   }
-  const statsKey = `pitch_ump_stats_${handle.toUpperCase()}`;
+  const statsKey = getStatsStorageKey(handle);
   return JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
 }
 
 async function saveGlobalUserStats(handle, stats) {
-  const statsKey = `pitch_ump_stats_${handle.toUpperCase()}`;
+  const statsKey = getStatsStorageKey(handle);
   localStorage.setItem(statsKey, JSON.stringify(stats));
   try {
     const users = await getGlobalUsers();
@@ -773,8 +1666,9 @@ async function saveGlobalUserStats(handle, stats) {
 }
 
 function loginUserSession(handleVal) {
-  localStorage.setItem('ump_username', handleVal);
-  localStorage.setItem('pitch_ump_last_handle', handleVal);
+  const normalized = normalizeHandle(handleVal);
+  localStorage.setItem('ump_username', normalized);
+  localStorage.setItem('pitch_ump_last_handle', normalized);
   
   loadSavedSessionFromLocal();
   loadFavoriteTeam();
@@ -915,6 +1809,13 @@ export async function startGameSession() {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
   cacheDOM();
+  document.addEventListener('click', () => {
+    initAudio();
+    playArcadeStartupSound();
+    setTimeout(() => {
+      startBgm();
+    }, 1400);
+  }, { once: true });
   
   // Migrate local storage users to IndexedDB
   await migrateLegacyData();
@@ -963,21 +1864,40 @@ export async function startGameSession() {
   
   window.addEventListener('resize', () => {
     onResize(container.clientWidth, container.clientHeight);
-    if (window.innerWidth < 640 && matchupCard) {
-      matchupCard.classList.add('collapsed');
-    }
   });
   
-  if (!localStorage.getItem('ump_username')) {
-    transitionToState(STATES.IDLE);
-  } else if (activeFavoriteTeam) {
-    transitionToState(STATES.START);
-  } else {
-    transitionToState(STATES.TEAM_SELECT);
-  }
+  transitionToState(STATES.WELCOME);
   
   tick();
+  
+  // Fade out app launch loader after initialization
+  setTimeout(() => {
+    const loader = document.getElementById('app-launch-loader');
+    if (loader) {
+      loader.style.opacity = '0';
+      loader.style.pointerEvents = 'none';
+      setTimeout(() => {
+        loader.style.display = 'none';
+        
+        // Trigger automated integration test if requested in URL
+        if (window.location.search.includes('run_test=1')) {
+          console.log("TEST: Initiating automated integration test...");
+          setTimeout(() => {
+            runAutomatedIntegrationTest();
+          }, 1000);
+        }
+      }, 600);
+    } else {
+      if (window.location.search.includes('run_test=1')) {
+        console.log("TEST: Initiating automated integration test (no loader)...");
+        setTimeout(() => {
+          runAutomatedIntegrationTest();
+        }, 1000);
+      }
+    }
+  }, 800);
 }
+
 
 function cacheDOM() {
   startScreen = document.getElementById('start-screen');
@@ -1019,6 +1939,18 @@ function cacheDOM() {
   toastMessage = document.getElementById('toast-message');
   cameraControlsPanel = document.getElementById('camera-controls-panel');
   btnSettingsToggle = document.getElementById('btn-settings-toggle');
+  chkBgmEnabled = document.getElementById('chk-bgm-enabled');
+  selBgmTrack = document.getElementById('sel-bgm-track');
+  closeCallPill = document.getElementById('close-call-pill');
+  closeCallDistText = document.getElementById('close-call-dist-text');
+  btnAudioMute = document.getElementById('btn-audio-mute');
+  svgAudioUnmuted = document.getElementById('svg-audio-unmuted');
+  svgAudioMuted = document.getElementById('svg-audio-muted');
+  scorebugBase1 = document.getElementById('scorebug-base1');
+  scorebugBase2 = document.getElementById('scorebug-base2');
+  scorebugBase3 = document.getElementById('scorebug-base3');
+  scorebugInning = document.getElementById('scorebug-inning');
+  scorebugScore = document.getElementById('scorebug-score');
   camBtnUmp = document.getElementById('cam-btn-ump');
   camBtnSide = document.getElementById('cam-btn-side');
   camBtnTop = document.getElementById('cam-btn-top');
@@ -1068,6 +2000,19 @@ function cacheDOM() {
   tabContentLeaderboard = document.getElementById('tab-content-leaderboard');
   tabContentStats = document.getElementById('tab-content-stats');
   btnStartDailyStreak = document.getElementById('btn-start-daily-streak');
+  btnInfoWeeklyChallenge = document.getElementById('btn-info-weekly-challenge');
+  btnInfoStreakChallenge = document.getElementById('btn-info-streak-challenge');
+
+  challengeDetailModalOverlay = document.getElementById('challenge-detail-modal-overlay');
+  challengeDetailTitle = document.getElementById('challenge-detail-title');
+  challengeDetailSubtitle = document.getElementById('challenge-detail-subtitle');
+  challengeDetailDesc = document.getElementById('challenge-detail-desc');
+  challengeDetailGamesCount = document.getElementById('challenge-detail-games-count');
+  challengeDetailBestStreak = document.getElementById('challenge-detail-best-streak');
+  challengeDetailCompleted = document.getElementById('challenge-detail-completed');
+  btnChallengeDetailClose = document.getElementById('btn-challenge-detail-close');
+  btnChallengeDetailPlay = document.getElementById('btn-challenge-detail-play');
+  challengeDetailLeaderboardBody = document.getElementById('challenge-detail-leaderboard-body');
 
   // Overlays
   abSummaryOverlay = document.getElementById('ab-summary-overlay');
@@ -1263,10 +2208,27 @@ function cacheDOM() {
   abSummaryBatterName = document.getElementById('ab-summary-batter-name');
   abSummaryBatterHandBadge = document.getElementById('ab-summary-batter-hand-badge');
   abSummaryPitchList = document.getElementById('ab-summary-pitch-list');
+  abSummaryCorrectCount = document.getElementById('ab-summary-correct-count');
   abSummaryWeeklyChallengeDetails = document.getElementById('ab-summary-weekly-challenge-details');
   abSummaryWeeklyProgressText = document.getElementById('ab-summary-weekly-progress-text');
   abSummaryWeeklyProgressBar = document.getElementById('ab-summary-weekly-progress-bar');
   abSummaryWeeklyAccuracyText = document.getElementById('ab-summary-weekly-accuracy-text');
+  abSummaryWeeklyCount = document.getElementById('ab-summary-weekly-count');
+  abSummaryWeeklyTotal = document.getElementById('ab-summary-weekly-total');
+  abSummaryLeaderboardSnippet = document.getElementById('ab-summary-leaderboard-snippet');
+  btnAbSummaryToggleReview = document.getElementById('btn-ab-summary-toggle-review');
+  abSummaryReviewSection = document.getElementById('ab-summary-review');
+  challengeTrackerHud = document.getElementById('challenge-tracker-hud');
+  levelUpOverlay = document.getElementById('level-up-overlay');
+  levelUpBadge = document.getElementById('level-up-badge');
+  levelUpTitle = document.getElementById('level-up-title');
+  levelUpSubtitle = document.getElementById('level-up-subtitle');
+
+  if (btnAbSummaryToggleReview) {
+    btnAbSummaryToggleReview.addEventListener('click', () => {
+      setAbSummaryReviewExpanded(!abSummaryReviewExpanded);
+    });
+  }
 
   // Matchup Walkup card faceoff elements
   abStartPitcherImg = document.getElementById('ab-start-pitcher-img');
@@ -1382,9 +2344,49 @@ function attachEvents() {
   });
 
   if (btnStartDailyStreak) {
-    btnStartDailyStreak.addEventListener('click', () => {
+    btnStartDailyStreak.addEventListener('click', (e) => {
+      e.stopPropagation();
       initAudio();
       startDailyStreakChallenge();
+    });
+  }
+
+  const weeklyChallengeCard = document.getElementById('weekly-challenge-card');
+  if (weeklyChallengeCard) {
+    weeklyChallengeCard.addEventListener('click', (e) => {
+      initAudio();
+      openChallengeDetailModal('weekly');
+    });
+  }
+
+  const streakChallengeCard = document.getElementById('streak-challenge-card');
+  if (streakChallengeCard) {
+    streakChallengeCard.addEventListener('click', (e) => {
+      initAudio();
+      openChallengeDetailModal('streak');
+    });
+  }
+
+  if (btnInfoWeeklyChallenge) {
+    btnInfoWeeklyChallenge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      openChallengeDetailModal('weekly');
+    });
+  }
+
+  if (btnInfoStreakChallenge) {
+    btnInfoStreakChallenge.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      openChallengeDetailModal('streak');
+    });
+  }
+
+  if (btnChallengeDetailClose) {
+    btnChallengeDetailClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideChallengeDetailModal();
     });
   }
 
@@ -1671,6 +2673,11 @@ function attachEvents() {
         clearInterval(overviewTimerInterval);
         overviewTimerInterval = null;
       }
+      setChallengeTrackerHudVisible(true);
+      document.body.classList.remove('ab-summary-active');
+      setAbSummaryReviewExpanded(false);
+      clearSummaryPitchReview();
+      setCameraAngle('umpire');
       returnToMainMenu();
     });
   }
@@ -1767,6 +2774,38 @@ function attachEvents() {
       rateOfPlay = this.value;
     });
   }
+  if (chkBgmEnabled) {
+    chkBgmEnabled.addEventListener('change', function(e) {
+      e.stopPropagation();
+      bgmEnabled = this.checked;
+      localStorage.setItem('pitch_ump_bgm_enabled', bgmEnabled ? 'true' : 'false');
+      updateMuteButtonUI();
+    });
+  }
+  if (btnAudioMute) {
+    btnAudioMute.addEventListener('click', function(e) {
+      e.stopPropagation();
+      bgmEnabled = !bgmEnabled;
+      localStorage.setItem('pitch_ump_bgm_enabled', bgmEnabled ? 'true' : 'false');
+      if (chkBgmEnabled) chkBgmEnabled.checked = bgmEnabled;
+      updateMuteButtonUI();
+    });
+  }
+  if (selBgmTrack) {
+    selBgmTrack.addEventListener('change', function(e) {
+      e.stopPropagation();
+      activeBgmTrack = parseInt(this.value, 10);
+      if (isNaN(activeBgmTrack)) activeBgmTrack = 0;
+      localStorage.setItem('pitch_ump_bgm_track', activeBgmTrack);
+      if (audioCtx) {
+        bgmMelodyNoteIndex = 0;
+        const melody = getCurrentMelodyArray();
+        bgmMelodyBeatRemaining = melody.length > 0 ? melody[0].beats : 1;
+        bgmCurrentBeatIndex = 0;
+        bgmNextNoteTime = audioCtx.currentTime + 0.05;
+      }
+    });
+  }
 
   if (chkSzHelper) {
     chkSzHelper.addEventListener('change', function(e) {
@@ -1804,18 +2843,55 @@ function attachEvents() {
   if (btnWelcomeStart) {
     btnWelcomeStart.addEventListener('click', (e) => {
       e.stopPropagation();
-      submitLoginAction();
+      initAudio();
+      
+      const loggedIn = !!localStorage.getItem('ump_username');
+      if (loggedIn) {
+        // Play arcade resume sequence
+        playCoinSound();
+        playUmpireVocalCall('STRIKE');
+        
+        btnWelcomeStart.disabled = true;
+        btnWelcomeStart.classList.add('animate-pulse');
+        
+        setTimeout(() => {
+          btnWelcomeStart.disabled = false;
+          btnWelcomeStart.classList.remove('animate-pulse');
+          if (activeFavoriteTeam) {
+            transitionToState(STATES.START);
+          } else {
+            transitionToState(STATES.TEAM_SELECT);
+          }
+        }, 800);
+      } else {
+        submitLoginAction();
+      }
     });
   }
 
   const handleLoginEnter = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      submitLoginAction();
+      const loggedIn = !!localStorage.getItem('ump_username');
+      if (loggedIn) {
+        if (btnWelcomeStart) btnWelcomeStart.click();
+      } else {
+        if (loginConfirmBox && !loginConfirmBox.classList.contains('hidden')) {
+          const btnCreate = document.getElementById('btn-login-confirm-create');
+          if (btnCreate) btnCreate.click();
+        } else {
+          submitLoginAction();
+        }
+      }
     }
   };
   if (loginHandleInput) loginHandleInput.addEventListener('keydown', handleLoginEnter);
-  if (loginPinInput) loginPinInput.addEventListener('keydown', handleLoginEnter);
+  if (loginPinInput) {
+    loginPinInput.addEventListener('input', function(e) {
+      this.value = this.value.replace(/[^0-9]/g, '');
+    });
+    loginPinInput.addEventListener('keydown', handleLoginEnter);
+  }
 
   if (btnLoginConfirmCreate) {
     btnLoginConfirmCreate.addEventListener('click', async (e) => {
@@ -1831,7 +2907,19 @@ function attachEvents() {
         loginErrorMsg.classList.remove('hidden');
       }
 
+      const pinHash = await hashPIN(pinVal);
       await saveGlobalUser(handleValNormalized, pinVal);
+      await saveProfile({
+        handle: handleValNormalized,
+        pinHash,
+        favoriteTeam: 'none',
+        xp: 0,
+        overallAccuracy: null,
+        maxStreak: 0,
+        completedWeekly: 0,
+        dnfs: 0,
+        history: []
+      });
       
       // Initialize blank stats template globally
       const blankStats = {
@@ -1866,8 +2954,11 @@ function attachEvents() {
   }
 
   const performLogout = (e) => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
     initAudio();
+    goToMainMenu();
     localStorage.removeItem('ump_username');
     loadSavedSessionFromLocal();
     activeFavoriteTeam = null;
@@ -1896,8 +2987,21 @@ function attachEvents() {
   if (btnStatsLogout) {
     btnStatsLogout.addEventListener('click', performLogout);
   }
+  const btnWelcomeLogout = document.getElementById('btn-welcome-logout');
+  if (btnWelcomeLogout) {
+    btnWelcomeLogout.addEventListener('click', performLogout);
+  }
+
   if (btnHudLogout) {
-    btnHudLogout.addEventListener('click', performLogout);
+    btnHudLogout.addEventListener('click', (e) => {
+      const isPlaying = currentState !== STATES.START && currentState !== STATES.WELCOME && currentState !== STATES.TEAM_SELECT;
+      if (isPlaying) {
+        initAudio();
+        returnToMainMenu();
+      } else {
+        performLogout(e);
+      }
+    });
   }
 
   if (btnCloseSettings) {
@@ -2054,7 +3158,7 @@ function attachEvents() {
     if (currentState === STATES.IDLE && e.key === ' ') {
       e.preventDefault();
       triggerPitchRelease();
-    } else if (currentState === STATES.DECISION_PENDING) {
+    } else if (currentState === STATES.DECISION_PENDING && decisionPrompt && decisionPrompt.classList.contains('opacity-100')) {
       if (e.key === 'ArrowLeft' || key === 'a') {
         e.preventDefault();
         submitUserDecision('B');
@@ -2186,7 +3290,7 @@ function attachEvents() {
       
       // Swipe left/right for decision
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
-        if (currentState === STATES.DECISION_PENDING) {
+        if (currentState === STATES.DECISION_PENDING && decisionPrompt && decisionPrompt.classList.contains('opacity-100')) {
           if (dx > 0) {
             submitUserDecision('S');
           } else {
@@ -2231,6 +3335,7 @@ function attachEvents() {
       hideUmpireScorecardModal();
     }
   });
+  bindRetroAudioToElements();
 }
 
 function selectCameraView(viewName) {
@@ -2258,58 +3363,221 @@ function showReviewPanel(visible) {
 }
 
 /**
- * Handles application state transitions and updates UI components accordingly
+/**
+ * Updates welcome screen depending on active session state (credentials login vs resume session)
  */
+function updateWelcomeScreenState() {
+  const storedUser = localStorage.getItem('ump_username');
+  const loginFields = document.getElementById('welcome-login-fields');
+  const resumeContainer = document.getElementById('welcome-resume-container');
+  const resumeHandle = document.getElementById('welcome-resume-handle');
+  const welcomeStartBtn = document.getElementById('btn-welcome-start');
+  const insertCoinText = document.querySelector('.animate-flash-text');
+  
+  if (storedUser) {
+    if (loginFields) loginFields.classList.add('hidden');
+    if (resumeContainer) {
+      resumeContainer.classList.remove('hidden');
+      resumeContainer.classList.add('flex');
+    }
+    if (resumeHandle) resumeHandle.textContent = storedUser.toUpperCase();
+    
+    // Fetch and calculate User Stats for the Welcome screen
+    const statsKey = getStatsStorageKey(storedUser);
+    const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    
+    let xp = userStats.xp !== undefined ? userStats.xp : 0;
+    if (userStats.xp === undefined) {
+      const history = userStats.history || [];
+      history.forEach(h => {
+        const isWeekly = h.gameName && h.gameName.includes("Weekly");
+        const isStreak = h.gameName && h.gameName.includes("Streak");
+        const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
+        
+        if (isWeekly) xp += (h.correctCalls || 0) * 10;
+        else if (isStreak) xp += (h.correctCalls || 0) * 15;
+        else if (isDailyCompete) xp += (h.correctCalls || 0) * 12;
+        else xp += (h.correctCalls || 0) * 5;
+      });
+    }
+    
+    const xpProgress = getXpProgressInLevel(xp);
+    
+    // Populate Welcome screen telemetry UI elements
+    const welcomeLevel = document.getElementById('welcome-resume-level');
+    const welcomeXpText = document.getElementById('welcome-resume-xp-text');
+    const welcomeXpBar = document.getElementById('welcome-resume-xp-bar');
+    const welcomeAccuracy = document.getElementById('welcome-resume-accuracy');
+    const welcomeStreak = document.getElementById('welcome-resume-streak');
+    
+    if (welcomeLevel) applyLevelBadgeElement(welcomeLevel, xpProgress.level);
+    if (welcomeXpText) welcomeXpText.textContent = `${xpProgress.progress} / ${XP_PER_LEVEL} XP`;
+    if (welcomeXpBar) {
+      welcomeXpBar.style.width = '0%';
+      setTimeout(() => {
+        welcomeXpBar.style.width = `${xpProgress.pct}%`;
+      }, 100);
+    }
+    if (welcomeAccuracy) {
+      welcomeAccuracy.textContent = userStats.overallAccuracy !== null && userStats.overallAccuracy !== undefined 
+        ? `${userStats.overallAccuracy}%` 
+        : "--";
+    }
+    if (welcomeStreak) {
+      welcomeStreak.textContent = `${userStats.maxStreak || 0} Pitches`;
+    }
+
+    // Handle Daily Login Bonus Claim
+    const today = new Date().toLocaleDateString();
+    const loginBonusKey = `daily_login_bonus_${storedUser}_${today}`;
+    const isBonusClaimed = localStorage.getItem(loginBonusKey) === 'claimed';
+    
+    const bonusStatus = document.getElementById('welcome-login-bonus-status');
+    const bonusCheck = document.getElementById('welcome-login-bonus-check');
+    
+    if (!isBonusClaimed) {
+      localStorage.setItem(loginBonusKey, 'claimed');
+      awardXP(100); // Award XP
+      setTimeout(() => {
+        playCoinSound();
+        showFloatingXP(100, "DAILY LOGIN BONUS! +100 XP");
+      }, 800);
+      if (bonusStatus) bonusStatus.textContent = "NEW BONUS CLAIMED! (+100 XP)";
+      if (bonusCheck) bonusCheck.textContent = "[ CLAIMED ]";
+    } else {
+      if (bonusStatus) bonusStatus.textContent = "CLAIMED (+100 XP TODAY)";
+      if (bonusCheck) bonusCheck.textContent = "[ CLAIMED ]";
+    }
+    
+    if (welcomeStartBtn) {
+      welcomeStartBtn.textContent = "PRESS START [PLAY]";
+      welcomeStartBtn.className = welcomeStartBtn.className
+        .replace(/from-purple-700|via-pink-700|to-indigo-700/g, '')
+        .trim();
+      if (!welcomeStartBtn.className.includes('from-emerald-600')) {
+        welcomeStartBtn.className += " bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 border-emerald-500/30 shadow-emerald-500/10";
+      }
+    }
+    if (insertCoinText) {
+      insertCoinText.textContent = "[ CREW CHIEF ACTIVE - PRESS PLAY ]";
+      insertCoinText.classList.add('text-emerald-400');
+      insertCoinText.classList.remove('text-yellow-400');
+    }
+  } else {
+    if (loginFields) loginFields.classList.remove('hidden');
+    if (resumeContainer) {
+      resumeContainer.classList.add('hidden');
+      resumeContainer.classList.remove('flex');
+    }
+    if (welcomeStartBtn) {
+      welcomeStartBtn.textContent = "Log In to Play";
+      welcomeStartBtn.className = welcomeStartBtn.className
+        .replace(/from-emerald-600|via-teal-600|to-cyan-600/g, '')
+        .trim();
+      if (!welcomeStartBtn.className.includes('from-purple-700')) {
+        welcomeStartBtn.className += " bg-gradient-to-r from-purple-700 via-pink-700 to-indigo-700 border-purple-500/30 shadow-purple-500/10";
+      }
+    }
+    if (insertCoinText) {
+      insertCoinText.textContent = "[ Log In to Play ]";
+      insertCoinText.classList.add('text-yellow-400');
+      insertCoinText.classList.remove('text-emerald-400');
+    }
+  }
+}
+
+
 let playCrackSoundTriggered = false;
 
 function transitionToState(newState) {
+  const oldState = currentState;
   currentState = newState;
   const loggedIn = !!localStorage.getItem('ump_username');
+  
+  if (newState === STATES.WELCOME) {
+    updateWelcomeScreenState();
+  } else {
+    if (demoPitchActive) {
+      demoPitchActive = false;
+      showBall(false);
+      animatePitcherWindup(0, demoPitchData ? demoPitchData.pitcher_hand : 'R');
+    }
+    // If we are transitioning out of WELCOME state, reset the camera angle immediately
+    if (oldState === STATES.WELCOME) {
+      setCameraAngle('umpire');
+    }
+  }
+
   
   if (newState !== STATES.ABS_REVIEW) {
     setZoomedIn(false);
     clearDimensionLine();
-  }
-
-  // Auto-collapse matchup card during pitching, windup, or decision pending states
-  if (matchupCard) {
-    if (newState === STATES.WINDUP || newState === STATES.PITCHING || newState === STATES.DECISION_PENDING || newState === STATES.ABS_REVIEW) {
-      matchupCard.classList.add('collapsed');
-    } else if (newState === STATES.IDLE) {
-      const userCollapsed = localStorage.getItem('pitch_ump_matchup_collapsed') === 'true';
-      if (window.innerWidth >= 640 && !userCollapsed) {
-        matchupCard.classList.remove('collapsed');
-      } else {
-        matchupCard.classList.add('collapsed');
-      }
+    if (closeCallPill) {
+      closeCallPill.classList.add('opacity-0', 'scale-95');
+      closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
     }
   }
 
+  // Disable auto-collapsing. Keep the matchup card expanded for all game states.
+  if (matchupCard) {
+    matchupCard.classList.remove('collapsed');
+  }
+
   // Manage main menu screens visibility
+  const persistentProfileHud = document.getElementById('persistent-profile-hud');
   const showWelcome = newState === STATES.WELCOME || !localStorage.getItem('ump_username');
   if (showWelcome) {
     setOverlayVisible(welcomeScreen, true);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, false);
+    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, false);
+    setOverlayVisible(hudHeader, false);
+    setOverlayVisible(matchupCard, false);
   } else if (newState === STATES.TEAM_SELECT) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, true);
     setOverlayVisible(startScreen, false);
+    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, false);
+    setOverlayVisible(hudHeader, false);
+    setOverlayVisible(matchupCard, false);
     if (teamSearchInput) {
       teamSearchInput.value = "";
     }
     generateTeamSelectGrid();
+    setCameraAngle('umpire'); // Explicitly reset camera from any panning drift
   } else if (newState === STATES.START) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, true);
+    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, true);
+    setOverlayVisible(hudHeader, false);
+    setOverlayVisible(matchupCard, false);
     isSettingsOpen = false;
     updateSettingsVisibility();
     switchTab('play');
+    setCameraAngle('umpire'); // Explicitly reset camera from any panning drift
   } else {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, false);
+    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, true);
+  }
+  
+  if (btnHudLogout) {
+    const logoutSpan = btnHudLogout.querySelector('span');
+    const isPlaying = newState !== STATES.START && newState !== STATES.WELCOME && newState !== STATES.TEAM_SELECT;
+    
+    if (logoutSpan) {
+      logoutSpan.textContent = isPlaying ? "EXIT" : "LOGOUT";
+    } else {
+      btnHudLogout.textContent = isPlaying ? "EXIT" : "LOGOUT";
+    }
+    
+    if (isPlaying) {
+      btnHudLogout.className = "px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-gray-800 hover:bg-gray-700 rounded-xl border border-white/10 text-gray-300 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1.5";
+    } else {
+      btnHudLogout.className = "px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-xl border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1.5";
+    }
   }
   
   // Update floating broadcast status badge
@@ -2420,7 +3688,11 @@ function transitionToState(newState) {
         const pH = currentPitch.pitcher_hand || "RHP";
         const bH = currentPitch.batter_hand || "RHB";
         
-        if (cardPitcherName) cardPitcherName.textContent = matchup.pitcher;
+        if (cardPitcherName) {
+          cardPitcherName.textContent = matchup.pitcher;
+          const pParts = matchup.pitcher.trim().split(/\s+/);
+          cardPitcherName.setAttribute('data-lastname', pParts[pParts.length - 1].toUpperCase());
+        }
         if (cardPitcherHand) {
           cardPitcherHand.textContent = pH;
           if (pH.includes("R")) {
@@ -2429,7 +3701,11 @@ function transitionToState(newState) {
             cardPitcherHand.className = "px-2 py-0.5 text-[9px] font-mono-tech font-bold uppercase rounded bg-purple-500/10 text-purple-400 border border-purple-500/25";
           }
         }
-        if (cardBatterName) cardBatterName.textContent = matchup.batter;
+        if (cardBatterName) {
+          cardBatterName.textContent = matchup.batter;
+          const bParts = matchup.batter.trim().split(/\s+/);
+          cardBatterName.setAttribute('data-lastname', bParts[bParts.length - 1].toUpperCase());
+        }
         if (cardBatterHand) {
           cardBatterHand.textContent = bH;
           if (bH.includes("L")) {
@@ -2447,17 +3723,11 @@ function transitionToState(newState) {
       
       startScreen.classList.add('opacity-0', 'pointer-events-none');
       if (loggedIn) {
-        hudHeader.classList.remove('opacity-0');
-        if (matchupCard) {
-          matchupCard.classList.remove('opacity-0', 'pointer-events-none');
-          matchupCard.classList.add('opacity-100', 'pointer-events-auto');
-        }
+        setOverlayVisible(hudHeader, true);
+        setOverlayVisible(matchupCard, true);
       } else {
-        hudHeader.classList.add('opacity-0');
-        if (matchupCard) {
-          matchupCard.classList.add('opacity-0', 'pointer-events-none');
-          matchupCard.classList.remove('opacity-100', 'pointer-events-auto');
-        }
+        setOverlayVisible(hudHeader, false);
+        setOverlayVisible(matchupCard, false);
       }
       if (replayBadge) {
         replayBadge.classList.add('opacity-0', 'pointer-events-none');
@@ -2543,9 +3813,10 @@ function transitionToState(newState) {
       // Save game state to localStorage for disconnect resilience
       saveChallengeSessionToLocal();
 
-      // Schedule Auto-throw (skip if the AB Start overlay is visible — its own callback handles this)
+      // Schedule Auto-throw (skip if overlays block play or AB is waiting on summary advance)
       const abStartVisible = abStartOverlay && abStartOverlay.classList.contains('opacity-100');
-      if (!isGamePaused && !abStartVisible) {
+      const summaryVisible = abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100');
+      if (!isGamePaused && !abStartVisible && !summaryVisible && !activeAbEnded) {
         const idleDelay = quickStartNextPitch ? 400 : 1800;
         quickStartNextPitch = false;
         autoPlayTimeout = setTimeout(() => {
@@ -2589,17 +3860,28 @@ function transitionToState(newState) {
       showStrikeZone(false);
       hudKeyboardHelp.innerHTML = 'SHORTCUTS: [← / A] BALL &nbsp;|&nbsp; [→ / D] STRIKE &nbsp;|&nbsp; MOBILE: SWIPE LEFT/RIGHT';
       
+      // Initially hide the decision prompt to allow the pitch to finish and glove pop to settle
+      setElementVisibility(decisionPrompt, false);
+      
       if (!localStorage.getItem('ump_username')) {
-        setElementVisibility(decisionPrompt, false);
         setTimeout(() => {
           if (!localStorage.getItem('ump_username') && currentState === STATES.DECISION_PENDING) {
-            swingOutcome = Math.random() < 0.5 ? 'S' : 'B';
-            submitSwingDecision();
+            if (toastMessage) {
+              toastMessage.innerHTML = '<span class="text-amber-300 font-bold font-mono-tech">LOG IN REQUIRED TO CALL PITCHES</span>';
+              toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+              toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+            }
+            transitionToState(STATES.WELCOME);
           }
         }, 1200);
       } else {
-        setElementVisibility(decisionPrompt, true);
-        startCountdownTimer();
+        // Wait 600ms before showing the prompt buttons and starting the countdown timer
+        setTimeout(() => {
+          if (currentState === STATES.DECISION_PENDING) {
+            setElementVisibility(decisionPrompt, true);
+            startCountdownTimer();
+          }
+        }, 600);
       }
       break;
 
@@ -2618,6 +3900,36 @@ function transitionToState(newState) {
       
       const userHistoryItem = pitchHistory[pitchHistory.length - 1];
       const isCorrect = userHistoryItem.userCorrect;
+      
+      // Close call check for taken pitch
+      if (userHistoryItem && !userHistoryItem.isSwingPlay && pitchTrajectory && pitchTrajectory.crossPoint) {
+        const cross = pitchTrajectory.crossPoint;
+        const absDist = Math.abs(getDistanceToABSZone(cross.x, cross.y));
+        const isCloseCall = absDist <= 0.15;
+        
+        if (isCloseCall) {
+          playCloseCallSound();
+          setZoomedIn(true);
+          drawDimensionLine(cross);
+          if (closeCallPill && closeCallDistText) {
+            const distInches = absDist * 12.0;
+            closeCallDistText.textContent = `${distInches.toFixed(1)}″ ${absDist <= 0 ? 'IN' : 'OUT'}`;
+            positionCloseCallPill(cross);
+            closeCallPill.classList.remove('opacity-0', 'scale-95');
+            closeCallPill.classList.add('opacity-100', 'scale-100', 'animate-pulse');
+          }
+        } else {
+          if (closeCallPill) {
+            closeCallPill.classList.add('opacity-0', 'scale-95');
+            closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
+          }
+        }
+      } else {
+        if (closeCallPill) {
+          closeCallPill.classList.add('opacity-0', 'scale-95');
+          closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
+        }
+      }
       
       // Update count and check if AB ended
       const abEnded = updateCountAndCheckABEnd(userHistoryItem);
@@ -2669,10 +3981,9 @@ function transitionToState(newState) {
           hideQuickPreviewPanel();
           if (summaryTimeout) clearTimeout(summaryTimeout);
           isTransitioningToSummary = true;
+          cachedAbOutcomeText = lastAbOutcomeText; // Cache the outcome text
           summaryTimeout = setTimeout(() => {
-            summaryTimeout = null;
-            isTransitioningToSummary = false;
-            advanceGameFlow();
+            finishAtBatAndShowSummary();
           }, 1200);
         } else {
           // If the at-bat did NOT end, show the quick preview controls panel floating at bottom
@@ -2715,8 +4026,18 @@ function transitionToState(newState) {
             
             // Award correct-call XP
             if (isCorrect) {
-              awardXP(100);
-              showFloatingXP(100);
+              awardXP(10);
+              showFloatingXP(10);
+            }
+            
+            // Award perfect At-Bat XP
+            if (abEnded) {
+              const abPitches = pitchHistory.slice(currentAbStartHistoryIndex);
+              const allCorrect = abPitches.length > 0 && abPitches.every(p => p.userCorrect);
+              if (allCorrect) {
+                awardXP(50);
+                showFloatingXP(50, "PERFECT AT-BAT! +50 XP");
+              }
             }
             
             if (rateOfPlay === 'updated') {
@@ -2783,11 +4104,12 @@ function transitionToState(newState) {
             hideQuickPreviewPanel();
             if (summaryTimeout) clearTimeout(summaryTimeout);
             isTransitioningToSummary = true;
+            cachedAbOutcomeText = lastAbOutcomeText;
+            // Short fixed delay after last-pitch review — not full replay duration again
+            const summaryRevealMs = (rateOfPlay === 'updated' && !isCorrect) ? 2000 : 1200;
             summaryTimeout = setTimeout(() => {
-              summaryTimeout = null;
-              isTransitioningToSummary = false;
-              advanceGameFlow();
-            }, effectiveMinPreviewMs);
+              finishAtBatAndShowSummary();
+            }, summaryRevealMs);
           } else {
             if (rateOfPlay !== 'updated' || isCorrect) {
               if (quickPreviewControls) {
@@ -2812,17 +4134,16 @@ function transitionToState(newState) {
         const username = localStorage.getItem('ump_username');
         if (username) {
           clearActiveSession(username);
+          awardXP(100);
+          showFloatingXP(100, "GAME COMPLETE! +100 XP");
         }
       }
       document.body.classList.remove('split-screen-active');
       const containerScoreboard = document.getElementById('canvas-container');
       onResize(containerScoreboard.clientWidth, containerScoreboard.clientHeight);
 
-      hudHeader.classList.add('opacity-0');
-      if (matchupCard) {
-        matchupCard.classList.add('opacity-0', 'pointer-events-none');
-        matchupCard.classList.remove('opacity-100', 'pointer-events-auto');
-      }
+      setOverlayVisible(hudHeader, false);
+      setOverlayVisible(matchupCard, false);
       if (replayBadge) {
         replayBadge.classList.add('opacity-0', 'pointer-events-none');
         replayBadge.classList.remove('opacity-100');
@@ -3013,15 +4334,86 @@ function calculateBattedVelocity() {
 }
 
 /**
+ * Runs a background pitching demonstration loop on the welcome screen
+ * with slow camera panning to level up design aesthetics.
+ */
+function updateDemoPitch() {
+  const time = performance.now() / 3500;
+  
+  // Pan the camera behind home plate via scene.js utility
+  setZoomedIn(false);
+  updateWelcomeCamera(time);
+
+  if (!demoPitchActive) {
+    if (performance.now() > demoCooldownEnd) {
+      // Pick a random pitch
+      demoPitchData = Object.assign({}, demoPitches[Math.floor(Math.random() * demoPitches.length)]);
+      
+      // Randomize pitcher/batter hands for variety
+      demoPitchData.pitcher_hand = Math.random() > 0.5 ? 'R' : 'L';
+      demoPitchData.batter_hand = Math.random() > 0.5 ? 'R' : 'L';
+      
+      demoPitchActive = true;
+      demoPitchStartTime = performance.now();
+      demoPitchState = 'WINDUP';
+      demoPitchTrajectory = calculateTrajectoryPoints(demoPitchData);
+      showBall(true);
+    }
+    return;
+  }
+
+  const elapsed = (performance.now() - demoPitchStartTime) / 1000;
+  if (demoPitchState === 'WINDUP') {
+    const durationToRelease = WINDUP_DURATION * 0.75;
+    const progress = Math.min(elapsed / durationToRelease, 1.0);
+    animatePitcherWindup(progress * 0.75, demoPitchData.pitcher_hand);
+    animateBatterSwing(-1, demoPitchData.batter_hand);
+    
+    const handWorld = getPitcherHandWorldPosition(demoPitchData.pitcher_hand);
+    animateBallTo(handWorld);
+    
+    if (progress >= 1.0) {
+      demoPitchState = 'PITCHING';
+      demoFlightStartTime = performance.now();
+    }
+  } else if (demoPitchState === 'PITCHING') {
+    const flightElapsed = (performance.now() - demoFlightStartTime) / 1000;
+    const followThroughDuration = WINDUP_DURATION * 0.25;
+    const followThroughProgress = Math.min(0.75 + (flightElapsed / followThroughDuration) * 0.25, 1.0);
+    animatePitcherWindup(followThroughProgress, demoPitchData.pitcher_hand);
+    animateBatterSwing(-1, demoPitchData.batter_hand);
+    
+    if (flightElapsed < demoPitchTrajectory.t_end) {
+      const pos = getBallPositionAtTime(demoPitchData, flightElapsed);
+      animateBallTo(pos);
+    } else {
+      // Glove pop!
+      playGlovePopSound();
+      demoPitchActive = false;
+      demoCooldownEnd = performance.now() + 2500; // 2.5s cooldown before next demo pitch
+      showBall(false);
+      animatePitcherWindup(0, demoPitchData.pitcher_hand);
+    }
+  }
+}
+
+/**
  * Handles pitch flight and wind-up animation frames
  */
 function tick() {
   requestAnimationFrame(tick);
   
+  if (currentState === STATES.WELCOME) {
+    updateDemoPitch();
+    render();
+    return;
+  }
+  
   if (isGamePaused) {
     render();
     return;
   }
+
   
   if (currentState === STATES.WINDUP) {
     const elapsed = ((performance.now() - windupStartTime) / 1000) * pitchSpeedMultiplier;
@@ -3168,6 +4560,17 @@ function submitSwingDecision() {
   const userCorrect = true;
   const realCorrect = realCall === absCall;
   
+  // Save decisions and swing details directly to currentPitch to enable recovery
+  currentPitch.userCall = swingOutcome;
+  currentPitch.absCall = absCall;
+  currentPitch.realCall = realCall;
+  currentPitch.userCorrect = userCorrect;
+  currentPitch.realCorrect = realCorrect;
+  currentPitch.isSwingPlay = true;
+  currentPitch.swingOutcome = swingOutcome;
+  currentPitch.swingHitType = swingHitType;
+  currentPitch.pitchTrajectory = pitchTrajectory;
+  
   pitchHistory.push({
     pitchNum: currentPitchIndex + 1,
     pitchType: currentPitch.pitch_type,
@@ -3216,6 +4619,10 @@ function startCountdownTimer() {
  */
 function submitUserDecision(userCall) {
   if (currentState !== STATES.DECISION_PENDING) return;
+  if (!localStorage.getItem('ump_username')) {
+    requireLoggedInUser();
+    return;
+  }
   
   clearInterval(timerInterval);
   
@@ -3225,6 +4632,15 @@ function submitUserDecision(userCall) {
   
   const userCorrect = userCall === absCall;
   const realCorrect = realCall === absCall;
+  
+  // Save decisions directly to currentPitch to enable recovery
+  currentPitch.userCall = userCall;
+  currentPitch.absCall = absCall;
+  currentPitch.realCall = realCall;
+  currentPitch.userCorrect = userCorrect;
+  currentPitch.realCorrect = realCorrect;
+  currentPitch.isSwingPlay = false;
+  currentPitch.pitchTrajectory = pitchTrajectory;
   
   pitchHistory.push({
     pitchNum: currentPitchIndex + 1,
@@ -3315,10 +4731,57 @@ function updateCountAndCheckABEnd(historyItem) {
 }
 
 /**
+ * After the final pitch of an at-bat, show the post-AB summary overlay.
+ * Does not require ABS_REVIEW state (safe for delayed timeouts).
+ */
+function finishAtBatAndShowSummary() {
+  if (!activeAbEnded || gameMode === 'daily_streak') return;
+
+  if (autoPlayTimeout) {
+    clearTimeout(autoPlayTimeout);
+    autoPlayTimeout = null;
+  }
+  if (summaryTimeout) {
+    clearTimeout(summaryTimeout);
+    summaryTimeout = null;
+  }
+  isTransitioningToSummary = false;
+
+  hideQuickPreviewPanel();
+  showReviewPanel(false);
+  if (replayBadge) {
+    replayBadge.classList.add('opacity-0', 'pointer-events-none');
+    replayBadge.classList.remove('opacity-100');
+  }
+
+  const loggedIn = !!localStorage.getItem('ump_username');
+  if (!loggedIn) {
+    currentPitchIndex++;
+    if (currentPitchIndex >= pitchesList.length) {
+      currentPitchIndex = 0;
+      pitchHistory = [];
+    }
+    abBalls = 0;
+    abStrikes = 0;
+    transitionToState(STATES.IDLE);
+    return;
+  }
+
+  totalPitchesCount++;
+  currentPitchIndex++;
+  activeAbPitchIndex = currentPitchIndex;
+  abBalls = 0;
+  abStrikes = 0;
+  saveGameProgress();
+
+  showAtBatSummaryScreen(cachedAbOutcomeText || lastAbOutcomeText);
+}
+
+/**
  * Handles click navigation from review panel
  */
 function advanceGameFlow(immediate = false) {
-  if (currentState !== STATES.ABS_REVIEW) return;
+  if (currentState !== STATES.ABS_REVIEW && !(immediate && activeAbEnded)) return;
   if (isTransitioningToSummary && !immediate) return;
   
   if (autoPlayTimeout) {
@@ -3400,6 +4863,7 @@ function advanceGameFlow(immediate = false) {
     // Clear counts for the next AB
     abBalls = 0;
     abStrikes = 0;
+    saveGameProgress();
     
     if (immediate) {
       if (summaryTimeout) {
@@ -3410,6 +4874,7 @@ function advanceGameFlow(immediate = false) {
       showAtBatSummaryScreen(lastAbOutcomeText);
     } else {
       isTransitioningToSummary = true;
+      cachedAbOutcomeText = lastAbOutcomeText; // Cache the outcome text
       if (summaryTimeout) clearTimeout(summaryTimeout);
       summaryTimeout = setTimeout(() => {
         summaryTimeout = null;
@@ -3428,10 +4893,10 @@ function advanceGameFlow(immediate = false) {
 
 function showABOutcomeToast(text) {
   toastMessage.innerHTML = `<span class="text-purple-300 font-bold font-mono-tech">${text}</span>`;
-  toastMessage.className = 'absolute top-28 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-purple-950/95 text-white border-2 border-purple-500/40 shadow-purple-500/10 pointer-events-auto z-30 whitespace-nowrap';
+  toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-purple-950/95 text-white border-2 border-purple-500/40 shadow-purple-500/10 pointer-events-auto z-30 whitespace-nowrap';
   setTimeout(() => {
-    toastMessage.classList.add('opacity-0', 'scale-90');
-    toastMessage.classList.remove('opacity-100', 'scale-100');
+    toastMessage.classList.add('opacity-0', 'scale-90', '-translate-y-8');
+    toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
   }, 2200);
 }
 
@@ -3574,6 +5039,9 @@ function showAtBatStartScreen(onConfirmCallback) {
   // Show overlay with transition
   abStartOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
   abStartOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+  if (matchupCard) {
+    setOverlayVisible(matchupCard, false);
+  }
 
   // No countdown! Just show static text
   if (abStartTimerText) {
@@ -3582,6 +5050,14 @@ function showAtBatStartScreen(onConfirmCallback) {
 
   // Store callback for confirm
   window._abStartCallback = onConfirmCallback;
+}
+
+function animateMatchupToTopNav(callback) {
+  if (matchupCard) {
+    setOverlayVisible(matchupCard, true);
+    matchupCard.style.opacity = '1';
+  }
+  if (callback) callback();
 }
 
 function confirmAtBatStart() {
@@ -3594,24 +5070,23 @@ function confirmAtBatStart() {
     abStartTimeout = null;
   }
 
-  // Hide the overlay
-  if (abStartOverlay) {
-    abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-    abStartOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
-  }
-
-  // Execute the stored callback
-  if (window._abStartCallback) {
-    window._abStartCallback();
-    window._abStartCallback = null;
-  } else {
-    // Default: start auto-play
-    if (currentState === STATES.IDLE && !isGamePaused) {
-      autoPlayTimeout = setTimeout(() => {
-        triggerPitchRelease();
-      }, 600);
+  animateMatchupToTopNav(() => {
+    if (abStartOverlay) {
+      abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+      abStartOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
     }
-  }
+
+    if (window._abStartCallback) {
+      window._abStartCallback();
+      window._abStartCallback = null;
+    } else {
+      if (currentState === STATES.IDLE && !isGamePaused) {
+        autoPlayTimeout = setTimeout(() => {
+          triggerPitchRelease();
+        }, 600);
+      }
+    }
+  });
 }
 
 function returnToMainMenu() {
@@ -3661,6 +5136,8 @@ function returnToMainMenu() {
 
   hideQuickPreviewPanel();
   showReviewPanel(false);
+  clearSummaryPitchReview();
+  setCameraAngle('umpire');
 
   // Re-show the start/dashboard screen
   if (startScreen) {
@@ -3693,28 +5170,68 @@ function updateLiveScoreboard() {
   const ballsDots = ballsIndicator.children;
   for (let i = 0; i < ballsDots.length; i++) {
     if (i < ballsCount) {
-      ballsDots[i].className = 'w-3.5 h-3.5 rounded-full bg-green-500 shadow-lg shadow-green-500/50';
+      ballsDots[i].className = 'w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/50';
     } else {
-      ballsDots[i].className = 'w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent';
+      ballsDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
     }
   }
   
   const strikesDots = strikesIndicator.children;
   for (let i = 0; i < strikesDots.length; i++) {
     if (i < strikesCount) {
-      strikesDots[i].className = 'w-3.5 h-3.5 rounded-full bg-red-500 shadow-lg shadow-red-500/50';
+      strikesDots[i].className = 'w-2 h-2 rounded-full bg-red-500 shadow-lg shadow-red-500/50';
     } else {
-      strikesDots[i].className = 'w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent';
+      strikesDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
     }
   }
 
   const outsDots = outsIndicator.children;
   for (let i = 0; i < outsDots.length; i++) {
     if (i < outsCount) {
-      outsDots[i].className = 'w-3.5 h-3.5 rounded-full bg-amber-500 shadow-lg shadow-amber-500/50';
+      outsDots[i].className = 'w-2 h-2 rounded-full bg-amber-500 shadow-lg shadow-amber-500/50';
     } else {
-      outsDots[i].className = 'w-3.5 h-3.5 rounded-full border border-gray-600 bg-transparent';
+      outsDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
     }
+  }
+
+  // Update TV Score Bug details
+  const pitch = currentPitch || (pitchesList && pitchesList[currentPitchIndex]);
+  if (pitch) {
+    const inningNum = pitch.inning !== undefined ? pitch.inning : 1;
+    const isTop = pitch.is_top !== undefined ? pitch.is_top : true;
+    const halfSymbol = isTop ? '▲' : '▼';
+    let suffix = "TH";
+    if (inningNum === 1) suffix = "ST";
+    else if (inningNum === 2) suffix = "ND";
+    else if (inningNum === 3) suffix = "RD";
+    
+    if (scorebugInning) {
+      scorebugInning.textContent = `${halfSymbol} ${inningNum}${suffix}`;
+    }
+    
+    const scoreAway = pitch.score_away !== undefined ? pitch.score_away : 0;
+    const scoreHome = pitch.score_home !== undefined ? pitch.score_home : 0;
+    if (scorebugScore) {
+      let awayCode = "AWY";
+      let homeCode = "HOM";
+      if (gameMode === 'orioles_full') {
+        awayCode = "OPP";
+        homeCode = "BAL";
+      }
+      scorebugScore.textContent = `${awayCode} ${scoreAway} - ${homeCode} ${scoreHome}`;
+    }
+    
+    const runners = pitch.runners || [0, 0, 0];
+    const scorebugBases = [scorebugBase1, scorebugBase2, scorebugBase3];
+    scorebugBases.forEach((el, idx) => {
+      if (el) {
+        if (runners[idx]) {
+          el.className = 'absolute w-2.5 h-2.5 rotate-45 bg-orange-500 border border-orange-400 transition-colors duration-200';
+        } else {
+          el.className = 'absolute w-2.5 h-2.5 rotate-45 bg-slate-800 border border-white/20 transition-colors duration-200';
+        }
+      }
+    });
   }
 
   if (gameMode === 'standard') {
@@ -3867,20 +5384,20 @@ function showDecisionToast(isCorrect, absCall) {
       text = `<span class="text-gray-400 font-black">${historyItem.swingHitType}</span>`;
     }
     toastMessage.innerHTML = `${text} &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-    toastMessage.className = 'absolute top-28 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-slate-900/95 text-white border-2 border-amber-500/40 shadow-amber-500/10 pointer-events-auto z-30 whitespace-nowrap';
+    toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-slate-900/95 text-white border-2 border-amber-500/40 shadow-amber-500/10 pointer-events-auto z-30 whitespace-nowrap';
   } else {
     if (isCorrect) {
-      toastMessage.innerHTML = `<span class="text-green-400 font-black shadow-neon-green-glow">SAFE CALL</span> &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-      toastMessage.className = 'absolute top-28 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-green-950/95 text-white border-2 border-green-500/40 shadow-green-500/10 pointer-events-auto z-30 whitespace-nowrap';
+      toastMessage.innerHTML = `<span class="text-green-400 font-black shadow-neon-green-glow">CORRECT CALL</span> &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
+      toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-green-950/95 text-white border-2 border-green-500/40 shadow-green-500/10 pointer-events-auto z-30 whitespace-nowrap';
     } else {
       toastMessage.innerHTML = `<span class="text-red-400 font-black shadow-neon-strike-glow">MISSED CALL</span> &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-      toastMessage.className = 'absolute top-28 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-red-950/95 text-white border-2 border-red-500/40 shadow-red-500/10 pointer-events-auto z-30 whitespace-nowrap';
+      toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-red-950/95 text-white border-2 border-red-500/40 shadow-red-500/10 pointer-events-auto z-30 whitespace-nowrap';
     }
   }
 
   setTimeout(() => {
-    toastMessage.classList.add('opacity-0', 'scale-90');
-    toastMessage.classList.remove('opacity-100', 'scale-100');
+    toastMessage.classList.add('opacity-0', 'scale-90', '-translate-y-8');
+    toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
   }, 1800);
 }
 
@@ -3925,7 +5442,7 @@ function renderScoreboardDashboard() {
   // Save game result to persistent user profile stats database in localStorage
   const username = localStorage.getItem('ump_username');
   if (username) {
-    const statsKey = `pitch_ump_stats_${username}`;
+    const statsKey = getStatsStorageKey(username);
     let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
     
     if (gameMode === 'weekly_challenge') {
@@ -4228,6 +5745,11 @@ function resetGameSession() {
   
   isSessionOver = false;
   activeAbEnded = false; // Reset AB ended status
+  isTransitioningToSummary = false;
+  if (summaryTimeout) {
+    clearTimeout(summaryTimeout);
+    summaryTimeout = null;
+  }
   scoreboardScreen.classList.remove('opacity-100');
   scoreboardScreen.classList.add('opacity-0', 'pointer-events-none');
   
@@ -4306,9 +5828,33 @@ function getInningOrdinal(inn) {
 
 function goToMainMenu() {
   clearInterval(timerInterval);
+  if (overviewTimerInterval) {
+    clearInterval(overviewTimerInterval);
+    overviewTimerInterval = null;
+  }
   if (autoPlayTimeout) {
     clearTimeout(autoPlayTimeout);
     autoPlayTimeout = null;
+  }
+  
+  // Hide active gameplay overlays
+  if (quickPreviewControls) {
+    quickPreviewControls.classList.add('opacity-0', 'pointer-events-none');
+    quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  if (decisionPrompt) {
+    setElementVisibility(decisionPrompt, false);
+  }
+  if (absBroadcastOverlay) {
+    absBroadcastOverlay.classList.remove('active-broadcast-overlay');
+  }
+  if (gameStatusBadge) {
+    gameStatusBadge.classList.add('opacity-0', 'pointer-events-none');
+    gameStatusBadge.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  if (abStartOverlay) {
+    abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
   }
   
   isGamePaused = false;
@@ -4321,12 +5867,9 @@ function goToMainMenu() {
     abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
   }
 
-  hudHeader.classList.add('opacity-0');
+  setOverlayVisible(hudHeader, false);
   hudKeyboardHelp.classList.add('opacity-0');
-  if (matchupCard) {
-    matchupCard.classList.add('opacity-0', 'pointer-events-none');
-    matchupCard.classList.remove('opacity-100', 'pointer-events-auto');
-  }
+  setOverlayVisible(matchupCard, false);
   if (replayBadge) {
     replayBadge.classList.add('opacity-0', 'pointer-events-none');
     replayBadge.classList.remove('opacity-100');
@@ -4476,7 +6019,8 @@ function startWeeklyChallengeGame(gameIdx) {
 /**
  * Starts a Daily Streak challenge session
  */
-function startDailyStreakChallenge() {
+function startDailyStreakChallenge(isResume = false) {
+  if (!isResume && !requireLoggedInUser()) return;
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   localStorage.setItem(`daily_streak_last_played_date_${username}`, new Date().toLocaleDateString());
   updateDailyStreakStatusUI();
@@ -4488,20 +6032,25 @@ function startDailyStreakChallenge() {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
-  pitchesList = generateDailyStreakPitches();
-  currentPitchIndex = 0;
-  pitchHistory = [];
-  currentAbStartHistoryIndex = 0;
-  abBalls = 0;
-  abStrikes = 0;
-  inningOuts = 0;
   
-  totalPitchesCount = 0;
-  totalBattersFaced = 0;
-  totalSessionK = 0;
-  totalSessionBB = 0;
-  totalSessionH = 0;
-  totalSessionOuts = 0;
+  if (!isResume) {
+    pitchesList = generateDailyStreakPitches();
+    currentPitchIndex = 0;
+    pitchHistory = [];
+    currentAbStartHistoryIndex = 0;
+    abBalls = 0;
+    abStrikes = 0;
+    inningOuts = 0;
+    
+    totalPitchesCount = 0;
+    totalBattersFaced = 0;
+    totalSessionK = 0;
+    totalSessionBB = 0;
+    totalSessionH = 0;
+    totalSessionOuts = 0;
+  } else {
+    reconstructActiveAtBatState();
+  }
 
   transitionToState(STATES.IDLE);
 }
@@ -4550,15 +6099,109 @@ function getRevisitedUrls(pitch, abData) {
   return { filmRoomUrl, umpScorecardUrl };
 }
 
+function setAbSummaryReviewExpanded(expanded) {
+  abSummaryReviewExpanded = expanded;
+  if (btnAbSummaryToggleReview) {
+    btnAbSummaryToggleReview.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    btnAbSummaryToggleReview.textContent = expanded ? 'Hide pitch chart' : 'Review pitch chart';
+  }
+  if (!abSummaryReviewSection) return;
+  if (expanded) {
+    abSummaryReviewSection.hidden = false;
+    abSummaryReviewSection.classList.remove('is-collapsed');
+    drawAbSummarySVGMatrix();
+    const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter((x) => !x.isSwingPlay);
+    if (abPitches.length > 0) highlightPitchInSummary(abPitches.length - 1);
+  } else {
+    abSummaryReviewSection.classList.add('is-collapsed');
+    abSummaryReviewSection.hidden = true;
+  }
+}
+
+function setChallengeTrackerHudVisible(visible) {
+  if (!challengeTrackerHud) return;
+  challengeTrackerHud.classList.toggle('hidden', !visible);
+}
+
+function positionCloseCallPill(cross) {
+  if (!closeCallPill || !cross) return;
+  const pos = pickZoneDistanceLabelScreenPos(cross.x, cross.y);
+  if (!pos) {
+    closeCallPill.style.left = '50%';
+    closeCallPill.style.top = '8rem';
+    closeCallPill.style.transform = 'translate(-50%, -100%)';
+    return;
+  }
+  closeCallPill.style.left = `${pos.x}px`;
+  closeCallPill.style.top = `${pos.y}px`;
+  closeCallPill.style.transform = pos.transform;
+}
+
+async function updateAbSummaryLeaderboardSnippet(username) {
+  if (!abSummaryLeaderboardSnippet || !username) return;
+  abSummaryLeaderboardSnippet.textContent = '…';
+  try {
+    const { rows } = await getLeaderboardRows('weekly', username);
+    const me = rows.find((r) => r.isUser);
+    abSummaryLeaderboardSnippet.textContent = me
+      ? `#${me.rank} · ${me.accuracy}`
+      : 'Submit score to rank';
+  } catch {
+    abSummaryLeaderboardSnippet.textContent = '—';
+  }
+}
+
+function showLevelUpCelebration(newLevel, oldLevel) {
+  const tier = getLevelTier(newLevel);
+  const milestone = isMilestoneLevel(newLevel) || getLevelTier(newLevel).min === newLevel;
+
+  playLevelUpSound();
+  showFloatingXP(null, milestone ? `★ ${tier.title.toUpperCase()} ★` : `LEVEL ${newLevel}`);
+
+  if (levelUpOverlay && levelUpBadge && levelUpTitle) {
+    applyLevelBadgeElement(levelUpBadge, newLevel);
+    levelUpTitle.textContent = tier.title;
+    if (levelUpSubtitle) {
+      levelUpSubtitle.textContent = milestone
+        ? `Milestone reached — Level ${oldLevel} → ${newLevel}`
+        : `Level ${oldLevel} → ${newLevel}`;
+    }
+    levelUpOverlay.classList.remove('opacity-0');
+    levelUpOverlay.classList.add('opacity-100', 'level-up-overlay--active');
+    levelUpOverlay.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      levelUpOverlay.classList.remove('opacity-100', 'level-up-overlay--active');
+      levelUpOverlay.classList.add('opacity-0');
+      levelUpOverlay.setAttribute('aria-hidden', 'true');
+    }, milestone ? 3200 : 2200);
+  } else {
+    showLevelUpToast(newLevel);
+  }
+}
+
 /**
  * Displays the At-Bat Summary Overlay between weekly challenge at-bats
  */
 async function showAtBatSummaryScreen(outcomeText) {
   if (!abSummaryOverlay) return;
+
+  activeAbEnded = true;
+  cancelAutoPlayPitch();
+  setAbSummaryReviewExpanded(false);
+  setChallengeTrackerHudVisible(false);
+  document.body.classList.add('ab-summary-active');
   
-  // Reset zoom and dimension line when showing summary
+  // Reset zoom and dimension line when showing summary (keep umpire camera — no summary angle rotation)
   setZoomedIn(false);
   clearDimensionLine();
+  hideQuickPreviewPanel();
+  showReviewPanel(false);
+  if (replayBadge) {
+    replayBadge.classList.add('opacity-0', 'pointer-events-none');
+    replayBadge.classList.remove('opacity-100');
+  }
+
+  try {
   
   const displayOutcome = outcomeText || lastAbOutcomeText || "At-Bat Complete";
   abSummaryTitle.textContent = displayOutcome.toUpperCase();
@@ -4573,22 +6216,18 @@ async function showAtBatSummaryScreen(outcomeText) {
   
   const targetPitch = lastCompletedPitch || currentPitch;
   if (abSummaryPitcherHandBadge && targetPitch) {
-    const pH = (targetPitch.pitcher_hand || "R") === "L" ? "LHP" : "RHP";
+    const pH = (targetPitch.pitcher_hand || "R").includes("L") ? "LHP" : "RHP";
     abSummaryPitcherHandBadge.textContent = pH;
-    if (pH === "RHP") {
-      abSummaryPitcherHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25";
-    } else {
-      abSummaryPitcherHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/25";
-    }
+    abSummaryPitcherHandBadge.className = pH === "RHP"
+      ? "ab-summary-hand-badge ab-summary-hand-badge--rhp"
+      : "ab-summary-hand-badge ab-summary-hand-badge--lhp";
   }
   if (abSummaryBatterHandBadge && targetPitch) {
-    const bH = (targetPitch.batter_hand || "R") === "L" ? "LHB" : "RHB";
+    const bH = (targetPitch.batter_hand || "R").includes("L") ? "LHB" : "RHB";
     abSummaryBatterHandBadge.textContent = bH;
-    if (bH === "LHB") {
-      abSummaryBatterHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25";
-    } else {
-      abSummaryBatterHandBadge.className = "text-[7px] font-mono-tech font-bold uppercase px-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25";
-    }
+    abSummaryBatterHandBadge.className = bH === "LHB"
+      ? "ab-summary-hand-badge ab-summary-hand-badge--lhb"
+      : "ab-summary-hand-badge ab-summary-hand-badge--rhb";
   }
 
   fetchPlayerMlbId(pitcher).then(pitcherId => {
@@ -4619,34 +6258,97 @@ async function showAtBatSummaryScreen(outcomeText) {
   
   // Calculate accuracy only on taken pitches in this game session
   const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(x => !x.isSwingPlay);
+  showSummaryPitchReview(abPitches);
   const correctCount = abPitches.filter(x => x.userCorrect).length;
   const accuracy = abPitches.length > 0 ? Math.round((correctCount / abPitches.length) * 100) : 100;
   
   abSummaryAccuracy.textContent = `${accuracy}%`;
   abSummaryPitches.textContent = abPitches.length;
+  if (abSummaryCorrectCount) {
+    abSummaryCorrectCount.textContent = abPitches.length > 0 ? `${correctCount}/${abPitches.length}` : '—';
+  }
   abSummaryBlurb.textContent = lastAbBlurb || "No play-by-play description available.";
   
-  // Populate Left 30% Panel: Pitch List
+  // XP rewards calculation and animation
+  const isPerfect = (correctCount === abPitches.length) && (abPitches.length > 0);
+  const earnedXp = (correctCount * 10) + (isPerfect ? 50 : 0);
+  const username = localStorage.getItem('ump_username');
+  
+  const xpEarnedEl = document.getElementById('ab-summary-xp-earned');
+  const xpLevelEl = document.getElementById('ab-summary-xp-level');
+  const xpProgressEl = document.getElementById('ab-summary-xp-progress');
+  const xpProgressBar = document.getElementById('ab-summary-xp-bar');
+
+  if (username) {
+    const userStats = await getGlobalUserStats(username);
+    const totalXp = userStats.xp || 0;
+    const previousXp = Math.max(0, totalXp - earnedXp);
+    const prev = getXpProgressInLevel(previousXp);
+    const next = getXpProgressInLevel(totalXp);
+
+    if (xpEarnedEl) {
+      xpEarnedEl.textContent = isPerfect ? `+${earnedXp} XP · Perfect AB` : `+${earnedXp} XP this AB`;
+      xpEarnedEl.className = isPerfect ? 'ab-summary-xp-earned ab-summary-xp-earned--bonus' : 'ab-summary-xp-earned';
+    }
+    applyLevelBadgeElement(xpLevelEl, prev.level);
+    if (xpProgressEl) xpProgressEl.textContent = `${prev.progress} / ${XP_PER_LEVEL} XP`;
+    if (xpProgressBar) {
+      xpProgressBar.style.transition = 'none';
+      xpProgressBar.style.width = `${prev.pct}%`;
+      setTimeout(() => {
+        if (xpProgressBar) {
+          xpProgressBar.style.transition = 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)';
+          xpProgressBar.style.width = `${next.pct}%`;
+        }
+        setTimeout(() => {
+          applyLevelBadgeElement(xpLevelEl, next.level);
+          if (xpProgressEl) xpProgressEl.textContent = `${next.progress} / ${XP_PER_LEVEL} XP`;
+          if (next.level > prev.level) {
+            showLevelUpCelebration(next.level, prev.level);
+          }
+        }, 500);
+      }, 150);
+    }
+  } else {
+    if (xpEarnedEl) {
+      xpEarnedEl.textContent = 'Log in to earn XP';
+      xpEarnedEl.className = 'ab-summary-xp-earned';
+    }
+    if (xpLevelEl) {
+      xpLevelEl.textContent = 'GUEST';
+      xpLevelEl.className = 'ump-level-badge ump-level-badge--rookie';
+    }
+    if (xpProgressEl) xpProgressEl.textContent = '—';
+    if (xpProgressBar) {
+      xpProgressBar.style.transition = 'none';
+      xpProgressBar.style.width = '0%';
+    }
+  }
+
+  
+  // Pitch log table rows
   if (abSummaryPitchList) {
     abSummaryPitchList.innerHTML = '';
     
     abPitches.forEach((item, index) => {
       const isCorrect = item.userCorrect;
-      const callText = item.userCall === 'S' ? "STRIKE" : "BALL";
-      const absText = item.absCall === 'S' ? "STRIKE" : "BALL";
+      const userShort = item.userCall === 'S' ? 'K' : 'B';
+      const absShort = item.absCall === 'S' ? 'K' : 'B';
+      const pitchLabel = item.pitchType || 'Pitch';
+      const mph = item.speedMph != null ? Math.round(item.speedMph) : '—';
       
       const btn = document.createElement('button');
-      btn.className = `w-full text-left p-2 rounded-lg border text-[9px] font-mono-tech transition-all flex items-center justify-between cursor-pointer select-none ${
-        isCorrect 
-          ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20' 
-          : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
-      }`;
+      btn.type = 'button';
+      btn.className = `ab-summary-pitch-row ${isCorrect ? 'is-correct' : 'is-wrong'}`;
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-label', `Pitch ${index + 1}, ${pitchLabel}, ${mph} miles per hour`);
       btn.innerHTML = `
-        <div class="flex flex-col min-w-0">
-          <span class="text-white font-bold text-[10px]">#${index + 1}: ${item.pitchType}</span>
-          <span class="text-gray-400">${item.speedMph} MPH | ${callText} (ABS: ${absText})</span>
-        </div>
-        <span class="font-extrabold ${isCorrect ? 'text-green-400' : 'text-red-400'}">${isCorrect ? '✓' : '✗'}</span>
+        <span class="ab-summary-pitch-num">${index + 1}</span>
+        <span class="ab-summary-pitch-type" title="${pitchLabel}">${pitchLabel}</span>
+        <span class="ab-summary-pitch-mph">${mph}</span>
+        <span class="ab-summary-pitch-call ${item.userCall === 'S' ? 'ab-summary-pitch-call--strike' : 'ab-summary-pitch-call--ball'}">${userShort}</span>
+        <span class="ab-summary-pitch-call ${item.absCall === 'S' ? 'ab-summary-pitch-call--strike' : 'ab-summary-pitch-call--ball'}">${absShort}</span>
+        <span class="ab-summary-pitch-verdict ${isCorrect ? 'ab-summary-pitch-verdict--ok' : 'ab-summary-pitch-verdict--miss'}">${isCorrect ? '✓' : '✗'}</span>
       `;
       
       btn.addEventListener('click', (e) => {
@@ -4659,76 +6361,55 @@ async function showAtBatSummaryScreen(outcomeText) {
     });
   }
 
-  // Draw At-Bat SVG Pitch Matrix
-  drawAbSummarySVGMatrix();
-  
-  // Highlight the last pitch automatically if available
-  if (abPitches.length > 0) {
-    highlightPitchInSummary(abPitches.length - 1);
-  }
-  
-  // Handle weekly challenge stats saving and EXP bar animation
+  // Weekly challenge dock (footer) — save stats + animate progress
   if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
     if (abSummaryWeeklyChallengeDetails) {
       abSummaryWeeklyChallengeDetails.classList.remove('hidden');
-      abSummaryWeeklyChallengeDetails.classList.add('flex');
     }
-    
+
     const completedCount = activeWeeklyAbIndex + 1;
-    const totalCount = weeklyPlaylistABs.length || 1;
+    const totalCount = weeklyPlaylistABs.length || 200;
     const prevPercent = Math.round((activeWeeklyAbIndex / totalCount) * 100);
     const newPercent = Math.round((completedCount / totalCount) * 100);
-    
-    // Save accuracy stats for this AB in the playlist so overall accuracy calculates correctly
+
     if (weeklyPlaylistABs[activeWeeklyAbIndex]) {
-      const correctCount = abPitches.filter(x => x.userCorrect).length;
       weeklyPlaylistABs[activeWeeklyAbIndex].userCorrectCount = correctCount;
       weeklyPlaylistABs[activeWeeklyAbIndex].userTotalCount = abPitches.length;
       weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
       saveChallengeSessionToLocal();
     }
-    
-    // Compute overall accuracy
+
     let overallCorrect = 0;
     let overallTotal = 0;
-    weeklyPlaylistABs.forEach(ab => {
+    weeklyPlaylistABs.forEach((ab) => {
       if (ab.completed) {
         overallCorrect += ab.userCorrectCount || 0;
         overallTotal += ab.userTotalCount || 0;
       }
     });
     const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
-    
-    if (abSummaryWeeklyAccuracyText) {
-      abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+
+    if (abSummaryWeeklyCount) abSummaryWeeklyCount.textContent = String(completedCount);
+    if (abSummaryWeeklyTotal) abSummaryWeeklyTotal.textContent = `/ ${totalCount}`;
+    if (abSummaryWeeklyAccuracyText) abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+    if (abSummaryWeeklyProgressText) {
+      abSummaryWeeklyProgressText.textContent = `${completedCount} / ${totalCount} at-bats`;
     }
-    
-    // Animate the EXP bar: start at previous progress
+
     if (abSummaryWeeklyProgressBar) {
       abSummaryWeeklyProgressBar.style.transition = 'none';
       abSummaryWeeklyProgressBar.style.width = `${prevPercent}%`;
-      
-      // Update text to show new progress
-      if (abSummaryWeeklyProgressText) {
-        abSummaryWeeklyProgressText.textContent = `${activeWeeklyAbIndex} / ${totalCount} AT-BATS (${prevPercent}% COMPLETE)`;
-      }
-      
-      // Force repaint, then animate to new progress with a spring effect
       setTimeout(() => {
         if (abSummaryWeeklyProgressBar) {
           abSummaryWeeklyProgressBar.style.transition = 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)';
           abSummaryWeeklyProgressBar.style.width = `${newPercent}%`;
         }
-        if (abSummaryWeeklyProgressText) {
-          abSummaryWeeklyProgressText.textContent = `${completedCount} / ${totalCount} AT-BATS (${newPercent}% COMPLETE)`;
-        }
       }, 150);
     }
-  } else {
-    if (abSummaryWeeklyChallengeDetails) {
-      abSummaryWeeklyChallengeDetails.classList.add('hidden');
-      abSummaryWeeklyChallengeDetails.classList.remove('flex');
-    }
+
+    updateAbSummaryLeaderboardSnippet(username);
+  } else if (abSummaryWeeklyChallengeDetails) {
+    abSummaryWeeklyChallengeDetails.classList.add('hidden');
   }
 
   // Connect film room and umpire scorecard URLs specifically to this at-bat's game
@@ -4743,12 +6424,15 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
   if (abSummaryFilmLink) abSummaryFilmLink.href = urls.filmRoomUrl;
   if (abSummaryScorecardLink) abSummaryScorecardLink.href = urls.umpScorecardUrl;
+
+  } catch (err) {
+    console.error('showAtBatSummaryScreen:', err);
+  }
   
-  // Make visible
+  // Always reveal overlay even if a stat/widget failed to populate
   abSummaryOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
   abSummaryOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
   
-  // Start countdown timer for summary overlay
   startSummaryTimerCounter();
 }
 
@@ -4757,6 +6441,13 @@ function advanceNextAtBat() {
     abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
     abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
   }
+
+  setChallengeTrackerHudVisible(true);
+  document.body.classList.remove('ab-summary-active');
+  setAbSummaryReviewExpanded(false);
+  
+  clearSummaryPitchReview();
+  setCameraAngle('umpire');
   
   if (overviewTimerInterval) {
     clearInterval(overviewTimerInterval);
@@ -4840,6 +6531,71 @@ function saveChallengeSessionToLocal() {
   }
 }
 
+function reconstructActiveAtBatState() {
+  pitchHistory = [];
+  abBalls = 0;
+  abStrikes = 0;
+  currentAbStartHistoryIndex = 0;
+  let nextPitchIndex = 0;
+
+  if (!pitchesList || pitchesList.length === 0) {
+    currentPitchIndex = 0;
+    return;
+  }
+
+  for (let i = 0; i < pitchesList.length; i++) {
+    const pitch = pitchesList[i];
+    if (pitch.userCall !== undefined) {
+      // Reconstruct history item
+      const historyItem = {
+        pitchNum: i + 1,
+        pitchType: pitch.pitch_type,
+        speedMph: pitch.speed_mph,
+        userCall: pitch.userCall,
+        absCall: pitch.absCall,
+        realCall: pitch.realCall,
+        userCorrect: pitch.userCorrect === undefined ? true : pitch.userCorrect,
+        realCorrect: pitch.realCorrect,
+        pitchData: pitch,
+        trajectory: pitch.pitchTrajectory || null,
+        isSwingPlay: !!pitch.isSwingPlay,
+        swingOutcome: pitch.swingOutcome,
+        swingHitType: pitch.swingHitType
+      };
+      pitchHistory.push(historyItem);
+      
+      // Update balls/strikes counts
+      if (historyItem.isSwingPlay) {
+        if (historyItem.swingOutcome === 'WHIFF') {
+          abStrikes++;
+        } else if (historyItem.swingOutcome === 'FOUL') {
+          if (abStrikes < 2) {
+            abStrikes++;
+          }
+        }
+      } else {
+        if (historyItem.userCall === 'S' || historyItem.userCall === 'TIMEOUT') {
+          abStrikes++;
+        } else if (historyItem.userCall === 'B') {
+          abBalls++;
+        }
+      }
+      nextPitchIndex = i + 1;
+    } else {
+      nextPitchIndex = i;
+      break;
+    }
+  }
+  
+  currentPitchIndex = nextPitchIndex;
+  // Limit currentPitchIndex to the valid range
+  if (currentPitchIndex >= pitchesList.length) {
+    currentPitchIndex = pitchesList.length - 1;
+  }
+  
+  console.log(`Reconstructed active At-Bat state: pitchIndex=${currentPitchIndex}, balls=${abBalls}, strikes=${abStrikes}, historyCount=${pitchHistory.length}`);
+}
+
 async function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
   if (!username) {
@@ -4865,12 +6621,15 @@ async function loadSavedSessionFromLocal() {
       activeDailyDate = session.activeDailyDate;
       activeDailyTeam = session.activeDailyTeam;
       
-      if (weeklyPlaylistABs.length > 0) {
-        if (welcomeScreen) welcomeScreen.classList.add('hidden');
-        if (teamSelectScreen) teamSelectScreen.classList.add('hidden');
-        loadWeeklyAtBat(activeWeeklyAbIndex);
-        return;
+      if (session.pitchesList) {
+        pitchesList = session.pitchesList;
       }
+      if (session.totalPitchesCount !== undefined) totalPitchesCount = session.totalPitchesCount;
+      if (session.totalBattersFaced !== undefined) totalBattersFaced = session.totalBattersFaced;
+      if (session.totalSessionK !== undefined) totalSessionK = session.totalSessionK;
+      if (session.totalSessionBB !== undefined) totalSessionBB = session.totalSessionBB;
+      if (session.totalSessionH !== undefined) totalSessionH = session.totalSessionH;
+      if (session.totalSessionOuts !== undefined) totalSessionOuts = session.totalSessionOuts;
     }
   } catch (e) {
     console.error("Failed to restore session from IndexedDB", e);
@@ -4901,6 +6660,7 @@ async function loadSavedSessionFromLocal() {
     weeklyPlaylistABs = extractAtBatsFromWeeklyData();
   }
   
+  updateDailyStreakStatusUI();
   updateChallengeProgressUI();
 }
 
@@ -4912,6 +6672,16 @@ function pauseGameOnFocusLoss() {
       isGamePaused) return;
   if (abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100')) return;
   if (abStartOverlay && abStartOverlay.classList.contains('opacity-100')) return;
+
+  // Blur/visibility loss cancels pending timers — flush post-AB summary instead of losing it
+  if (isTransitioningToSummary && activeAbEnded) {
+    if (summaryTimeout) {
+      clearTimeout(summaryTimeout);
+      summaryTimeout = null;
+    }
+    finishAtBatAndShowSummary();
+    return;
+  }
 
   isGamePaused = true;
   pauseStartTime = performance.now();
@@ -5053,9 +6823,7 @@ function resumeGameFromPause() {
   if (isTransitioningToSummary) {
     if (summaryTimeout) clearTimeout(summaryTimeout);
     summaryTimeout = setTimeout(() => {
-      summaryTimeout = null;
-      isTransitioningToSummary = false;
-      showAtBatSummaryScreen(cachedAbOutcomeText);
+      finishAtBatAndShowSummary();
     }, 600);
     return;
   }
@@ -5093,10 +6861,11 @@ function updateChallengeProgressUI() {
   }
   
   if (btnStartWeeklyChallenge) {
-    if (activeWeeklyAbIndex > 0 && activeWeeklyAbIndex < total) {
-      btnStartWeeklyChallenge.textContent = "Resume Weekly Challenge";
+    const hasProgress = activeWeeklyAbIndex > 0 || currentPitchIndex > 0 || pitchHistory.length > 0;
+    if (hasProgress && activeWeeklyAbIndex < total) {
+      btnStartWeeklyChallenge.textContent = "Resume Challenge";
     } else {
-      btnStartWeeklyChallenge.textContent = "Start Weekly Challenge";
+      btnStartWeeklyChallenge.textContent = "Start Challenge";
     }
   }
 }
@@ -5139,14 +6908,16 @@ function updateProfileStatsUI() {
     return;
   }
   
-  const statsKey = `pitch_ump_stats_${username}`;
+  const normalized = normalizeHandle(username);
+  const statsKey = getStatsStorageKey(normalized);
   const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
   
   // Set handle
-  if (hudHandle) hudHandle.textContent = username.toUpperCase();
+  if (hudHandle) hudHandle.textContent = normalized;
   
   // Set favorite team & logo
   if (hudFavBadge) {
+    hudFavBadge.classList.remove('hidden');
     if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
       hudFavBadge.textContent = activeFavoriteTeam.slice(0, 3).toUpperCase();
       hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded uppercase font-mono-tech";
@@ -5166,24 +6937,26 @@ function updateProfileStatsUI() {
     }
   }
   
-  // Calculate XP (Experience Points) based on history correct calls
-  let xp = 0;
-  const history = userStats.history || [];
-  history.forEach(h => {
-    const isWeekly = h.gameName && h.gameName.includes("Weekly");
-    const isStreak = h.gameName && h.gameName.includes("Streak");
-    const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
-    
-    if (isWeekly) {
-      xp += (h.correctCalls || 0) * 10;
-    } else if (isStreak) {
-      xp += (h.correctCalls || 0) * 15;
-    } else if (isDailyCompete) {
-      xp += (h.correctCalls || 0) * 12;
-    } else {
-      xp += (h.correctCalls || 0) * 5;
-    }
-  });
+  // Calculate XP (Experience Points) based on history correct calls or read from userStats.xp
+  let xp = userStats.xp !== undefined ? userStats.xp : 0;
+  if (userStats.xp === undefined) {
+    const history = userStats.history || [];
+    history.forEach(h => {
+      const isWeekly = h.gameName && h.gameName.includes("Weekly");
+      const isStreak = h.gameName && h.gameName.includes("Streak");
+      const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
+      
+      if (isWeekly) {
+        xp += (h.correctCalls || 0) * 10;
+      } else if (isStreak) {
+        xp += (h.correctCalls || 0) * 15;
+      } else if (isDailyCompete) {
+        xp += (h.correctCalls || 0) * 12;
+      } else {
+        xp += (h.correctCalls || 0) * 5;
+      }
+    });
+  }
   
   const currentLevel = Math.floor(xp / 1000) + 1;
   const prevLevelXp = (currentLevel - 1) * 1000;
@@ -5292,6 +7065,11 @@ function enterFullReviewFromQuick() {
     clearTimeout(autoPlayTimeout);
     autoPlayTimeout = null;
   }
+  if (summaryTimeout) {
+    clearTimeout(summaryTimeout);
+    summaryTimeout = null;
+  }
+  isTransitioningToSummary = false;
   
   const userHistoryItem = pitchHistory[pitchHistory.length - 1];
   enterFullReviewPanel(userHistoryItem);
@@ -5306,9 +7084,35 @@ function startQuickReviewAutoAdvance(delayMs) {
     clearTimeout(autoPlayTimeout);
     autoPlayTimeout = null;
   }
+
+  quickReviewDelay = delayMs;
+  quickReviewStartTime = performance.now();
+  quickReviewTimeLeft = delayMs;
+
   if (quickContinueTimer) {
-    quickContinueTimer.textContent = '';
+    quickContinueTimer.textContent = `(${Math.ceil(quickReviewTimeLeft / 1000)}s)`;
   }
+
+  quickContinueInterval = setInterval(() => {
+    if (isGamePaused) return;
+
+    const elapsed = performance.now() - quickReviewStartTime;
+    quickReviewTimeLeft = Math.max(0, quickReviewDelay - elapsed);
+
+    if (quickContinueTimer) {
+      quickContinueTimer.textContent = `(${Math.ceil(quickReviewTimeLeft / 1000)}s)`;
+    }
+
+    if (quickReviewTimeLeft <= 0) {
+      clearInterval(quickContinueInterval);
+      quickContinueInterval = null;
+      if (quickContinueTimer) {
+        quickContinueTimer.textContent = '';
+      }
+      hideQuickPreviewPanel();
+      advanceGameFlow();
+    }
+  }, 100);
 }
 
 function hideQuickPreviewPanel() {
@@ -5589,8 +7393,19 @@ function extractAtBatsFromWeeklyData() {
   return deterministicShuffle(finalPlaylist);
 }
 
-function startWeeklyChallenge() {
+async function startWeeklyChallenge() {
+  if (!requireLoggedInUser()) return;
   gameMode = 'weekly_challenge';
+  cancelAutoPlayPitch();
+  isTransitioningToSummary = false;
+  if (summaryTimeout) {
+    clearTimeout(summaryTimeout);
+    summaryTimeout = null;
+  }
+  if (abSummaryOverlay) {
+    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+    abSummaryOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
   isGamePaused = false;
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
@@ -5599,55 +7414,77 @@ function startWeeklyChallenge() {
   
   const rawABs = extractAtBatsFromWeeklyData();
   const username = localStorage.getItem('ump_username');
-  const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
-  const rawSession = localStorage.getItem(key);
-  let savedPlaylist = null;
-  let savedAbIndex = 0;
+  let restored = false;
   
-  if (rawSession) {
+  if (username) {
     try {
-      const savedData = JSON.parse(rawSession);
-      if (savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === rawABs.length) {
-        const saved = savedData.weeklyPlaylistABs;
-        
-        // Validate playlist has no teammate matchups and pitch IDs match raw challenge data
-        const hasTeammates = saved.some(ab => 
-          ab.pitches && ab.pitches.some(p => {
-            const teamP = getPlayerTeam(p.pitcher);
-            const teamB = getPlayerTeam(p.batter);
-            return teamP && teamB && teamP === teamB;
-          })
-        );
-        const rawFirstId = rawABs[0]?.pitches[0]?.id;
-        const savedFirstId = saved[0]?.pitches[0]?.id;
-        const firstIdMatches = rawFirstId !== undefined && savedFirstId !== undefined && rawFirstId === savedFirstId;
-        
-        if (!hasTeammates && firstIdMatches) {
-          savedPlaylist = saved;
-          savedAbIndex = savedData.activeWeeklyAbIndex || 0;
-          if (savedAbIndex >= savedPlaylist.length) {
-            savedPlaylist = null;
-            savedAbIndex = 0;
-          }
-        } else {
-          console.log("Invalidating saved weekly playlist: teammate matchups or data version mismatch detected.");
-          localStorage.removeItem(key);
-        }
+      const session = await getActiveSession(username);
+      if (session && session.gameMode === 'weekly_challenge' && session.weeklyPlaylistABs && session.weeklyPlaylistABs.length > 0) {
+        console.log("Resuming weekly challenge from IndexedDB active session...");
+        weeklyPlaylistABs = session.weeklyPlaylistABs;
+        activeWeeklyAbIndex = session.activeWeeklyAbIndex;
+        currentPitchIndex = session.currentPitchIndex;
+        abBalls = session.abBalls;
+        abStrikes = session.abStrikes;
+        pitchHistory = session.pitchHistory || [];
+        restored = true;
       }
     } catch (e) {
-      console.error("Failed to restore weekly playlist", e);
+      console.error("Failed to check active weekly session in IndexedDB:", e);
     }
   }
   
-  if (savedPlaylist) {
-    weeklyPlaylistABs = savedPlaylist;
-    activeWeeklyAbIndex = savedAbIndex;
-  } else {
-    weeklyPlaylistABs = [...rawABs];
-    activeWeeklyAbIndex = 0;
+  if (!restored) {
+    const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+    const rawSession = localStorage.getItem(key);
+    let savedPlaylist = null;
+    let savedAbIndex = 0;
+    
+    if (rawSession) {
+      try {
+        const savedData = JSON.parse(rawSession);
+        if (savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === rawABs.length) {
+          const saved = savedData.weeklyPlaylistABs;
+          
+          // Validate playlist has no teammate matchups and pitch IDs match raw challenge data
+          const hasTeammates = saved.some(ab => 
+            ab.pitches && ab.pitches.some(p => {
+              const teamP = getPlayerTeam(p.pitcher);
+              const teamB = getPlayerTeam(p.batter);
+              return teamP && teamB && teamP === teamB;
+            })
+          );
+          const rawFirstId = rawABs[0]?.pitches[0]?.id;
+          const savedFirstId = saved[0]?.pitches[0]?.id;
+          const firstIdMatches = rawFirstId !== undefined && savedFirstId !== undefined && rawFirstId === savedFirstId;
+          
+          if (!hasTeammates && firstIdMatches) {
+            savedPlaylist = saved;
+            savedAbIndex = savedData.activeWeeklyAbIndex || 0;
+            if (savedAbIndex >= savedPlaylist.length) {
+              savedPlaylist = null;
+              savedAbIndex = 0;
+            }
+          } else {
+            console.log("Invalidating saved weekly playlist: teammate matchups or data version mismatch detected.");
+            localStorage.removeItem(key);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to restore weekly playlist", e);
+      }
+    }
+    
+    if (savedPlaylist) {
+      weeklyPlaylistABs = savedPlaylist;
+      activeWeeklyAbIndex = savedAbIndex;
+    } else {
+      weeklyPlaylistABs = [...rawABs];
+      activeWeeklyAbIndex = 0;
+    }
   }
   
-  loadWeeklyAtBat(activeWeeklyAbIndex);
+  loadWeeklyAtBat(activeWeeklyAbIndex, restored);
 }
 
 function getPlayerTeam(name) {
@@ -5676,24 +7513,79 @@ function getPlayerTeam(name) {
   return null;
 }
 
-function loadWeeklyAtBat(abIdx) {
+function checkReconstructedAbCompleted() {
+  if (abBalls >= 4 || abStrikes >= 3) return true;
+  if (pitchHistory.length > 0) {
+    const lastItem = pitchHistory[pitchHistory.length - 1];
+    if (lastItem.isSwingPlay && (lastItem.swingOutcome === 'HIT' || lastItem.swingOutcome === 'OUT')) {
+      return true;
+    }
+    if (pitchHistory.length === pitchesList.length) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function determineAbOutcomeFromHistory() {
+  if (!pitchesList || pitchesList.length === 0) return "AT-BAT COMPLETE";
+  const matchup = getMatchupNames(pitchesList[0]);
+  const batterName = matchup.batter.toUpperCase();
+  if (abStrikes >= 3) return `${batterName} STRIKEOUT!`;
+  if (abBalls >= 4) return `${batterName} WALKS!`;
+  if (pitchHistory.length > 0) {
+    const lastItem = pitchHistory[pitchHistory.length - 1];
+    if (lastItem.isSwingPlay) {
+      if (lastItem.swingOutcome === 'HIT') return `${batterName} HITS A ${lastItem.swingHitType.toUpperCase()}!`;
+      if (lastItem.swingOutcome === 'OUT') return `${batterName} OUT (${lastItem.swingHitType.toUpperCase()})`;
+    }
+  }
+  return "AT-BAT COMPLETE";
+}
+
+function loadWeeklyAtBat(abIdx, isResume = false) {
   if (abIdx >= weeklyPlaylistABs.length) {
     saveChallengeSessionToLocal();
+    saveGameProgress();
     transitionToState(STATES.SCOREBOARD);
     return;
   }
   
-  activeAbEnded = false; // Reset AB ended status
   activeWeeklyAbIndex = abIdx;
   const abData = weeklyPlaylistABs[activeWeeklyAbIndex];
   
   pitchesList = abData.pitches;
-  currentPitchIndex = 0;
-  pitchHistory = [];
-  currentAbStartHistoryIndex = 0;
+  if (!isResume) {
+    activeAbEnded = false;
+    currentPitchIndex = 0;
+    pitchHistory = [];
+    currentAbStartHistoryIndex = 0;
+    
+    abBalls = 0;
+    abStrikes = 0;
+  } else {
+    reconstructActiveAtBatState();
+    
+    // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
+    if (checkReconstructedAbCompleted()) {
+      console.log("Resumed At-Bat is completed. Loading summary overlay directly.");
+      cancelAutoPlayPitch();
+      activeAbEnded = true;
+      if (pitchesList.length > 0) {
+        lastCompletedPitch = pitchesList[pitchesList.length - 1];
+        const matchup = getMatchupNames(lastCompletedPitch);
+        lastAbPitcher = matchup.pitcher;
+        lastAbBatter = matchup.batter;
+        lastAbBlurb = lastCompletedPitch.historical_blurb || "No play-by-play description available.";
+        lastAbOutcomeText = determineAbOutcomeFromHistory();
+        transitionToState(STATES.IDLE);
+        showAtBatSummaryScreen(lastAbOutcomeText);
+      }
+      return;
+    }
+    activeAbEnded = false;
+  }
   
-  abBalls = 0;
-  abStrikes = 0;
   abOverviewSecondsUsed = 0;
   isGamePaused = false;
   if (pauseScreen) {
@@ -5702,17 +7594,22 @@ function loadWeeklyAtBat(abIdx) {
   }
   
   saveChallengeSessionToLocal();
+  saveGameProgress();
   
-  // Show At-Bat Start Preview with matchup, then transition to IDLE
-  transitionToState(STATES.IDLE);
-  showAtBatStartScreen(() => {
-    // After user confirms or timer expires, start auto-play
-    if (currentState === STATES.IDLE && !isGamePaused) {
-      autoPlayTimeout = setTimeout(() => {
-        triggerPitchRelease();
-      }, 600);
-    }
-  });
+  if (isResume) {
+    transitionToState(STATES.IDLE);
+  } else {
+    // Show At-Bat Start Preview with matchup, then transition to IDLE
+    transitionToState(STATES.IDLE);
+    showAtBatStartScreen(() => {
+      // After user confirms or timer expires, start auto-play
+      if (currentState === STATES.IDLE && !isGamePaused) {
+        autoPlayTimeout = setTimeout(() => {
+          triggerPitchRelease();
+        }, 600);
+      }
+    });
+  }
 }
 
 function showUmpireScorecardModal() {
@@ -5911,6 +7808,16 @@ async function updateDailyStreakStatusUI() {
   if (btn) {
     btn.removeAttribute('disabled');
     btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20";
+    try {
+      const session = await getActiveSession(username);
+      if (session && session.gameMode === 'daily_streak' && session.pitchesList && session.pitchesList.length > 0) {
+        btn.textContent = "Resume Streak";
+      } else {
+        btn.textContent = "Play Streak";
+      }
+    } catch (err) {
+      btn.textContent = "Play Streak";
+    }
   }
   if (rankEl && username !== 'GUEST_UMPIRE') {
     rankEl.textContent = "FETCHING...";
@@ -5944,7 +7851,8 @@ function cancelAutoPlayPitch() {
 
 function resumeAutoPlayPitch() {
   const isOverlayOpen = isSettingsOpen || (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100'));
-  if (!isOverlayOpen && !isGamePaused && currentState === STATES.IDLE && !autoPlayTimeout) {
+  const summaryVisible = abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100');
+  if (!isOverlayOpen && !summaryVisible && !activeAbEnded && !isGamePaused && currentState === STATES.IDLE && !autoPlayTimeout) {
     autoPlayTimeout = setTimeout(() => {
       triggerPitchRelease();
     }, 1800);
@@ -5956,11 +7864,28 @@ function resumeAutoPlayPitch() {
 function setOverlayVisible(el, visible) {
   if (!el) return;
   if (visible) {
+    el.classList.remove('hidden');
+    void el.offsetWidth; // Force reflow for css transitions
     el.classList.add('opacity-100', 'pointer-events-auto');
     el.classList.remove('opacity-0', 'pointer-events-none');
   } else {
     el.classList.add('opacity-0', 'pointer-events-none');
     el.classList.remove('opacity-100', 'pointer-events-auto');
+    
+    const onTransitionEnd = () => {
+      if (el.classList.contains('opacity-0')) {
+        el.classList.add('hidden');
+      }
+      el.removeEventListener('transitionend', onTransitionEnd);
+    };
+    el.addEventListener('transitionend', onTransitionEnd);
+    
+    // Safety fallback
+    setTimeout(() => {
+      if (el.classList.contains('opacity-0')) {
+        el.classList.add('hidden');
+      }
+    }, 550);
   }
 }
 
@@ -6294,66 +8219,16 @@ function drawScorecardSVGMatrix() {
 // ==========================================================================
 
 function initUiModeSwitcher() {
-  const savedMode = localStorage.getItem('pitch_ump_ui_mode') || 'classic';
-  setUiMode(savedMode);
-
-  const bindBtn = (btn, mode) => {
-    if (btn) {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        initAudio();
-        setUiMode(mode);
-      });
-    }
-  };
-
-  bindBtn(btnUiClassic, 'classic');
-  bindBtn(btnUiAdaptive, 'adaptive');
-  bindBtn(btnUiCinematic, 'cinematic');
-  bindBtn(settingsUiClassic, 'classic');
-  bindBtn(settingsUiAdaptive, 'adaptive');
-  bindBtn(settingsUiCinematic, 'cinematic');
+  setUiMode('classic');
 }
 
 function setUiMode(mode) {
-  activeUiMode = mode;
-  localStorage.setItem('pitch_ump_ui_mode', mode);
+  activeUiMode = 'classic';
+  localStorage.setItem('pitch_ump_ui_mode', 'classic');
 
   // Apply to body
   document.body.classList.remove('ui-mode-classic', 'ui-mode-adaptive', 'ui-mode-cinematic');
-  document.body.classList.add(`ui-mode-${mode}`);
-
-  // Update switcher button highlights (HUD)
-  [btnUiClassic, btnUiAdaptive, btnUiCinematic].forEach(btn => {
-    if (btn) {
-      btn.classList.remove('ui-mode-btn-active');
-      btn.classList.add('text-white/50');
-    }
-  });
-
-  const activeBtn = mode === 'classic' ? btnUiClassic : (mode === 'adaptive' ? btnUiAdaptive : btnUiCinematic);
-  if (activeBtn) {
-    activeBtn.classList.add('ui-mode-btn-active');
-    activeBtn.classList.remove('text-white/50');
-  }
-
-  // Update switcher button highlights (Settings Panel)
-  [settingsUiClassic, settingsUiAdaptive, settingsUiCinematic].forEach(btn => {
-    if (btn) {
-      btn.classList.remove('bg-purple-600');
-      btn.classList.add('bg-gray-800');
-      btn.classList.remove('text-white');
-      btn.classList.add('text-white/60');
-    }
-  });
-
-  const activeSettingsBtn = mode === 'classic' ? settingsUiClassic : (mode === 'adaptive' ? settingsUiAdaptive : settingsUiCinematic);
-  if (activeSettingsBtn) {
-    activeSettingsBtn.classList.add('bg-purple-600');
-    activeSettingsBtn.classList.remove('bg-gray-800');
-    activeSettingsBtn.classList.add('text-white');
-    activeSettingsBtn.classList.remove('text-white/60');
-  }
+  document.body.classList.add('ui-mode-classic');
 
   // Trigger window resize to recalculate canvas layouts
   setTimeout(() => {
@@ -6489,12 +8364,51 @@ async function updateMatchupCardImagesAndStats(pitch) {
 function drawAbSummarySVGMatrix() {
   if (!abSummarySvgPitches) return;
   abSummarySvgPitches.innerHTML = '';
+  
+  const abSummarySvgZone = document.getElementById('ab-summary-svg-zone');
+  const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
+  
+  if (abSummarySvgZone) abSummarySvgZone.innerHTML = '';
+  if (abSummarySvgIndicators) abSummarySvgIndicators.innerHTML = '';
+  
   if (abSummaryPitchDetails) {
-    abSummaryPitchDetails.textContent = "Click a pitch above to review telemetry";
+    abSummaryPitchDetails.innerHTML = '<p class="ab-summary-pitch-detail-placeholder">Select a pitch to see your call vs. ABS</p>';
   }
 
   const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(p => !p.isSwingPlay);
   if (abPitches.length === 0) return;
+
+  const firstPitch = abPitches[0];
+  const pData = firstPitch.pitchData || firstPitch;
+  const szTop = pData.sz_top !== undefined ? pData.sz_top : (pData.szTop !== undefined ? pData.szTop : 3.4);
+  const szBot = pData.sz_bot !== undefined ? pData.sz_bot : (pData.szBot !== undefined ? pData.szBot : 1.6);
+
+  if (abSummarySvgZone) {
+    // 1. Draw extended zone box (solid line, height = (szTop - szBot) + 0.24)
+    // x = -0.8283, y = 4.0 - (szTop + 0.12), w = 1.6566, h = (szTop - szBot) + 0.24
+    const extZone = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    extZone.setAttribute("x", -0.8283);
+    extZone.setAttribute("y", 4.0 - (szTop + 0.12));
+    extZone.setAttribute("width", 1.6566);
+    extZone.setAttribute("height", (szTop - szBot) + 0.24);
+    extZone.setAttribute("fill", "rgba(59, 130, 246, 0.05)");
+    extZone.setAttribute("stroke", "rgba(59, 130, 246, 0.5)");
+    extZone.setAttribute("stroke-width", "0.03");
+    abSummarySvgZone.appendChild(extZone);
+    
+    // 2. Draw standard zone box (dotted line)
+    // x = -0.7083, y = 4.0 - szTop, w = 1.4166, h = szTop - szBot
+    const stdZone = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    stdZone.setAttribute("x", -0.7083);
+    stdZone.setAttribute("y", 4.0 - szTop);
+    stdZone.setAttribute("width", 1.4166);
+    stdZone.setAttribute("height", szTop - szBot);
+    stdZone.setAttribute("fill", "rgba(168, 85, 247, 0.05)");
+    stdZone.setAttribute("stroke", "rgba(168, 85, 247, 0.7)");
+    stdZone.setAttribute("stroke-width", "0.02");
+    stdZone.setAttribute("stroke-dasharray", "0.08,0.06");
+    abSummarySvgZone.appendChild(stdZone);
+  }
 
   abPitches.forEach((item, index) => {
     const cross = item.trajectory ? item.trajectory.crossPoint : null;
@@ -6551,30 +8465,39 @@ function highlightPitchInSummary(index) {
   const item = abPitches[index];
   if (!item) return;
 
+  highlightSummaryPitch(index);
+
+  const pData = item.pitchData || item;
+  const szTop = pData.sz_top !== undefined ? pData.sz_top : (pData.szTop !== undefined ? pData.szTop : 3.4);
+  const szBot = pData.sz_bot !== undefined ? pData.sz_bot : (pData.szBot !== undefined ? pData.szBot : 1.6);
+
   if (abSummaryPitchDetails) {
     const isCorrect = item.userCorrect;
-    const resultText = isCorrect ? "CORRECT CALL" : "MISSED CALL";
-    const resultColorClass = isCorrect ? "text-green-400" : "text-red-400";
-    const callText = item.userCall === 'S' ? "STRIKE" : "BALL";
-    const absText = item.absCall === 'S' ? "STRIKE" : "BALL";
+    const resultText = isCorrect ? 'Correct call' : 'Missed call';
+    const callText = item.userCall === 'S' ? 'Strike' : 'Ball';
+    const absText = item.absCall === 'S' ? 'Strike' : 'Ball';
+    const mph = item.speedMph != null ? `${Math.round(item.speedMph)} mph` : '—';
     
     abSummaryPitchDetails.innerHTML = `
-      <span class="font-extrabold ${resultColorClass}">${resultText}</span><br>
-      Pitch #${index + 1}: <b class="text-white">${item.pitchType}</b> @ <b class="text-purple-400">${item.speedMph} MPH</b><br>
-      Your Call: <span class="text-white font-bold">${callText}</span> | ABS: <span class="text-white font-bold">${absText}</span>
+      <div class="ab-summary-detail-verdict ${isCorrect ? 'ab-summary-detail-verdict--ok' : 'ab-summary-detail-verdict--miss'}">${resultText}</div>
+      <dl class="ab-summary-detail-grid">
+        <dt>Pitch</dt><dd>#${index + 1} · ${item.pitchType || '—'}</dd>
+        <dt>Velocity</dt><dd>${mph}</dd>
+        <dt>Your call</dt><dd>${callText}</dd>
+        <dt>ABS call</dt><dd>${absText}</dd>
+      </dl>
     `;
   }
 
-  // Highlight button in the list
   if (abSummaryPitchList) {
-    const buttons = abSummaryPitchList.querySelectorAll('button');
-    buttons.forEach((btn, btnIdx) => {
-      if (btnIdx === index) {
-        btn.classList.add('ring-2', 'ring-purple-500', 'border-purple-500/50');
-      } else {
-        btn.classList.remove('ring-2', 'ring-purple-500', 'border-purple-500/50');
-      }
+    const rows = abSummaryPitchList.querySelectorAll('.ab-summary-pitch-row');
+    rows.forEach((row, btnIdx) => {
+      row.classList.toggle('is-selected', btnIdx === index);
     });
+    const selectedRow = rows[index];
+    if (selectedRow) {
+      selectedRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   // Highlight dot/shape in the SVG and dim others
@@ -6599,6 +8522,106 @@ function highlightPitchInSummary(index) {
           el.setAttribute('r', '0.12');
         }
       }
+    }
+  }
+
+  // Draw dynamic closeness indicator line and text
+  const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
+  if (abSummarySvgIndicators) {
+    abSummarySvgIndicators.innerHTML = '';
+    
+    const cross = item.trajectory ? item.trajectory.crossPoint : null;
+    if (cross) {
+      const px = cross.x;
+      const py = cross.y;
+      
+      const xMin = -0.7083;
+      const xMax = 0.7083;
+      const yMin = szBot;
+      const yMax = szTop;
+      
+      const insideX = px >= xMin && px <= xMax;
+      const insideY = py >= yMin && py <= yMax;
+      const isIn = insideX && insideY;
+      
+      let cx = px;
+      let cy = py;
+      let distFeet = 0;
+      
+      if (isIn) {
+        const dLeft = px - xMin;
+        const dRight = xMax - px;
+        const dBottom = py - yMin;
+        const dTop = yMax - py;
+        
+        distFeet = Math.min(dLeft, dRight, dBottom, dTop);
+        if (distFeet === dLeft) {
+          cx = xMin;
+        } else if (distFeet === dRight) {
+          cx = xMax;
+        } else if (distFeet === dBottom) {
+          cy = yMin;
+        } else {
+          cy = yMax;
+        }
+      } else {
+        cx = Math.max(xMin, Math.min(px, xMax));
+        cy = Math.max(yMin, Math.min(py, yMax));
+        distFeet = Math.hypot(px - cx, py - cy);
+      }
+      
+      const distInches = distFeet * 12.0;
+      
+      // Convert to SVG space
+      const pxSvg = px;
+      const pySvg = 4.0 - py;
+      const cxSvg = cx;
+      const cySvg = 4.0 - cy;
+      
+      // Line
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", pxSvg);
+      line.setAttribute("y1", pySvg);
+      line.setAttribute("x2", cxSvg);
+      line.setAttribute("y2", cySvg);
+      line.setAttribute("stroke", "#fbbf24");
+      line.setAttribute("stroke-width", "0.025");
+      line.setAttribute("stroke-dasharray", "0.05,0.03");
+      abSummarySvgIndicators.appendChild(line);
+      
+      const zoneTopSvg = 4.0 - szTop;
+      const zoneBotSvg = 4.0 - szBot;
+      const zoneMidSvg = (zoneTopSvg + zoneBotSvg) / 2;
+      let labelSvgY = pySvg > zoneMidSvg ? zoneTopSvg - 0.22 : zoneBotSvg + 0.22;
+      if (Math.abs(labelSvgY - pySvg) < 0.28) {
+        labelSvgY = pySvg > zoneMidSvg ? zoneBotSvg + 0.22 : zoneTopSvg - 0.22;
+      }
+      const labelSvgX = pxSvg;
+      const labelW = 0.95;
+      const labelH = 0.28;
+
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", labelSvgX - labelW / 2);
+      rect.setAttribute("y", labelSvgY - labelH / 2);
+      rect.setAttribute("width", labelW);
+      rect.setAttribute("height", labelH);
+      rect.setAttribute("fill", "#0f172a");
+      rect.setAttribute("stroke", "#fbbf24");
+      rect.setAttribute("stroke-width", "0.015");
+      rect.setAttribute("rx", 0.05);
+      rect.setAttribute("ry", 0.05);
+      abSummarySvgIndicators.appendChild(rect);
+      
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", labelSvgX);
+      text.setAttribute("y", labelSvgY + 0.06);
+      text.setAttribute("fill", "#fbbf24");
+      text.setAttribute("font-size", "0.20");
+      text.setAttribute("font-family", "monospace");
+      text.setAttribute("font-weight", "bold");
+      text.setAttribute("text-anchor", "middle");
+      text.textContent = `${distInches.toFixed(1)}" ${isIn ? 'IN' : 'OUT'}`;
+      abSummarySvgIndicators.appendChild(text);
     }
   }
 }
@@ -6718,61 +8741,21 @@ async function renderLeaderboard(type) {
   leaderboardTableBody.innerHTML = `
     <tr>
       <td colspan="${type === 'alltime' ? 5 : 4}" class="p-6 text-center text-purple-400 font-mono-tech text-[10px] animate-pulse">
-        CONNECTING TO GLOBAL DATABASE & FETCHING LIVE STANDINGS...
+        LOADING GLOBAL STANDINGS...
       </td>
     </tr>
   `;
 
   let rows = [];
+  let source = 'demo';
   try {
-    const binId = BINS[type];
-    if (binId) {
-      const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          rows = data.map((item, idx) => ({
-            rank: idx + 1,
-            name: item.name,
-            team: item.team,
-            accuracy: item.accuracy,
-            score: item.scoreText,
-            isUser: item.name.toUpperCase() === activeHandle.toUpperCase()
-          }));
-        }
-      }
-    }
+    const result = await getLeaderboardRows(type, activeHandle);
+    rows = result.rows;
+    source = result.source;
   } catch (err) {
-    console.warn("Error loading global leaderboard, falling back to local mocks:", err);
-  }
-
-  // Fallback to local mock data if fetch failed or returned nothing
-  if (rows.length === 0) {
-    if (type === 'weekly') {
-      rows = [
-        { rank: 1, name: "Pat Hoberg", accuracy: "98.8%", score: "990 pts" },
-        { rank: 2, name: "Miller_Crew", accuracy: "97.2%", score: "972 pts" },
-        { rank: 3, name: "West_Coast_Ump", accuracy: "95.5%", score: "955 pts" },
-        { rank: 4, name: "Umpire_Pro", accuracy: "94.1%", score: "941 pts" },
-        { rank: 5, name: "Angel_H", accuracy: "81.2%", score: "812 pts" },
-      ];
-    } else if (type === 'daily') {
-      rows = [
-        { rank: 1, name: "PerfectCall_99", accuracy: "98.5%", score: "24 Streak" },
-        { rank: 2, name: "LaserEye", accuracy: "96.4%", score: "19 Streak" },
-        { rank: 3, name: "BlueLover", accuracy: "92.0%", score: "12 Streak" },
-        { rank: 4, name: "RoboUmpWho", accuracy: "91.5%", score: "10 Streak" },
-        { rank: 5, name: "ZoneMaster", accuracy: "89.2%", score: "8 Streak" },
-      ];
-    } else if (type === 'alltime') {
-      rows = [
-        { rank: 1, name: "Pat Hoberg", team: "Orioles,Yankees,Dodgers,Red Sox,Astros", accuracy: "96.8%", score: "5 Teams (5096 pts)" },
-        { rank: 2, name: "ZoneMaster", team: "Tigers,Twins,Orioles,Yankees", accuracy: "94.2%", score: "4 Teams (4094 pts)" },
-        { rank: 3, name: "LaserEye", team: "Rangers,Dodgers,Giants", accuracy: "93.9%", score: "3 Teams (3093 pts)" },
-        { rank: 4, name: "PerfectCall_99", team: "Yankees,Mets", accuracy: "95.5%", score: "2 Teams (2095 pts)" },
-        { rank: 5, name: "RoboUmpWho", team: "Red Sox", accuracy: "92.8%", score: "1 Team (1092 pts)" },
-      ];
-    }
+    console.warn("Error loading leaderboard:", err);
+    rows = await buildDemoLeaderboard(type, activeHandle);
+    source = 'demo';
   }
 
   leaderboardTableBody.innerHTML = '';
@@ -6814,6 +8797,16 @@ async function renderLeaderboard(type) {
     tr.innerHTML = rowContent;
     leaderboardTableBody.appendChild(tr);
   });
+
+  if (source === 'demo') {
+    const note = document.createElement('tr');
+    note.innerHTML = `
+      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-2 text-center text-[9px] font-mono-tech text-gray-500 uppercase tracking-wider">
+        Demo standings shown — connect to sync service for live global boards
+      </td>
+    `;
+    leaderboardTableBody.appendChild(note);
+  }
 }
 
 function hashString(str) {
@@ -7109,32 +9102,213 @@ function renderDailyCompeteDashboard() {
   });
 }
 
+function getTeamAbbreviation(teamName) {
+  if (!teamName) return 'UNK';
+  const name = teamName.toLowerCase();
+  if (name.includes('rays')) return 'TB';
+  if (name.includes('orioles')) return 'BAL';
+  if (name.includes('red sox')) return 'BOS';
+  if (name.includes('yankees')) return 'NYY';
+  if (name.includes('blue jays')) return 'TOR';
+  if (name.includes('white sox')) return 'CWS';
+  if (name.includes('guardians')) return 'CLE';
+  if (name.includes('tigers')) return 'DET';
+  if (name.includes('royals')) return 'KC';
+  if (name.includes('twins')) return 'MIN';
+  if (name.includes('astros')) return 'HOU';
+  if (name.includes('angels')) return 'LAA';
+  if (name.includes('athletics') || name.includes('athletics')) return 'OAK';
+  if (name.includes('mariners')) return 'SEA';
+  if (name.includes('rangers')) return 'TEX';
+  if (name.includes('braves')) return 'ATL';
+  if (name.includes('marlins')) return 'MIA';
+  if (name.includes('mets')) return 'NYM';
+  if (name.includes('phillies')) return 'PHI';
+  if (name.includes('nationals')) return 'WSH';
+  if (name.includes('cubs')) return 'CHC';
+  if (name.includes('reds')) return 'CIN';
+  if (name.includes('brewers')) return 'MIL';
+  if (name.includes('pirates')) return 'PIT';
+  if (name.includes('cardinals')) return 'STL';
+  if (name.includes('diamondbacks') || name.includes('d-backs')) return 'AZ';
+  if (name.includes('rockies')) return 'COL';
+  if (name.includes('dodgers')) return 'LAD';
+  if (name.includes('padres')) return 'SD';
+  if (name.includes('giants')) return 'SF';
+  
+  const words = teamName.split(' ');
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return teamName.substring(0, 3).toUpperCase();
+}
+
+async function fetchGlobalLeaderboard(type, username) {
+  const binKey = type === 'streak' ? 'daily' : type;
+  const binId = BINS[binKey];
+  if (!binId) return null;
+
+  try {
+    const res = await fetch(`${JSONBIN_BASE_URL}/${binId}`);
+    if (!res.ok) return null;
+    const list = await res.json();
+    if (!Array.isArray(list) || list.length === 0) return null;
+
+    const normalizedUser = normalizeHandle(username);
+    const sorted = [...list].sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
+
+    return sorted.slice(0, 50).map((item, idx) => {
+      const isUser = normalizeHandle(item.name) === normalizedUser;
+      const accuracy = typeof item.accuracy === 'string'
+        ? item.accuracy
+        : `${item.accuracy ?? 0}%`;
+      return {
+        rank: idx + 1,
+        name: isUser ? `${normalizedUser} (YOU)` : item.name,
+        accuracy,
+        score: item.scoreText || String(item.scoreRaw ?? ''),
+        team: item.team || 'None',
+        isUser
+      };
+    });
+  } catch (err) {
+    console.warn(`Leaderboard fetch failed (${type}):`, err);
+    return null;
+  }
+}
+
+async function getLeaderboardRows(type, username) {
+  const live = await fetchGlobalLeaderboard(type, username);
+  if (live && live.length > 0) {
+    return { rows: live, source: 'live' };
+  }
+  const rows = await buildDemoLeaderboard(type, username);
+  return { rows, source: 'demo' };
+}
+
+async function buildDemoLeaderboard(type, username) {
+  const profile = await getGlobalUserStats(username);
+  let rows = [];
+  
+  if (type === 'weekly') {
+    let rawList = [
+      { name: "Pat Hoberg", accuracy: 98.8, scoreVal: 990, score: "990 pts" },
+      { name: "Miller_Crew", accuracy: 97.2, scoreVal: 972, score: "972 pts" },
+      { name: "West_Coast_Ump", accuracy: 95.5, scoreVal: 955, score: "955 pts" },
+      { name: "Umpire_Pro", accuracy: 94.1, scoreVal: 941, score: "941 pts" },
+      { name: "Angel_H", accuracy: 81.2, scoreVal: 812, score: "812 pts" },
+    ];
+    
+    let userAcc = 0;
+    let userScore = 0;
+    if (profile) {
+      userAcc = profile.overallAccuracy ? parseFloat(profile.overallAccuracy) : 0;
+      userScore = Math.round(userAcc * 10);
+    }
+    
+    rawList.push({
+      name: username.toUpperCase() + " (YOU)",
+      accuracy: userAcc || 0,
+      scoreVal: userScore || 0,
+      score: `${userScore || 0} pts`,
+      isUser: true
+    });
+    
+    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
+    
+    rows = rawList.map((r, idx) => ({
+      rank: idx + 1,
+      name: r.name,
+      accuracy: `${r.accuracy}%`,
+      score: r.score,
+      isUser: r.isUser
+    }));
+    
+  } else if (type === 'daily' || type === 'streak') {
+    let rawList = [
+      { name: "PerfectCall_99", accuracy: 98.5, scoreVal: 24, score: "24 Streak" },
+      { name: "LaserEye", accuracy: 96.4, scoreVal: 19, score: "19 Streak" },
+      { name: "BlueLover", accuracy: 92.0, scoreVal: 12, score: "12 Streak" },
+      { name: "RoboUmpWho", accuracy: 91.5, scoreVal: 10, score: "10 Streak" },
+      { name: "ZoneMaster", accuracy: 89.2, scoreVal: 8, score: "8 Streak" },
+    ];
+    
+    let userStreak = profile ? profile.maxStreak || 0 : 0;
+    
+    rawList.push({
+      name: username.toUpperCase() + " (YOU)",
+      accuracy: profile && profile.overallAccuracy ? parseFloat(profile.overallAccuracy) : 90.0,
+      scoreVal: userStreak,
+      score: `${userStreak} Streak`,
+      isUser: true
+    });
+    
+    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
+    
+    rows = rawList.map((r, idx) => ({
+      rank: idx + 1,
+      name: r.name,
+      accuracy: `${r.accuracy}%`,
+      score: r.score,
+      isUser: r.isUser
+    }));
+    
+  } else {
+    let rawList = [
+      { name: "Pat Hoberg", team: "Orioles,Yankees,Dodgers,Red Sox,Astros", accuracy: "96.8%", scoreVal: 5096, score: "5 Teams (5096 pts)" },
+      { name: "ZoneMaster", team: "Tigers,Twins,Orioles,Yankees", accuracy: "94.2%", scoreVal: 4094, score: "4 Teams (4094 pts)" },
+      { name: "LaserEye", team: "Rangers,Dodgers,Giants", accuracy: "93.9%", scoreVal: 3093, score: "3 Teams (3093 pts)" },
+      { name: "PerfectCall_99", team: "Yankees,Mets", accuracy: "95.5%", scoreVal: 2095, score: "2 Teams (2095 pts)" },
+      { name: "RoboUmpWho", team: "Red Sox", accuracy: "92.8%", scoreVal: 1092, score: "1 Team (1092 pts)" },
+    ];
+    
+    let completedCount = profile ? (profile.completedWeekly || 0) : 0;
+    let xp = profile ? (profile.xp || 0) : 0;
+    
+    rawList.push({
+      name: username.toUpperCase() + " (YOU)",
+      team: profile && profile.favoriteTeam ? profile.favoriteTeam : "None",
+      accuracy: profile && profile.overallAccuracy ? `${profile.overallAccuracy}%` : "0%",
+      scoreVal: xp,
+      score: `${completedCount} Teams (${xp} pts)`,
+      isUser: true
+    });
+    
+    rawList.sort((a, b) => b.scoreVal - a.scoreVal);
+    
+    rows = rawList.map((r, idx) => ({
+      rank: idx + 1,
+      name: r.name,
+      team: r.team,
+      accuracy: r.accuracy,
+      score: r.score,
+      isUser: r.isUser
+    }));
+  }
+  
+  return rows;
+}
+
 async function fetchYesterdayGames() {
-  const team = activeFavoriteTeam && activeFavoriteTeam !== "none" ? activeFavoriteTeam : "Orioles";
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0];
   
-  let teamsToFetch = [];
+  const games = await fetchAllGamesForDate(dateStr);
+  if (!games || games.length === 0) return [];
+
+  // Sort: Favorite team first, then others
   if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
-    teamsToFetch = [activeFavoriteTeam];
+    const favLower = activeFavoriteTeam.toLowerCase();
+    games.forEach(g => {
+      g.isFavorite = (g.awayTeam.toLowerCase().includes(favLower) || g.homeTeam.toLowerCase().includes(favLower));
+    });
+    games.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
   } else {
-    teamsToFetch = ["Orioles", "Yankees", "Red Sox", "Dodgers", "Braves"];
+    games.forEach(g => { g.isFavorite = false; });
   }
-  
-  const allGames = [];
-  const seenPks = new Set();
-  
-  for (const tName of teamsToFetch) {
-    const games = await fetchTeamSchedule(tName, dateStr, dateStr);
-    for (const g of games) {
-      if (!seenPks.has(g.gamePk)) {
-        seenPks.add(g.gamePk);
-        allGames.push(g);
-      }
-    }
-  }
-  return allGames;
+
+  return games;
 }
 
 async function getGamePitchesWithCache(gamePk) {
@@ -7173,11 +9347,28 @@ async function openGameDetailModal(game) {
   if (detailModalAbGrid) detailModalAbGrid.innerHTML = '';
   
   try {
-    const allAtBats = await getGamePitchesWithCache(game.gamePk);
+    let allAtBats = await getGamePitchesWithCache(game.gamePk);
     if (!allAtBats || allAtBats.length === 0) {
       if (previewModalAbs) previewModalAbs.textContent = "0 AT-BATS";
       if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
       return;
+    }
+
+    // Regroup if flat array from legacy cache formats
+    if (allAtBats.length > 0 && !Array.isArray(allAtBats[0])) {
+      const grouped = [];
+      let current = [];
+      let lastBat = null;
+      allAtBats.forEach(p => {
+        if (lastBat && p.batter !== lastBat && current.length > 0) {
+          grouped.push(current);
+          current = [];
+        }
+        current.push(p);
+        lastBat = p.batter;
+      });
+      if (current.length > 0) grouped.push(current);
+      allAtBats = grouped;
     }
     
     if (previewModalAbs) previewModalAbs.textContent = `${allAtBats.length} AT-BATS`;
@@ -7185,7 +9376,7 @@ async function openGameDetailModal(game) {
     if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
     
     if (detailModalInningsRow) {
-      const innings = [...new Set(allAtBats.map(ab => ab[0]?.inning))].filter(Boolean).sort((a,b) => a - b);
+      const innings = [...new Set(allAtBats.map(ab => ab && ab[0] ? ab[0].inning : null))].filter(Boolean).sort((a,b) => a - b);
       innings.forEach(inn => {
         const btn = document.createElement('button');
         btn.className = 'px-3 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-[9px] font-mono-tech font-bold hover:bg-purple-600/30 hover:border-purple-500/50 transition-all text-white cursor-pointer pointer-events-auto shrink-0';
@@ -7288,26 +9479,21 @@ function selectCondensedAtBats(allAtBats, limit = 15) {
 }
 
 async function findGamesForDate(dateStr) {
-  let teamsToFetch = [];
+  const games = await fetchAllGamesForDate(dateStr);
+  if (!games || games.length === 0) return [];
+
+  // Sort: Favorite team first, then others
   if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
-    teamsToFetch = [activeFavoriteTeam];
+    const favLower = activeFavoriteTeam.toLowerCase();
+    games.forEach(g => {
+      g.isFavorite = (g.awayTeam.toLowerCase().includes(favLower) || g.homeTeam.toLowerCase().includes(favLower));
+    });
+    games.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
   } else {
-    teamsToFetch = ["Orioles", "Yankees", "Red Sox", "Dodgers", "Braves"];
+    games.forEach(g => { g.isFavorite = false; });
   }
-  
-  const allGames = [];
-  const seenPks = new Set();
-  
-  for (const tName of teamsToFetch) {
-    const games = await fetchTeamSchedule(tName, dateStr, dateStr);
-    for (const g of games) {
-      if (!seenPks.has(g.gamePk)) {
-        seenPks.add(g.gamePk);
-        allGames.push(g);
-      }
-    }
-  }
-  return allGames;
+
+  return games;
 }
 
 async function handleFindGames() {
@@ -7332,30 +9518,38 @@ async function handleFindGames() {
     gameFinderResults.innerHTML = '';
     games.forEach(g => {
       const card = document.createElement('div');
-      card.className = 'glass-panel p-3 rounded-lg border border-white/5 flex flex-col justify-between hover:border-blue-500/50 hover:scale-[1.01] transition-all select-none gap-2 text-left';
+      card.className = g.isFavorite
+        ? 'glass-panel p-2.5 rounded-lg border-2 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.15)] flex items-center justify-between hover:border-amber-500/80 hover:scale-[1.01] transition-all select-none gap-2 text-left cursor-pointer'
+        : 'glass-panel p-2.5 rounded-lg border border-white/5 flex items-center justify-between hover:border-blue-500/50 hover:scale-[1.01] transition-all select-none gap-2 text-left cursor-pointer';
       
+      const awayLogo = getTeamLogoUrl(g.awayTeam);
+      const homeLogo = getTeamLogoUrl(g.homeTeam);
+      const awayAbbr = getTeamAbbreviation(g.awayTeam);
+      const homeAbbr = getTeamAbbreviation(g.homeTeam);
+
       card.innerHTML = `
-        <div class="flex justify-between items-center text-[8px] font-mono-tech text-gray-400">
-          <span>${g.venue}</span>
+        <div class="flex items-center gap-1.5 flex-1">
+          ${g.isFavorite ? '<span class="text-amber-400 text-xs">⭐</span>' : ''}
+          <img src="${awayLogo}" class="w-5 h-5 object-contain bg-slate-950/40 rounded-full p-0.5" />
+          <span class="text-xs font-black text-white">${awayAbbr}</span>
+          <span class="text-xs font-mono-tech font-bold text-gray-300">${g.awayScore}</span>
         </div>
-        <div class="text-[10px] font-black text-white uppercase">${g.awayTeam} (${g.awayScore}) @ ${g.homeTeam} (${g.homeScore})</div>
-        <div class="flex justify-between items-center text-[8px] font-mono-tech mt-1 pt-1.5 border-t border-white/5">
-          <span class="text-emerald-400 font-bold">${g.status.toUpperCase()}</span>
-          <button class="btn-inspect-game-find px-2 py-0.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-[8px] font-bold uppercase transition-all cursor-pointer pointer-events-auto" data-gamepk="${g.gamePk}">Inspect</button>
+        <div class="flex flex-col items-center px-1">
+          <span class="text-[9px] font-mono-tech font-bold text-gray-500">@</span>
+          <span class="text-[9px] font-mono-tech text-emerald-400 font-bold uppercase whitespace-nowrap">${g.status.toUpperCase()}</span>
+        </div>
+        <div class="flex items-center gap-1.5 justify-end flex-1">
+          <span class="text-xs font-mono-tech font-bold text-gray-300">${g.homeScore}</span>
+          <span class="text-xs font-black text-white">${homeAbbr}</span>
+          <img src="${homeLogo}" class="w-5 h-5 object-contain bg-slate-950/40 rounded-full p-0.5" />
         </div>
       `;
       
-      gameFinderResults.appendChild(card);
-    });
-    
-    gameFinderResults.querySelectorAll('.btn-inspect-game-find').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const gamePk = e.target.getAttribute('data-gamepk');
-        const game = games.find(x => String(x.gamePk) === gamePk);
-        if (game) {
-          await openGameDetailModal(game);
-        }
+      card.addEventListener('click', async () => {
+        await openGameDetailModal(g);
       });
+      
+      gameFinderResults.appendChild(card);
     });
   } catch (e) {
     console.error(e);
@@ -7383,47 +9577,40 @@ async function loadPlayTabRecentGames() {
     recentGamesGrid.innerHTML = '';
     games.forEach(g => {
       const card = document.createElement('div');
-      card.className = 'glass-panel p-4 rounded-xl border border-white/10 flex flex-col justify-between hover:border-purple-500/50 hover:scale-[1.01] transition-all select-none gap-3';
+      card.className = g.isFavorite
+        ? 'glass-panel p-3.5 rounded-xl border-2 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)] flex items-center justify-between hover:border-amber-500/80 hover:scale-[1.01] transition-all select-none gap-3 cursor-pointer'
+        : 'glass-panel p-3.5 rounded-xl border border-white/10 flex items-center justify-between hover:border-purple-500/50 hover:scale-[1.01] transition-all select-none gap-3 cursor-pointer';
       
       const awayLogo = getTeamLogoUrl(g.awayTeam);
       const homeLogo = getTeamLogoUrl(g.homeTeam);
+      const awayAbbr = getTeamAbbreviation(g.awayTeam);
+      const homeAbbr = getTeamAbbreviation(g.homeTeam);
       
       card.innerHTML = `
-        <div class="flex justify-between items-center text-[9px] font-mono-tech text-gray-400">
-          <span class="text-purple-400 font-bold">LIVE METRIC</span>
-          <span>${g.venue}</span>
+        <div class="flex items-center gap-2 flex-1">
+          ${g.isFavorite ? '<span class="text-amber-400 text-xs">⭐</span>' : ''}
+          <img src="${awayLogo}" class="w-6 h-6 object-contain bg-slate-950/40 rounded-full p-0.5" />
+          <span class="text-xs md:text-sm font-black text-white uppercase">${awayAbbr}</span>
+          <span class="text-xs md:text-sm font-mono-tech font-black text-gray-300">${g.awayScore}</span>
         </div>
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <img src="${awayLogo}" class="w-6 h-6 object-contain bg-slate-900/60 rounded-full p-0.5" />
-            <span class="text-xs font-black text-white uppercase">${g.awayTeam}</span>
-          </div>
-          <span class="text-xs font-mono-tech font-black text-white">${g.awayScore}</span>
+        
+        <div class="flex flex-col items-center px-2">
+          <span class="text-[9px] font-mono-tech font-bold text-gray-500">@</span>
+          <span class="text-[10px] font-mono-tech text-emerald-400 font-bold uppercase whitespace-nowrap">${g.status.toUpperCase()}</span>
         </div>
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <img src="${homeLogo}" class="w-6 h-6 object-contain bg-slate-900/60 rounded-full p-0.5" />
-            <span class="text-xs font-black text-white uppercase">${g.homeTeam}</span>
-          </div>
-          <span class="text-xs font-mono-tech font-black text-white">${g.homeScore}</span>
-        </div>
-        <div class="flex justify-between items-center text-[9px] font-mono-tech mt-1 pt-2 border-t border-white/5">
-          <span class="text-emerald-400 font-bold">${g.status.toUpperCase()}</span>
-          <button class="btn-inspect-game px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[9px] font-bold uppercase transition-all cursor-pointer pointer-events-auto" data-gamepk="${g.gamePk}">Inspect Game</button>
+
+        <div class="flex items-center gap-2 justify-end flex-1">
+          <span class="text-xs md:text-sm font-mono-tech font-black text-gray-300">${g.homeScore}</span>
+          <span class="text-xs md:text-sm font-black text-white uppercase">${homeAbbr}</span>
+          <img src="${homeLogo}" class="w-6 h-6 object-contain bg-slate-950/40 rounded-full p-0.5" />
         </div>
       `;
       
-      recentGamesGrid.appendChild(card);
-    });
-
-    recentGamesGrid.querySelectorAll('.btn-inspect-game').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const gamePk = e.target.getAttribute('data-gamepk');
-        const game = games.find(x => String(x.gamePk) === gamePk);
-        if (game) {
-          await openGameDetailModal(game);
-        }
+      card.addEventListener('click', async () => {
+        await openGameDetailModal(g);
       });
+      
+      recentGamesGrid.appendChild(card);
     });
   } catch (e) {
     console.error(e);
@@ -7436,34 +9623,42 @@ async function awardXP(amount) {
   if (!username) return;
 
   const stats = await getGlobalUserStats(username);
-  stats.xp = (stats.xp || 0) + amount;
-  
-  const oldLevel = stats.level || 1;
-  const newLevel = Math.floor(stats.xp / 1000) + 1;
+  const oldXp = stats.xp || 0;
+  const oldLevel = getLevelFromXp(oldXp);
+  stats.xp = oldXp + amount;
+  const newLevel = getLevelFromXp(stats.xp);
   stats.level = newLevel;
 
   await saveGlobalUserStats(username, stats);
   updateProfileStatsUI();
 
   if (newLevel > oldLevel) {
-    showLevelUpToast(newLevel);
+    showLevelUpCelebration(newLevel, oldLevel);
   }
 }
 
-function showFloatingXP(amount) {
+function showFloatingXP(amount, customText) {
   const container = document.body;
   const el = document.createElement('div');
-  el.textContent = `+${amount} XP`;
-  el.className = 'fixed text-emerald-400 font-mono-tech font-black text-xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2';
+  el.textContent = customText || `+${amount} XP`;
+  
+  if (customText) {
+    el.className = 'fixed text-yellow-300 font-mono-tech font-black text-2xl md:text-3xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_15px_rgba(234,179,8,0.9)]';
+  } else {
+    el.className = 'fixed text-emerald-400 font-mono-tech font-black text-xl md:text-2xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_12px_rgba(16,185,129,0.8)]';
+  }
   
   el.style.left = '50%';
-  el.style.top = '60%';
+  el.style.top = '52%';
   el.style.opacity = '1';
   
   container.appendChild(el);
   
+  // Force a browser reflow/repaint to guarantee CSS transition works
+  el.offsetHeight;
+  
   requestAnimationFrame(() => {
-    el.style.top = '45%';
+    el.style.top = '32%';
     el.style.opacity = '0';
   });
   
@@ -7530,7 +9725,14 @@ async function saveGameProgress() {
     })),
     weeklyPlaylistABs,
     activeDailyDate,
-    activeDailyTeam
+    activeDailyTeam,
+    pitchesList,
+    totalPitchesCount,
+    totalBattersFaced,
+    totalSessionK,
+    totalSessionBB,
+    totalSessionH,
+    totalSessionOuts
   };
   
   await saveActiveSession(username, sessionData);
@@ -7707,5 +9909,329 @@ function hideGamePreviewModal() {
     previewModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
     previewModalOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
   }
+}
+
+async function openChallengeDetailModal(type) {
+  if (challengeDetailModalOverlay) {
+    challengeDetailModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+    challengeDetailModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
+
+  const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
+  const profile = await getProfile(username);
+  
+  if (type === 'weekly') {
+    if (challengeDetailTitle) challengeDetailTitle.textContent = "WEEKLY CHALLENGE INFO";
+    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = "MLB CURATED MATCHUPS";
+    if (challengeDetailDesc) challengeDetailDesc.textContent = "Analyze pitch-by-pitch datasets sourced directly from controversial called strikes and balls. Complete all matchups to log your score globally.";
+    
+    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = "5 Featured Games";
+    if (challengeDetailBestStreak) challengeDetailBestStreak.textContent = "N/A (Score Based)";
+    if (challengeDetailCompleted) challengeDetailCompleted.textContent = profile ? `${profile.completedWeekly || 0} Runs` : "0 Runs";
+    
+    if (btnChallengeDetailPlay) {
+      btnChallengeDetailPlay.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        if (btnStartWeeklyChallenge) btnStartWeeklyChallenge.click();
+      };
+    }
+
+    if (challengeDetailLeaderboardBody) {
+      const rows = (await getLeaderboardRows('weekly', username)).rows;
+      challengeDetailLeaderboardBody.innerHTML = rows.map(r => {
+        let rankHtml = `#${r.rank}`;
+        if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇</span>`;
+        else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈</span>`;
+        else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉</span>`;
+        
+        return `
+          <tr class="border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}">
+            <td class="p-3">${rankHtml}</td>
+            <td class="p-3 uppercase tracking-wider ${r.isUser ? 'text-purple-400 font-bold' : ''}">${r.name}</td>
+            <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
+            <td class="p-3 text-center font-bold">${r.score}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  } else {
+    if (challengeDetailTitle) challengeDetailTitle.textContent = "STREAK CHALLENGE INFO";
+    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = "BORDERLINE PITCH BLITZ";
+    if (challengeDetailDesc) challengeDetailDesc.textContent = "Test your focus against consecutive borderline pitches. Make one incorrect call and the run is over. Playable infinitely!";
+    
+    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = "Controversial Curation";
+    if (challengeDetailBestStreak) challengeDetailBestStreak.textContent = profile ? `${profile.maxStreak || 0} Pitches` : "0 Pitches";
+    if (challengeDetailCompleted) challengeDetailCompleted.textContent = "Infinite Retries";
+    
+    if (btnChallengeDetailPlay) {
+      btnChallengeDetailPlay.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        if (btnStartDailyStreak) btnStartDailyStreak.click();
+      };
+    }
+
+    if (challengeDetailLeaderboardBody) {
+      const rows = (await getLeaderboardRows('daily', username)).rows;
+      challengeDetailLeaderboardBody.innerHTML = rows.map(r => {
+        let rankHtml = `#${r.rank}`;
+        if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇</span>`;
+        else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈</span>`;
+        else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉</span>`;
+        
+        return `
+          <tr class="border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}">
+            <td class="p-3">${rankHtml}</td>
+            <td class="p-3 uppercase tracking-wider ${r.isUser ? 'text-purple-400 font-bold' : ''}">${r.name}</td>
+            <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
+            <td class="p-3 text-center font-bold text-amber-400">${r.score}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+}
+
+function hideChallengeDetailModal() {
+  if (challengeDetailModalOverlay) {
+    challengeDetailModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+    challengeDetailModalOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+  }
+}
+
+async function runAutomatedIntegrationTest() {
+  console.log("TEST: Starting integration test runner.");
+  
+  // Step 1: Handle Login if needed
+  const loggedIn = !!localStorage.getItem('ump_username');
+  if (!loggedIn) {
+    console.log("TEST: User not logged in. Attempting auto-login.");
+    if (loginHandleInput && loginPinInput && btnWelcomeStart) {
+      loginHandleInput.value = "TEST_UMP";
+      loginPinInput.value = "1234";
+      btnWelcomeStart.click();
+      console.log("TEST: Welcome start clicked.");
+      
+      // Wait for login confirm box if handle is new
+      await new Promise(r => setTimeout(r, 600));
+      if (loginConfirmBox && !loginConfirmBox.classList.contains('hidden')) {
+        const btnCreate = document.getElementById('btn-login-confirm-create');
+        if (btnCreate) {
+          btnCreate.click();
+          console.log("TEST: Confirm profile creation clicked.");
+        }
+      }
+    } else {
+      console.log("TEST: ERROR - Login fields not found.");
+      return;
+    }
+  } else {
+    console.log("TEST: User already logged in as: " + localStorage.getItem('ump_username'));
+    if (btnWelcomeStart) {
+      btnWelcomeStart.click();
+      console.log("TEST: Welcome start clicked (resume).");
+    }
+  }
+
+  // Step 2: Wait for state change to STATES.START
+  console.log("TEST: Waiting for transition to STATES.START...");
+  let maxWait = 30; // 3 seconds
+  while (currentState !== STATES.START && maxWait > 0) {
+    await new Promise(r => setTimeout(r, 100));
+    maxWait--;
+  }
+  
+  if (currentState !== STATES.START) {
+    // If favorite team select is showing
+    if (currentState === STATES.TEAM_SELECT) {
+      console.log("TEST: In TEAM_SELECT state. Selecting favorite team.");
+      selectedTeamId = 'BAL'; // Select Orioles
+      if (btnConfirmTeam) {
+        btnConfirmTeam.click();
+        console.log("TEST: Confirm team clicked.");
+      }
+      
+      maxWait = 30;
+      while (currentState !== STATES.START && maxWait > 0) {
+        await new Promise(r => setTimeout(r, 100));
+        maxWait--;
+      }
+    }
+  }
+  
+  if (currentState !== STATES.START) {
+    console.log("TEST: ERROR - Failed to transition to STATES.START. CurrentState: " + currentState);
+    return;
+  }
+  console.log("TEST: Reached STATES.START successfully.");
+  
+  // Verify camera was reset to umpire
+  if (getActiveCameraName() !== 'umpire') {
+    console.log("TEST: ERROR - Camera is not umpire on dashboard! Active: " + getActiveCameraName());
+    return;
+  }
+  console.log("TEST: Camera is correctly set to umpire on dashboard.");
+
+  // Step 3: Start Weekly Challenge
+  if (btnStartWeeklyChallenge) {
+    btnStartWeeklyChallenge.click();
+    console.log("TEST: Weekly Challenge button clicked.");
+  } else {
+    console.log("TEST: ERROR - Weekly challenge button not found.");
+    return;
+  }
+
+  // Wait for loading weekly challenge (transitions to STATES.IDLE)
+  console.log("TEST: Waiting for transition to STATES.IDLE (At-Bat preview)...");
+  maxWait = 30;
+  while (currentState !== STATES.IDLE && maxWait > 0) {
+    await new Promise(r => setTimeout(r, 100));
+    maxWait--;
+  }
+  
+  if (currentState !== STATES.IDLE) {
+    console.log("TEST: ERROR - Failed to reach STATES.IDLE. CurrentState: " + currentState);
+    return;
+  }
+  console.log("TEST: Reached STATES.IDLE (matchup preview) successfully.");
+
+  // Step 4: Confirm At-Bat Start (spacebar or btnAbStartConfirm click)
+  await new Promise(r => setTimeout(r, 500));
+  if (btnAbStartConfirm) {
+    btnAbStartConfirm.click();
+    console.log("TEST: At-Bat Start Confirm button clicked.");
+  } else {
+    console.log("TEST: ERROR - btnAbStartConfirm button not found.");
+    return;
+  }
+
+  // Step 5: Wait for Pitch Flight and DECISION_PENDING
+  console.log("TEST: Waiting for pitch flight to complete (STATES.DECISION_PENDING)...");
+  maxWait = 60; // 6 seconds
+  while (currentState !== STATES.DECISION_PENDING && maxWait > 0) {
+    await new Promise(r => setTimeout(r, 100));
+    maxWait--;
+  }
+
+  if (currentState !== STATES.DECISION_PENDING) {
+    console.log("TEST: ERROR - Failed to reach DECISION_PENDING. CurrentState: " + currentState);
+    return;
+  }
+  console.log("TEST: Reached DECISION_PENDING successfully.");
+
+  // Step 6: Submit User Decision
+  submitUserDecision('S');
+  console.log("TEST: Submitted Strike decision.");
+
+  // Step 7: Wait for ABS Replay (STATES.ABS_REVIEW)
+  console.log("TEST: Waiting for transition to STATES.ABS_REVIEW...");
+  maxWait = 20;
+  while (currentState !== STATES.ABS_REVIEW && maxWait > 0) {
+    await new Promise(r => setTimeout(r, 100));
+    maxWait--;
+  }
+
+  if (currentState !== STATES.ABS_REVIEW) {
+    console.log("TEST: ERROR - Failed to reach STATES.ABS_REVIEW. CurrentState: " + currentState);
+    return;
+  }
+  console.log("TEST: Reached STATES.ABS_REVIEW successfully.");
+
+  // Step 8: Play through the At-Bat until complete
+  console.log("TEST: Playing remaining pitches until AB completes...");
+  let safetyLoop = 0;
+  while (!activeAbEnded && safetyLoop < 12) {
+    safetyLoop++;
+    // If we are in ABS_REVIEW, advance it
+    if (currentState === STATES.ABS_REVIEW) {
+      if (btnQuickContinue && btnQuickContinue.classList.contains('opacity-100')) {
+        await new Promise(r => setTimeout(r, 1000));
+        btnQuickContinue.click();
+        console.log("TEST: Clicked quick review continue.");
+      } else {
+        await new Promise(r => setTimeout(r, 500));
+        advanceGameFlow();
+        console.log("TEST: Called advanceGameFlow manually.");
+      }
+    }
+    
+    // Wait for state to change to IDLE
+    maxWait = 30;
+    while (currentState === STATES.ABS_REVIEW && maxWait > 0) {
+      await new Promise(r => setTimeout(r, 100));
+      maxWait--;
+    }
+    
+    if (activeAbEnded) break;
+
+    // If IDLE, confirm start of pitch/preview
+    if (currentState === STATES.IDLE) {
+      await new Promise(r => setTimeout(r, 500));
+      if (abStartOverlay && abStartOverlay.classList.contains('opacity-100')) {
+        btnAbStartConfirm.click();
+        console.log("TEST: Confirmed next pitch start overlay.");
+      }
+      
+      // Wait for decision pending
+      console.log("TEST: Waiting for decision pending...");
+      maxWait = 60;
+      while (currentState !== STATES.DECISION_PENDING && !activeAbEnded && maxWait > 0) {
+        await new Promise(r => setTimeout(r, 100));
+        maxWait--;
+      }
+      
+      if (activeAbEnded) break;
+      
+      if (currentState === STATES.DECISION_PENDING) {
+        submitUserDecision('S');
+        console.log("TEST: Submitted Strike decision on next pitch.");
+      }
+    }
+  }
+
+  // Step 9: Verify At-Bat complete and Post-AB summary overlay shows up
+  console.log("TEST: At-Bat ended. Waiting for summary overlay...");
+  maxWait = 40; // 4 seconds
+  while ((!abSummaryOverlay || !abSummaryOverlay.classList.contains('opacity-100')) && maxWait > 0) {
+    await new Promise(r => setTimeout(r, 100));
+    maxWait--;
+  }
+
+  if (!abSummaryOverlay || !abSummaryOverlay.classList.contains('opacity-100')) {
+    console.log("TEST: ERROR - Post-AB summary overlay failed to appear!");
+    return;
+  }
+  console.log("TEST: SUCCESS - Post-AB summary overlay is visible.");
+
+  // Camera should stay on umpire view during summary (no end-of-AB rotation)
+  if (getActiveCameraName() !== 'umpire') {
+    console.log("TEST: ERROR - Camera is not umpire during summary! Active: " + getActiveCameraName());
+    return;
+  }
+  console.log("TEST: Camera correctly remains umpire during summary.");
+
+  // Step 10: Advance to next At-Bat
+  if (btnAbSummaryAdvance) {
+    btnAbSummaryAdvance.click();
+    console.log("TEST: Clicked Advance to Next AB.");
+  } else {
+    console.log("TEST: ERROR - btnAbSummaryAdvance not found.");
+    return;
+  }
+
+  // Wait for transition back to IDLE
+  await new Promise(r => setTimeout(r, 1000));
+  if (abSummaryOverlay.classList.contains('opacity-100')) {
+    console.log("TEST: ERROR - Summary overlay is still visible after clicking advance!");
+    return;
+  }
+  
+  if (currentState !== STATES.IDLE) {
+    console.log("TEST: ERROR - Current state is not STATES.IDLE after advancing. CurrentState: " + currentState);
+    return;
+  }
+
+  console.log("TEST: SUCCESS - All automated integration tests passed!");
 }
 

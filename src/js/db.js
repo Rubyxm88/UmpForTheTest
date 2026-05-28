@@ -1,6 +1,6 @@
 /**
  * IndexedDB Database Management Module for UmpSim3000
- * Handles high-reliability client-side storage, migration, and encryption.
+ * Handles high-reliability client-side storage, migration, and PIN hashing.
  */
 
 const DB_NAME = 'UmpSimDatabase';

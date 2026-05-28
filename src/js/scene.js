@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 
 let scene, renderer;
-let mainCamera, umpireCamera, sideCamera, topCamera;
+let mainCamera, umpireCamera, sideCamera, topCamera, summaryReviewCamera;
 let activeCamera;
 let isZoomedIn = false;
 let dimensionLineMesh = null;
+let dimensionLabelSprite = null;
+let dimensionTickGroup = null;
 
 export function setZoomedIn(zoomed) {
   isZoomedIn = zoomed;
@@ -16,6 +18,7 @@ let mannequinOpacity = 0.24;
 
 // Group containing all stadium/field meshes
 let fieldGroup;
+let summaryReviewGroup = null;
 
 // Gameplay meshes
 let ballMesh;
@@ -112,6 +115,9 @@ export function initScene(containerEl, canvasEl) {
   scene.background = new THREE.Color(0x06080b);
   scene.fog = new THREE.FogExp2(0x06080b, 0.012);
 
+  summaryReviewGroup = new THREE.Group();
+  scene.add(summaryReviewGroup);
+
   // 2. Setup Cameras
   const aspect = containerEl.clientWidth / containerEl.clientHeight;
   
@@ -126,6 +132,10 @@ export function initScene(containerEl, canvasEl) {
   // Side Zoom Camera: looking directly down the plate midpoint breakpoint from the side
   topCamera = new THREE.PerspectiveCamera(38, aspect, 0.1, 1000);
   topCamera.position.set(-5.8, 2.5, 0.7083);
+
+  // Summary Review Camera: side-front view zoomed tightly on the plate
+  summaryReviewCamera = new THREE.PerspectiveCamera(35, aspect, 0.1, 1000);
+  summaryReviewCamera.position.set(-4.2, 2.8, 5.0);
 
   // Main camera which interpolates towards active camera settings (wide angle matches umpire fov)
   mainCamera = new THREE.PerspectiveCamera(72, aspect, 0.1, 1000);
@@ -1869,6 +1879,11 @@ export function updateCameraTransition() {
     targetCameraPos.set(umpireXOffset * 0.35, zoneCenter + 0.15, -1.8);
     targetLook.set(0, zoneCenter, 0.7083);
     cameraTransitionSpeed = 0.08;
+  } else if (activeCamera === summaryReviewCamera) {
+    const zoneCenter = strikeZoneMesh ? strikeZoneMesh.position.y : 2.5;
+    targetCameraPos.set(-4.2, 2.8, 5.0);
+    targetLook.set(0, zoneCenter, 0.7083);
+    cameraTransitionSpeed = 0.08;
   } else if (strikeZoneMesh) {
     if (activeCamera === sideCamera || activeCamera === topCamera) {
       targetLook.set(0, strikeZoneMesh.position.y, 0.7083);
@@ -1901,8 +1916,38 @@ export function setCameraAngle(angleName) {
     activeCamera = topCamera;
     targetCameraPos.copy(topCamera.position);
     cameraTransitionSpeed = 0.12; 
+  } else if (angleName === 'summary-review') {
+    activeCamera = summaryReviewCamera;
+    targetCameraPos.copy(summaryReviewCamera.position);
+    cameraTransitionSpeed = 0.08;
   }
 }
+
+/**
+ * Returns the name of the active camera
+ */
+export function getActiveCameraName() {
+  if (activeCamera === umpireCamera) return 'umpire';
+  if (activeCamera === sideCamera) return 'side';
+  if (activeCamera === topCamera) return 'top';
+  if (activeCamera === summaryReviewCamera) return 'summary-review';
+  return 'unknown';
+}
+
+/**
+ * Updates camera position dynamically on the welcome screen to pan slowly
+ */
+export function updateWelcomeCamera(time) {
+  if (activeCamera === umpireCamera) {
+    umpireCamera.position.set(
+      umpireXOffset + Math.sin(time) * 1.6,
+      3.2 + Math.cos(time * 0.7) * 0.35,
+      -5.0 + Math.sin(time * 0.4) * 0.5
+    );
+    targetCameraPos.copy(umpireCamera.position);
+  }
+}
+
 
 /**
  * Draws a 3D line tracing the trajectory path of the pitch
@@ -2051,6 +2096,11 @@ export function onResize(width, height) {
   topCamera.aspect = aspect;
   topCamera.updateProjectionMatrix();
   
+  if (summaryReviewCamera) {
+    summaryReviewCamera.aspect = aspect;
+    summaryReviewCamera.updateProjectionMatrix();
+  }
+  
   mainCamera.aspect = aspect;
   mainCamera.updateProjectionMatrix();
   
@@ -2126,15 +2176,18 @@ export function drawDimensionLine(crossPos) {
     targetY = clamp(crossPos.y, yMin, yMax);
   }
   
-  const points = [];
-  points.push(new THREE.Vector3(crossPos.x, crossPos.y, 0.7083));
-  points.push(new THREE.Vector3(targetX, targetY, 0.7083));
+  const zPlane = 0.7083;
+  const startPt = new THREE.Vector3(crossPos.x, crossPos.y, zPlane);
+  const endPt = new THREE.Vector3(targetX, targetY, zPlane);
   
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  // --- 1. Dashed Leader Line ---
+  const linePoints = [startPt.clone(), endPt.clone()];
+  const geometry = new THREE.BufferGeometry().setFromPoints(linePoints);
   const isStrike = dist < 0;
+  const lineColor = isStrike ? 0x22c55e : 0xef4444;
   
   const material = new THREE.LineDashedMaterial({
-    color: isStrike ? 0x22c55e : 0xef4444, // Green for strike, Red for ball
+    color: lineColor,
     linewidth: 3.0,
     scale: 1.0,
     dashSize: 0.05,
@@ -2142,9 +2195,129 @@ export function drawDimensionLine(crossPos) {
   });
   
   dimensionLineMesh = new THREE.Line(geometry, material);
-  dimensionLineMesh.computeLineDistances(); // Required for dashed lines
+  dimensionLineMesh.computeLineDistances();
   dimensionLineMesh.name = "dimensionLine";
   scene.add(dimensionLineMesh);
+  
+  // --- 2. Perpendicular Tick Marks at Endpoints ---
+  dimensionTickGroup = new THREE.Group();
+  dimensionTickGroup.name = "dimensionTicks";
+  
+  const dx = endPt.x - startPt.x;
+  const dy = endPt.y - startPt.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  
+  if (len > 0.001) {
+    // Perpendicular direction
+    const perpX = -dy / len;
+    const perpY = dx / len;
+    const tickHalf = 0.06; // half-length of tick mark
+    
+    const tickMat = new THREE.LineBasicMaterial({ color: lineColor });
+    
+    // Tick at start point (ball crossing)
+    const tick1Pts = [
+      new THREE.Vector3(startPt.x + perpX * tickHalf, startPt.y + perpY * tickHalf, zPlane),
+      new THREE.Vector3(startPt.x - perpX * tickHalf, startPt.y - perpY * tickHalf, zPlane)
+    ];
+    const tick1Geo = new THREE.BufferGeometry().setFromPoints(tick1Pts);
+    const tick1 = new THREE.Line(tick1Geo, tickMat);
+    dimensionTickGroup.add(tick1);
+    
+    // Tick at end point (zone edge)
+    const tick2Pts = [
+      new THREE.Vector3(endPt.x + perpX * tickHalf, endPt.y + perpY * tickHalf, zPlane),
+      new THREE.Vector3(endPt.x - perpX * tickHalf, endPt.y - perpY * tickHalf, zPlane)
+    ];
+    const tick2Geo = new THREE.BufferGeometry().setFromPoints(tick2Pts);
+    const tick2 = new THREE.Line(tick2Geo, tickMat);
+    dimensionTickGroup.add(tick2);
+  }
+  
+  scene.add(dimensionTickGroup);
+  
+  // --- 3. 3D Label Sprite at Midpoint ---
+  const midX = (startPt.x + endPt.x) / 2;
+  const midY = (startPt.y + endPt.y) / 2;
+  const absDist = Math.abs(dist);
+  const distInches = absDist * 12.0;
+  
+  let labelText;
+  if (distInches < 0.1) {
+    labelText = '< 0.1"';
+  } else if (isStrike && distInches > 12.0) {
+    labelText = 'IN ZONE';
+  } else {
+    labelText = `${distInches.toFixed(1)}"`;
+  }
+  const statusText = isStrike ? 'IN' : 'OUT';
+  
+  // Render label to canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  
+  // Background pill
+  const bgColor = isStrike ? 'rgba(34,197,94,0.92)' : 'rgba(239,68,68,0.92)';
+  ctx.fillStyle = bgColor;
+  const rx = 14;
+  const bw = 250, bh = 88;
+  ctx.beginPath();
+  ctx.moveTo(3 + rx, 4);
+  ctx.lineTo(3 + bw - rx, 4);
+  ctx.quadraticCurveTo(3 + bw, 4, 3 + bw, 4 + rx);
+  ctx.lineTo(3 + bw, 4 + bh - rx);
+  ctx.quadraticCurveTo(3 + bw, 4 + bh, 3 + bw - rx, 4 + bh);
+  ctx.lineTo(3 + rx, 4 + bh);
+  ctx.quadraticCurveTo(3, 4 + bh, 3, 4 + bh - rx);
+  ctx.lineTo(3, 4 + rx);
+  ctx.quadraticCurveTo(3, 4, 3 + rx, 4);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Outline
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  
+  // Distance text
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 44px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(labelText, 128, 38);
+  
+  // Status subtext
+  ctx.font = 'bold 28px monospace';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText(statusText, 128, 72);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  
+  const spriteMat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    sizeAttenuation: true,
+  });
+  
+  dimensionLabelSprite = new THREE.Sprite(spriteMat);
+  
+  // Place label above or below the zone (flip if it would cover the pitch)
+  const zoneMidY = (currentSzTop + currentSzBot) / 2;
+  const labelOffset = 0.16;
+  let labelWorldY = crossPos.y >= zoneMidY ? currentSzTop + labelOffset : currentSzBot - labelOffset;
+  if (Math.abs(labelWorldY - crossPos.y) < 0.22) {
+    labelWorldY = crossPos.y >= zoneMidY ? currentSzBot - labelOffset : currentSzTop + labelOffset;
+  }
+  const labelWorldX = Math.max(xMin, Math.min(crossPos.x, xMax));
+  
+  dimensionLabelSprite.position.set(labelWorldX, labelWorldY, zPlane + 0.03);
+  dimensionLabelSprite.scale.set(0.45, 0.17, 1);
+  dimensionLabelSprite.name = "dimensionLabel";
+  scene.add(dimensionLabelSprite);
 }
 
 export function clearDimensionLine() {
@@ -2154,12 +2327,83 @@ export function clearDimensionLine() {
     dimensionLineMesh.material.dispose();
     dimensionLineMesh = null;
   }
+  if (dimensionLabelSprite) {
+    scene.remove(dimensionLabelSprite);
+    if (dimensionLabelSprite.material) {
+      if (dimensionLabelSprite.material.map) dimensionLabelSprite.material.map.dispose();
+      dimensionLabelSprite.material.dispose();
+    }
+    dimensionLabelSprite = null;
+  }
+  if (dimensionTickGroup) {
+    dimensionTickGroup.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+    scene.remove(dimensionTickGroup);
+    dimensionTickGroup = null;
+  }
 }
 
 /**
  * Projects the 3D strike zone corners to update screen-space HTML labels showing zone dimensions,
  * and projects the ball crossing point to display distance-to-zone measurements.
  */
+function projectWorldPointToScreen(x, y, z) {
+  if (!mainCamera || !renderer) return null;
+  const container = renderer.domElement.parentElement;
+  if (!container) return null;
+  const tempV = new THREE.Vector3(x, y, z);
+  tempV.project(mainCamera);
+  if (tempV.z > 1) return { behind: true };
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+  return {
+    behind: false,
+    x: (tempV.x * 0.5 + 0.5) * width,
+    y: (tempV.y * -0.5 + 0.5) * height,
+  };
+}
+
+/**
+ * Picks above-zone vs below-zone screen placement for distance labels.
+ * Flips side if the label would overlap the pitch marker.
+ */
+export function pickZoneDistanceLabelScreenPos(crossX, crossY, z = 0.7083) {
+  const top = projectWorldPointToScreen(0, currentSzTop + 0.06, z);
+  const bot = projectWorldPointToScreen(0, currentSzBot - 0.06, z);
+  const pitch = projectWorldPointToScreen(crossX, crossY, z);
+  if (!top || !bot || !pitch || top.behind || bot.behind || pitch.behind) {
+    return null;
+  }
+
+  const zoneMidScreenY = (top.y + bot.y) / 2;
+  let aboveZone = pitch.y > zoneMidScreenY;
+  let labelX = pitch.x;
+  let labelY = aboveZone ? top.y - 14 : bot.y + 14;
+  let transform = aboveZone ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
+
+  if (Math.hypot(labelX - pitch.x, labelY - pitch.y) < 46) {
+    aboveZone = !aboveZone;
+    labelY = aboveZone ? top.y - 14 : bot.y + 14;
+    transform = aboveZone ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
+  }
+
+  return { x: labelX, y: labelY, transform, aboveZone };
+}
+
+export function positionZoneDistanceHtmlLabel(el, crossX, crossY) {
+  if (!el) return;
+  const pos = pickZoneDistanceLabelScreenPos(crossX, crossY);
+  if (!pos) {
+    el.style.opacity = '0';
+    return;
+  }
+  el.style.left = `${pos.x}px`;
+  el.style.top = `${pos.y}px`;
+  el.style.transform = pos.transform;
+}
+
 export function updateStrikeZoneLabels() {
   if (!szTopLabelEl) szTopLabelEl = document.getElementById('sz-top-label');
   if (!szBotLabelEl) szBotLabelEl = document.getElementById('sz-bot-label');
@@ -2233,11 +2477,7 @@ export function updateStrikeZoneLabels() {
       if (tempV.z > 1) {
         absBallDistanceLabelEl.style.opacity = '0';
       } else {
-        const x = (tempV.x * 0.5 + 0.5) * width;
-        const y = (tempV.y * -0.5 + 0.5) * height;
-        absBallDistanceLabelEl.style.left = `${x}px`;
-        absBallDistanceLabelEl.style.top = `${y}px`;
-        absBallDistanceLabelEl.style.transform = 'translate(-50%, -100%)';
+        positionZoneDistanceHtmlLabel(absBallDistanceLabelEl, markerPos.x, markerPos.y);
         absBallDistanceLabelEl.style.opacity = '1';
 
         const dist = getDistanceToABSZone(markerPos.x, markerPos.y);
@@ -2456,4 +2696,132 @@ function createNameplateTexture(name, details, color) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   return texture;
+}
+
+/**
+ * Renders all pitches in the current At-Bat as 3D markers in the summary review group
+ */
+export function showSummaryPitchReview(pitches) {
+  // Clear any existing summary markers
+  clearSummaryPitchReview();
+
+  // Draw each pitch
+  pitches.forEach((item, index) => {
+    if (!item.trajectory || !item.trajectory.crossPoint) return;
+    
+    const cross = item.trajectory.crossPoint;
+    const isCorrect = item.userCorrect;
+    
+    // Choose color: green for correct, red for incorrect
+    const color = isCorrect ? COLORS.strikeCorrect : COLORS.strikeIncorrect;
+    
+    const group = new THREE.Group();
+    
+    // Flat filled circle (broadcast-style stamp disk)
+    const circleGeo = new THREE.CircleGeometry(0.12, 24);
+    const circleMat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const circle = new THREE.Mesh(circleGeo, circleMat);
+    circle.userData = { originalOpacity: 0.85 };
+    group.add(circle);
+
+    // White border ring (TorusGeometry for clean outline)
+    const borderGeo = new THREE.TorusGeometry(0.12, 0.015, 8, 32);
+    const borderMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const border = new THREE.Mesh(borderGeo, borderMat);
+    border.userData = { originalOpacity: 0.9 };
+    group.add(border);
+
+    // Outer glow ring
+    const glowGeo = new THREE.TorusGeometry(0.12 * 1.35, 0.01, 8, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.userData = { originalOpacity: 0.4 };
+    group.add(glow);
+    
+    // Position at cross point, offset slightly along Z to prevent z-fighting
+    group.position.set(cross.x, cross.y, cross.z - 0.01);
+    
+    // Attach index and original pitch item for access during highlight
+    group.userData = { index, pitch: item };
+    
+    summaryReviewGroup.add(group);
+  });
+}
+
+/**
+ * Highlights a specific pitch in the 3D summary review, scales it up,
+ * draws its trajectory line, and dims the other markers.
+ */
+export function highlightSummaryPitch(index) {
+  if (!summaryReviewGroup) return;
+  
+  let selectedPitch = null;
+  
+  summaryReviewGroup.children.forEach(group => {
+    const isSelected = group.userData.index === index;
+    if (isSelected) {
+      selectedPitch = group.userData.pitch;
+      // Scale up the highlighted marker group
+      group.scale.set(1.5, 1.5, 1.5);
+    } else {
+      // Reset scale
+      group.scale.set(1.0, 1.0, 1.0);
+    }
+    
+    // Set child mesh opacities
+    group.traverse(child => {
+      if (child.material) {
+        const origOpacity = child.userData.originalOpacity || 1.0;
+        child.material.opacity = isSelected ? origOpacity : origOpacity * 0.2;
+      }
+    });
+  });
+
+  // Handle trajectory line and 3D dimension line
+  if (selectedPitch && selectedPitch.trajectory && selectedPitch.trajectory.points) {
+    // Draw the full trajectory line (limitZ set to -10.0 to show the whole path)
+    drawTrajectoryTrace(selectedPitch.trajectory.points, -10.0);
+    
+    // Dynamically draw dimension line and 3D distance label for the selected pitch
+    if (selectedPitch.trajectory.crossPoint) {
+      drawDimensionLine(selectedPitch.trajectory.crossPoint);
+    }
+  } else {
+    clearTrajectoryTrace();
+    clearDimensionLine();
+  }
+}
+
+/**
+ * Clears all 3D review markers, trajectory lines, and dimension lines
+ */
+export function clearSummaryPitchReview() {
+  if (summaryReviewGroup) {
+    while (summaryReviewGroup.children.length > 0) {
+      const child = summaryReviewGroup.children[0];
+      summaryReviewGroup.remove(child);
+      child.traverse(subChild => {
+        if (subChild.geometry) subChild.geometry.dispose();
+        if (subChild.material) subChild.material.dispose();
+      });
+    }
+  }
+  clearTrajectoryTrace();
+  clearDimensionLine();
 }
