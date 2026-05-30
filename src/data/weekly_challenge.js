@@ -12,6 +12,7 @@ export const WEEKLY_CHALLENGE_DATA = [
     "description": "May 25, 2026. High-leverage AL Central battle at Comerica Park.",
     "film_room_url": "https://www.mlb.com/video/game/824839",
     "ump_scorecard_url": "https://umpscorecards.com/single_game/?game_id=824839",
+    "umpire_name": "Pat Hoberg",
     "pitches": [
       {
         "id": 5001,
@@ -12601,6 +12602,7 @@ export const WEEKLY_CHALLENGE_DATA = [
     "description": "May 25, 2026. Iconic NL West rivalry at Oracle Park.",
     "film_room_url": "https://www.mlb.com/video/game/824840",
     "ump_scorecard_url": "https://umpscorecards.com/single_game/?game_id=824840",
+    "umpire_name": "Laz Diaz",
     "pitches": [
       {
         "id": 5341,
@@ -24154,6 +24156,7 @@ export const WEEKLY_CHALLENGE_DATA = [
     "description": "May 25, 2026. Classic AL East rivalry at Fenway Park.",
     "film_room_url": "https://www.mlb.com/video/game/824841",
     "ump_scorecard_url": "https://umpscorecards.com/single_game/?game_id=824841",
+    "umpire_name": "Hunter Wendelstedt",
     "pitches": [
       {
         "id": 5653,
@@ -36373,6 +36376,7 @@ export const WEEKLY_CHALLENGE_DATA = [
     "description": "May 25, 2026. Intense NL East divisional matchup at Citizens Bank Park.",
     "film_room_url": "https://www.mlb.com/video/game/824842",
     "ump_scorecard_url": "https://umpscorecards.com/single_game/?game_id=824842",
+    "umpire_name": "Marvin Hudson",
     "pitches": [
       {
         "id": 5983,
@@ -47852,6 +47856,7 @@ export const WEEKLY_CHALLENGE_DATA = [
     "description": "May 25, 2026. Lone Star Series shootout at Globe Life Field.",
     "film_room_url": "https://www.mlb.com/video/game/824843",
     "ump_scorecard_url": "https://umpscorecards.com/single_game/?game_id=824843",
+    "umpire_name": "Brian O'Nora",
     "pitches": [
       {
         "id": 6293,

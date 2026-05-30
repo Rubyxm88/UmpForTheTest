@@ -57,6 +57,18 @@ export function setXpBarPercent(barEl, pct, animate = true) {
   if (!barEl) return;
   barEl.style.transition = animate ? 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none';
   barEl.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  
+  if (animate) {
+    barEl.classList.remove('xp-gained');
+    barEl.offsetHeight; // force reflow
+    barEl.classList.add('xp-gained');
+    
+    if (barEl._xpTimer) clearTimeout(barEl._xpTimer);
+    barEl._xpTimer = setTimeout(() => {
+      barEl.classList.remove('xp-gained');
+      delete barEl._xpTimer;
+    }, 2500);
+  }
 }
 
 export function applyLevelBadgeElement(el, level, options = {}) {

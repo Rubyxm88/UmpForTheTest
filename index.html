@@ -70,46 +70,102 @@
     <div id="hud-layer" class="absolute inset-0 w-full h-full z-10 pointer-events-none flex flex-col">
       
       <!-- NEW UNIFIED MAIN TOP NAVIGATION BAR -->
-      <div id="main-top-nav" class="ump-hud-bar flex flex-col p-2.5 md:p-3 gap-2 select-none pointer-events-auto transition-all duration-300 opacity-0 hidden z-[60] mx-3 mt-3 md:mx-5 md:mt-5 mb-2">
+      <div id="main-top-nav" class="ump-hud-bar flex flex-col p-1.5 md:p-3 gap-1 md:gap-2 select-none pointer-events-none transition-all duration-300 opacity-0 hidden z-[60] mx-2 mt-2 md:mx-5 md:mt-5 mb-1">
         <!-- ROW 1: Persistent Telemetry & Navigation (Always visible) -->
-        <div class="w-full flex flex-row justify-between items-center gap-2 md:gap-4">
+        <div class="w-full flex flex-row flex-wrap md:flex-nowrap justify-between items-center gap-2 md:gap-4">
           <!-- Left: Title / Logo -->
-          <div class="flex items-center gap-1.5 flex-shrink-0">
-            <span class="text-sm md:text-lg" aria-hidden="true">⚾</span>
-            <span id="nav-logo-text" class="hidden sm:inline-block" style="font-family:var(--ump-font-pixel);font-size:0.42rem;letter-spacing:0.08em;color:var(--retro-chalk);">UMP<span style="color:var(--retro-gold);">SIM3000</span></span>
-            <span id="nav-logo-badge" style="font-family:var(--ump-font-pixel);font-size:0.32rem;padding:0.12rem 0.3rem;background:var(--retro-gold-dark);color:var(--retro-chalk);border:1px solid var(--retro-gold);" class="hidden md:inline-block">ARCADE</span>
+          <div class="flex items-center gap-1.5 flex-shrink-0 select-none order-1">
+            <!-- Full Logo (large screens) -->
+            <div class="hidden sm:block">
+              <svg viewBox="0 0 160 40" class="h-8 md:h-10">
+                <defs>
+                  <linearGradient id="logo-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#fbbf24" />
+                    <stop offset="100%" stop-color="#d97706" />
+                  </linearGradient>
+                  <filter id="logo-glow">
+                    <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                    <feMerge>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+                </defs>
+                <path d="M 5,5 Q 80,0 155,5 Q 160,20 155,35 Q 80,40 5,35 Q 0,20 5,5 Z" fill="rgba(8,12,22,0.85)" stroke="#fbbf24" stroke-width="1.5" />
+                <path d="M 12,8 Q 80,18 148,8" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="2,2" />
+                <path d="M 12,32 Q 80,22 148,32" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="2,2" />
+                <text x="22" y="26" font-family="'Press Start 2P', monospace" font-size="12" fill="#ffffff" font-weight="bold">UMP</text>
+                <text x="65" y="26" font-family="'Press Start 2P', monospace" font-size="12" fill="url(#logo-gold)" font-weight="bold" filter="url(#logo-glow)">SIM</text>
+                <text x="108" y="26" font-family="'Press Start 2P', monospace" font-size="10" fill="#f8fafc" font-weight="bold">3000</text>
+              </svg>
+            </div>
+            <!-- Small Logo (mobile screens) -->
+            <div class="block sm:hidden">
+              <svg viewBox="0 0 50 40" class="h-6 md:h-8">
+                <defs>
+                  <linearGradient id="logo-gold-sm" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#fbbf24" />
+                    <stop offset="100%" stop-color="#d97706" />
+                  </linearGradient>
+                </defs>
+                <polygon points="25,2 47,10 47,30 25,38 3,30 3,10" fill="rgba(8,12,22,0.85)" stroke="#fbbf24" stroke-width="1.5" />
+                <path d="M 7,12 Q 25,18 43,12" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="1.5,1.5" />
+                <text x="25" y="26" font-family="'Press Start 2P', monospace" font-size="11" fill="#ffffff" font-weight="bold" text-anchor="middle">U<tspan fill="url(#logo-gold-sm)">3K</tspan></text>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Center: Prominent XP Progress Bar (Fills dead space, highly readable) -->
+          <div class="flex w-full md:w-auto md:flex-1 items-center justify-center gap-2 md:gap-3 px-1 md:px-4 max-w-none md:max-w-sm lg:max-w-md mx-auto select-none order-3 md:order-2 mt-2 md:mt-0" id="hud-central-xp-container">
+            <!-- Current level icon/emblem -->
+            <div id="hud-user-xp-icon-left" class="shrink-0">
+              <!-- Dynamically populated SVG Rank Icon -->
+            </div>
+            
+            <div class="flex-grow flex flex-col gap-1">
+              <!-- Progress Bar -->
+              <div class="ump-xp-bar-bg h-1.5 md:h-2.5 w-full rounded-sm overflow-hidden border border-white/10 relative shadow-[0_0_10px_rgba(255,255,255,0.02)]">
+                <div id="hud-user-xp-bar" class="ump-xp-bar-fill h-full rounded-sm bg-gradient-to-r from-[var(--retro-grass-dark)] to-[var(--retro-grass)]" style="width: 0%;"></div>
+              </div>
+              <div class="flex justify-between items-center text-[7px] font-mono-tech text-gray-400 font-bold uppercase tracking-widest leading-none">
+                <span id="hud-user-xp-text">0 / 1,000 XP</span>
+                <span id="hud-central-xp-pct">0% Progress</span>
+              </div>
+            </div>
+
+            <!-- Next level indicator -->
+            <div id="hud-user-xp-icon-right" class="shrink-0 opacity-60">
+              <!-- Dynamically populated SVG Rank Icon for Next Level -->
+            </div>
           </div>
 
           <!-- Right: User details, XP progress, and System Actions grouped together -->
-          <div class="flex items-center gap-3 md:gap-4 ml-auto flex-shrink-0">
-            <!-- User telemetry Widget -->
-            <div id="nav-user-telemetry" class="flex items-center gap-1.5 md:gap-2 px-2 py-1" style="background:rgba(0,0,0,0.35);border:1px solid var(--retro-grass);">
-              <img id="hud-user-team-logo" src="/generic.svg" class="w-4 h-4 md:w-5 md:h-5 object-contain drop-shadow p-0.5" style="background:rgba(0,0,0,0.4);border-radius:50%;border:1px solid var(--retro-gold-dark);" alt="Team Logo" />
+          <div class="flex items-center gap-1.5 md:gap-4 ml-auto md:ml-0 flex-shrink-0 order-2 md:order-3">
+            <!-- Interactive Profile Widget -->
+            <div id="hud-profile-xp-widget" class="flex items-center gap-1.5 md:gap-2.5 px-1.5 py-1 md:px-2.5 md:py-1.5 cursor-pointer pointer-events-auto transition-all duration-200 hover:bg-white/5 border border-transparent rounded select-none shrink-0" style="background:rgba(0,0,0,0.35);border:1px solid var(--retro-grass);" title="Click for Crew XP & Rank Details">
+              <!-- Left: Team Logo -->
+              <img id="hud-user-team-logo" src="/generic.svg" class="w-3.5 h-3.5 md:w-5 md:h-5 object-contain drop-shadow p-0.5 shrink-0" style="background:rgba(0,0,0,0.4);border-radius:50%;border:1px solid var(--retro-gold-dark);" alt="Team Logo" />
+              
+              <!-- Center: User details -->
               <div class="flex flex-col text-left justify-center">
-                <div class="flex items-center gap-1 leading-none">
-                  <span id="hud-user-level-badge" class="ump-level-badge ump-level-badge--rookie text-[6px] md:text-[7px] py-0.2 px-0.8 leading-none font-bold">LVL 1</span>
-                  <span id="hud-user-favorite-badge" style="font-family:var(--ump-font-pixel);font-size:0.3rem;padding:0.05rem 0.2rem;background:rgba(45,107,66,0.2);color:var(--retro-grass);border:1px solid rgba(45,107,66,0.4);" class="uppercase hidden md:inline-block">NONE</span>
-                </div>
-                <span id="hud-user-handle" style="font-family:var(--ump-font-body);font-size:0.85rem;color:var(--retro-chalk);letter-spacing:0.03em;" class="uppercase mt-0.5 truncate max-w-[85px] md:max-w-none">GUEST_UMPIRE</span>
+                <span id="hud-user-handle" style="font-family:var(--ump-font-body);color:var(--retro-chalk);letter-spacing:0.04em;" class="uppercase truncate max-w-[70px] sm:max-w-[85px] md:max-w-[110px] text-[11px] md:text-[14px] font-black leading-none mb-0.5">GUEST_UMPIRE</span>
+                <span id="hud-user-level-tier" class="text-[6px] md:text-[7.5px] font-mono-tech text-[var(--retro-grass)] font-bold uppercase tracking-wider leading-none">ROOKIE UMPIRE</span>
               </div>
-            </div>
 
-            <!-- XP progress bar -->
-            <div id="nav-xp-progress" class="hidden sm:flex flex-col gap-1 w-16 md:w-24 text-left justify-center">
-              <div class="flex justify-between text-[5px] md:text-[6px] font-mono-tech text-gray-400 font-bold leading-none">
-                <span>XP PROGRESS</span>
-                <span id="hud-user-xp-text" class="truncate max-w-[40px] leading-none font-bold">0 XP</span>
+              <!-- Right: Rank Icon Emblem with Level Number -->
+              <div id="hud-user-level-icon" class="shrink-0 ml-1">
+                <!-- Dynamically populated SVG Rank Icon -->
               </div>
-              <div class="ump-xp-bar-bg h-1">
-                <div id="hud-user-xp-bar" class="ump-xp-bar-fill h-full"></div>
-              </div>
+              
+              <!-- Hidden favorite badge to ensure compatibility -->
+              <span id="hud-user-favorite-badge" class="hidden">NONE</span>
             </div>
 
             <!-- Divider -->
-            <div id="nav-divider" class="w-px h-6 bg-white/10 hidden sm:block"></div>
+            <div class="w-px h-6 bg-white/10 hidden sm:block"></div>
 
             <!-- System Settings + Action Button -->
-            <div id="nav-system-actions" class="flex items-center gap-1.5 md:gap-2">
+            <div class="flex items-center gap-1.5 md:gap-2">
               <button id="btn-global-audio-mute" class="p-1 transition-all cursor-pointer pointer-events-auto" style="background:rgba(0,0,0,0.4);border:1px solid var(--retro-grass);color:var(--retro-chalk);" title="Mute/Unmute Audio">
                 <svg id="svg-audio-unmuted" class="svg-audio-unmuted w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
@@ -124,8 +180,11 @@
                   <circle cx="12" cy="12" r="3"/>
                 </svg>
               </button>
-              <button id="btn-adaptive-nav-action" class="nav-action-btn px-2 py-1 md:px-2.5 md:py-1 cursor-pointer pointer-events-auto flex items-center justify-center gap-1 transition-all" style="font-family:var(--ump-font-pixel);font-size:0.35rem;letter-spacing:0.06em;text-transform:uppercase;background:linear-gradient(180deg,var(--retro-stitch),var(--retro-stitch-dark));border:2px solid var(--retro-gold-dark);color:var(--retro-chalk);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 2px 0 #030810;">
-                <span id="adaptive-nav-action-text">LOGOUT</span>
+              <button id="btn-adaptive-nav-action" class="nav-action-btn px-2 py-1 md:px-2.5 md:py-1 cursor-pointer pointer-events-auto flex items-center justify-center gap-1 transition-all" style="font-family:var(--ump-font-pixel);font-size:0.35rem;letter-spacing:0.06em;text-transform:uppercase;background:linear-gradient(180deg,var(--retro-stitch),var(--retro-stitch-dark));border:2px solid var(--retro-gold-dark);color:var(--retro-chalk);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 2px 0 #030810;" title="Logout/Home">
+                <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span id="adaptive-nav-action-text" class="hidden sm:inline">LOGOUT</span>
               </button>
             </div>
           </div>
@@ -133,12 +192,6 @@
 
         <!-- ROW 2: Contextual Panel (Toggled based on State) -->
         <div id="nav-context-row" class="w-full pt-1.5 transition-all duration-300 opacity-0 pointer-events-none hidden" style="border-top:1px solid rgba(45,107,66,0.35);">
-          <!-- Sub-panel 1: Dashboard Tabs -->
-          <div id="dashboard-nav-tabs" class="flex max-w-sm mx-auto w-full transition-all duration-300 opacity-0 pointer-events-none hidden" role="tablist" aria-label="Dashboard sections" style="background:rgba(0,0,0,0.35);border:2px solid var(--retro-grass);">
-            <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active !py-1 text-[10px] md:text-xs">Play</button>
-            <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab !py-1 text-[10px] md:text-xs">Standings</button>
-            <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab !py-1 text-[10px] md:text-xs">Profile</button>
-          </div>
 
           <!-- Sub-panel 2: Gameplay Telemetry & Count Section -->
           <div id="gameplay-nav-telemetry" class="w-full flex flex-row items-stretch gap-1.5 md:gap-2 transition-all duration-300 opacity-0 pointer-events-none hidden">
@@ -150,8 +203,8 @@
                   <img id="card-pitcher-img" class="ab-summary-player-portrait" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
                   <img id="card-pitcher-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
                 </div>
-                <div class="ab-summary-player-meta">
-                  <span class="ab-summary-player-role">Pitcher</span>
+                <div class="ab-summary-player-meta min-w-0 flex-1">
+                  <span class="ab-summary-player-role"><span class="hidden sm:inline">Pitcher</span><span class="inline sm:hidden">P</span></span>
                   <span id="card-pitcher-hand" class="ab-summary-hand-badge">RHP</span>
                   <div class="name-marquee-wrap">
                     <span class="name-marquee-track">
@@ -167,8 +220,8 @@
 
               <!-- Batter card (clickable) -->
               <div id="gameplay-batter-card-trigger" class="ab-summary-player ab-summary-player--batter ab-summary-player--mini cursor-pointer hover:brightness-125 transition-all">
-                <div class="ab-summary-player-meta ab-summary-player-meta--right">
-                  <span class="ab-summary-player-role">Batter</span>
+                <div class="ab-summary-player-meta ab-summary-player-meta--right min-w-0 flex-1 text-right">
+                  <span class="ab-summary-player-role"><span class="hidden sm:inline">Batter</span><span class="inline sm:hidden">B</span></span>
                   <span id="card-batter-hand" class="ab-summary-hand-badge">LHB</span>
                   <div class="name-marquee-wrap">
                     <span class="name-marquee-track">
@@ -243,7 +296,7 @@
             </div>
 
             <!-- Right Section: Challenge Tracker & Status -->
-            <div id="nav-challenge-tracker" class="hidden md:flex items-center gap-2 justify-end shrink-0">
+            <div class="hidden md:flex items-center gap-2 justify-end shrink-0">
               <div class="flex flex-col text-right min-w-0 pr-1.5" style="border-right:1px solid rgba(45,107,66,0.35);">
                 <span style="font-family:var(--ump-font-pixel);font-size:0.3rem;color:var(--retro-gold);letter-spacing:0.08em;text-transform:uppercase;">Challenge Tracker</span>
                 <span id="pitch-counter-text" style="font-family:var(--ump-font-body);font-size:0.8rem;color:var(--retro-chalk);margin-top:0.1rem;" class="truncate max-w-[120px] md:max-w-none">WEEKLY CHALLENGE | AB 1</span>
@@ -255,6 +308,60 @@
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- XP & RANK DETAILS POPOVER -->
+      <div id="hud-xp-details-popover" class="fixed z-[70] w-80 glass-panel p-5 rounded-xl border border-[var(--retro-gold-dark)] flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none" style="background:rgba(8, 12, 22, 0.98);box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 20px rgba(232, 197, 71, 0.15); max-height: 80vh; overflow-y: auto;">
+        <!-- Popover Header (Combines title and profile info section for a cleaner layout) -->
+        <div class="flex items-center justify-between border-b border-white/10 pb-3">
+          <div class="flex items-center gap-2.5">
+            <img id="xp-popover-team-logo" src="/generic.svg" class="w-9 h-9 object-contain drop-shadow p-0.5 bg-black/40 rounded-full border border-[var(--retro-gold)]" alt="Team Logo" />
+            <div class="flex flex-col text-left">
+              <span class="text-[8px] font-mono-tech uppercase tracking-widest text-[var(--retro-gold)] font-bold mb-0.5">Crew Diagnostics</span>
+              <span id="xp-popover-handle" class="text-sm font-black text-white uppercase tracking-wide font-mono-tech leading-none">GUEST_UMPIRE</span>
+              <span id="xp-popover-tier-title" class="text-[9px] text-[var(--retro-grass)] font-mono-tech uppercase font-bold tracking-wider leading-none mt-1">Rookie Umpire</span>
+            </div>
+          </div>
+          <button id="btn-close-xp-details" class="text-gray-400 hover:text-white transition-colors cursor-pointer text-xs focus:outline-none p-1 self-start">✕</button>
+        </div>
+        
+        <!-- Level & XP numbers -->
+        <div class="flex flex-col gap-2">
+          <div class="flex justify-between items-end">
+            <span id="xp-popover-level-badge" class="ump-level-badge ump-level-badge--rookie text-[7px] py-0.5 px-1.5 leading-none font-bold">LVL 1</span>
+            <span id="xp-popover-nums" class="text-xs font-mono-tech text-white font-black">0 / 1,000 XP</span>
+          </div>
+          <div class="ump-xp-bar-bg h-2 w-full rounded-sm overflow-hidden">
+            <div id="xp-popover-bar" class="ump-xp-bar-fill h-full rounded-sm" style="width: 0%;"></div>
+          </div>
+          <div class="flex justify-between text-[8px] font-mono-tech text-gray-400 font-bold uppercase tracking-wider">
+            <span>Next Level</span>
+            <span id="xp-popover-remaining">1,000 XP needed</span>
+          </div>
+        </div>
+
+        <!-- Lifetime stats -->
+        <div class="grid grid-cols-2 gap-2 text-center bg-black/30 p-2.5 rounded-lg border border-white/5">
+          <div class="flex flex-col">
+            <span class="text-[7px] text-gray-500 font-mono-tech uppercase tracking-wider font-bold">Total XP Earned</span>
+            <span id="xp-popover-total" class="text-sm font-bold text-[var(--retro-gold)] font-mono-tech mt-0.5">0 XP</span>
+          </div>
+          <div class="flex flex-col">
+            <span class="text-[7px] text-gray-500 font-mono-tech uppercase tracking-wider font-bold">Crew Level</span>
+            <span id="xp-popover-current-level" class="text-sm font-bold text-white font-mono-tech mt-0.5">LVL 1</span>
+          </div>
+        </div>
+
+        <!-- Rank Progression Header -->
+        <div class="text-[8px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold border-b border-white/10 pb-1 flex justify-between items-center">
+          <span>Crew Ladder Ranks</span>
+          <span class="text-[6px] text-gray-500">Tier Ranges</span>
+        </div>
+
+        <!-- Rank progression list (Scrollable) -->
+        <div class="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-1 text-[9px] font-mono-tech" id="xp-popover-ladder">
+          <!-- Dynamically populated -->
         </div>
       </div>
 
@@ -341,15 +448,15 @@
                 </div>
               </div>
 
-              <div id="welcome-login-bonus-container" class="ump-panel--subtle w-full p-2.5 flex items-center justify-between mt-1 select-none">
-                <div class="flex items-center gap-2 text-left">
-                  <span class="text-base" aria-hidden="true">🎁</span>
-                  <div>
-                    <span class="ump-kicker block mb-0.5">Daily Login Bonus</span>
-                    <span id="welcome-login-bonus-status" class="ump-subtitle text-base">CLAIMED (+100 XP)</span>
+              <div id="welcome-login-bonus-container" class="ump-panel--subtle w-full p-2 md:p-2.5 flex items-center justify-between mt-1 select-none">
+                <div class="flex items-center gap-1.5 md:gap-2 text-left min-w-0">
+                  <span class="text-base shrink-0" aria-hidden="true">🎁</span>
+                  <div class="min-w-0">
+                    <span class="ump-kicker block mb-0.5 text-[9px] md:text-[10px]">Daily Login Bonus</span>
+                    <span id="welcome-login-bonus-status" class="ump-subtitle text-[11px] xs:text-xs sm:text-sm block truncate">CLAIMED (+100 XP)</span>
                   </div>
                 </div>
-                <span id="welcome-login-bonus-check" class="ump-stat-card__value ump-stat-card__value--ok text-base">[ CLAIMED ]</span>
+                <span id="welcome-login-bonus-check" class="ump-stat-card__value ump-stat-card__value--ok text-[11px] xs:text-xs sm:text-sm shrink-0 ml-1.5 font-bold select-none">[ CLAIMED ]</span>
               </div>
 
               <button id="btn-welcome-logout" type="button" class="ump-link mt-2">
@@ -361,9 +468,6 @@
           <button id="btn-welcome-start" type="button" class="ump-btn ump-btn--primary ump-btn--block pointer-events-auto">
             Insert Coin & Play
           </button>
-          <a href="/nav-playbook.html" target="_blank" class="ump-link mt-4 text-[10px] tracking-widest !text-amber-400 hover:!text-amber-300 pointer-events-auto block text-center" style="font-family: var(--ump-font-pixel); font-size: 8px;">
-            [ Launch Navigation Design Playbook ]
-          </a>
         </div>
       </div>
 
@@ -397,6 +501,15 @@
         <!-- Spacer left for fixed top nav -->
 
         <div class="ump-panel ump-panel--flush w-full max-w-4xl flex flex-col overflow-hidden min-h-[min(680px,calc(100dvh-6rem))] border-t border-white/10 rounded-2xl">
+
+          <!-- Main Menu Tabs Header -->
+          <div class="border-b border-white/10 p-3.5 bg-slate-950/40 flex justify-center w-full select-none">
+            <div id="dashboard-nav-tabs" class="flex max-w-sm w-full" role="tablist" aria-label="Dashboard sections" style="background:rgba(0,0,0,0.35);border:2px solid var(--retro-grass);">
+              <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active !py-1.5 text-[10px] md:text-xs">Play</button>
+              <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab !py-1.5 text-[10px] md:text-xs">Standings</button>
+              <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab !py-1.5 text-[10px] md:text-xs">Profile</button>
+            </div>
+          </div>
 
           <!-- Tab Contents -->
           <div class="p-6 flex-1 flex flex-col justify-start overflow-y-auto scrollbar-thin">
@@ -448,8 +561,12 @@
                         <span id="daily-streak-historical" class="text-white font-black">0 PITCHES</span>
                       </div>
                       <div class="flex justify-between items-center text-[10px] font-mono-tech mt-1">
-                        <span class="text-gray-400 uppercase tracking-widest">Today:</span>
-                        <span id="daily-streak-outcome" class="text-amber-400 font-black">NOT STARTED</span>
+                        <span class="text-gray-400 uppercase tracking-widest">Today's Best Streak:</span>
+                        <span id="daily-streak-outcome" class="text-amber-400 font-black">0 PITCHES</span>
+                      </div>
+                      <div class="flex justify-between items-center text-[10px] font-mono-tech mt-1">
+                        <span class="text-gray-400 uppercase tracking-widest">Daily Standings Rank:</span>
+                        <span id="daily-streak-rank" class="text-purple-400 font-black">--</span>
                       </div>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
@@ -521,44 +638,216 @@
             </div>
 
             <!-- Tab Content: STATS -->
-            <div id="tab-content-stats" class="w-full hidden flex-col">
-              <div class="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono-tech mb-4">
-                Performance Telemetry
-              </div>
+            <div id="tab-content-stats" class="w-full hidden flex-col gap-6 select-none">
               
-              <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Overall Accuracy</span>
-                  <span id="stats-avg-accuracy" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
+              <!-- Umpire Profile Identity Card (Hero Layout) -->
+              <div class="ump-panel p-4 sm:p-5 md:p-6 flex flex-col md:flex-row gap-4 sm:gap-6 items-center relative overflow-hidden select-none">
+                <!-- Retro background scanline decoration -->
+                <div class="absolute inset-0 bg-scanlines pointer-events-none opacity-5"></div>
+                
+                <!-- Left: Huge Spinning Hexagonal Rank Badge -->
+                <div class="flex-shrink-0 flex flex-col items-center justify-center bg-black/40 border border-white/5 rounded-lg p-4 w-32 h-32 relative">
+                  <div id="profile-rank-badge" class="w-20 h-20 flex items-center justify-center">
+                    <!-- Dynamically populated SVG Rank Icon via game.js -->
+                  </div>
+                  <span id="profile-level-tag" class="absolute -bottom-2 px-2.5 py-0.5 bg-[var(--ump-color-accent)] text-black text-[11px] font-mono-tech uppercase font-black tracking-widest rounded shadow">LVL 1</span>
                 </div>
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Max Streak</span>
-                  <span id="stats-max-streak" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
-                </div>
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Challenge Games</span>
-                  <span id="stats-completed-weekly" class="text-3xl font-black text-white font-mono-tech mt-2">--</span>
-                </div>
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center flex flex-col justify-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">DNF Disconnects</span>
-                  <span id="stats-dnfs" class="text-3xl font-black text-red-400 font-mono-tech mt-2">0</span>
+                
+                <!-- Right: Profile License & XP Progression Details -->
+                <div class="flex-grow flex flex-col gap-3 w-full text-center md:text-left">
+                  <div class="flex flex-col md:flex-row md:items-baseline justify-between gap-2 border-b border-white/10 pb-2">
+                    <div>
+                      <span class="text-[12px] font-mono-tech uppercase tracking-widest text-[var(--ump-color-accent)] font-bold block mb-1">Umpire Credential</span>
+                      <h2 id="profile-user-handle" class="text-xl font-black text-white font-mono-tech tracking-wide uppercase leading-none">GUEST_UMPIRE</h2>
+                    </div>
+                    <div class="flex flex-col items-center md:items-end">
+                      <span class="text-[12px] font-mono-tech uppercase text-gray-500 font-bold block mb-1">Ladder Standing</span>
+                      <span id="profile-tier-title" class="text-[13px] text-[var(--retro-grass)] font-mono-tech uppercase font-bold tracking-wider leading-none">Rookie Umpire</span>
+                    </div>
+                  </div>
+                  
+                  <!-- Total XP and division statistics -->
+                  <div class="grid grid-cols-3 gap-1 sm:gap-2 mt-1 text-center bg-black/25 p-1.5 sm:p-2 rounded-lg border border-white/5 select-none">
+                    <div class="flex flex-col justify-center py-1">
+                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Lifetime XP</span>
+                      <span id="profile-total-xp" class="text-xs font-bold text-[var(--ump-color-accent)] font-mono-tech mt-0.5">0 XP</span>
+                    </div>
+                    <div class="flex flex-col justify-center py-1 border-x border-white/5">
+                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Fav Team</span>
+                      <span id="profile-fav-team-display" class="text-xs font-bold text-white font-mono-tech mt-0.5 truncate px-1">NONE</span>
+                    </div>
+                    <div class="flex flex-col justify-center py-1">
+                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold font-semibold text-[var(--ump-color-danger)]">Disconnects</span>
+                      <span id="stats-dnfs" class="text-xs font-bold text-[var(--ump-color-danger)] font-mono-tech mt-0.5">0</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <!-- Log Out Button -->
-              <div class="flex justify-end mb-4">
-                <button id="btn-stats-logout" class="px-4 py-2 bg-red-600/20 hover:bg-red-600 border border-red-500/30 text-[10px] font-bold uppercase rounded-lg text-white transition-all cursor-pointer">
-                  Log Out / Switch User
-                </button>
+              <!-- Core Performance Telemetry Stats Grid -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Overall Accuracy -->
+                <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
+                  <div class="w-7 h-7 mb-1 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-[var(--retro-gold)]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L4 8v4l8 10 8-10V8L12 2zm0 2.5L18 9v3l-6 7.5L6 12V9l6-4.5z"/>
+                      <circle cx="12" cy="11" r="2"/>
+                    </svg>
+                  </div>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">Overall Accuracy</span>
+                  <span id="stats-avg-accuracy" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                </div>
+                <!-- Peak Streak -->
+                <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
+                  <div class="w-7 h-7 mb-1 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-[var(--retro-stitch)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                      <path d="M4 20L8 14L12 17L16 10L20 4"/>
+                      <circle cx="20" cy="4" r="2" fill="currentColor"/>
+                    </svg>
+                  </div>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">Peak Streak</span>
+                  <span id="stats-max-streak" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                </div>
+                <!-- Active Week Progress -->
+                <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
+                  <div class="w-7 h-7 mb-1 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-[var(--retro-grass)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                      <polygon points="12,3 21,12 12,21 3,12" />
+                      <circle cx="12" cy="12" r="2" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">This Week</span>
+                  <span id="stats-completed-weekly" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                </div>
+                <!-- Lifetime Completed -->
+                <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
+                  <div class="w-7 h-7 mb-1 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-[var(--retro-gold)]" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M5 3v18M5 3l14 5-14 5"/>
+                      <path d="M5 3l14 5-14 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">All-Time Games</span>
+                  <span id="stats-lifetime-challenges" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                </div>
               </div>
 
-              <!-- History Logs list -->
-              <div class="flex-1 flex flex-col">
-                <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider mb-2">Challenge History Log</span>
-                <div class="w-full rounded-lg border border-white/10 glass-panel-light overflow-hidden">
-                  <table class="w-full text-left text-xs border-collapse">
+              <!-- UmpCard Strike Zone Map & Analytics Grid -->
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
+                <!-- Left: 2D SVG UmpCard Strike Zone Map -->
+                <div class="ump-panel p-4 flex flex-col items-center justify-center relative overflow-hidden select-none">
+                  <div class="w-full border-b border-white/10 pb-2 mb-3 flex flex-col sm:flex-row gap-1 sm:gap-2 justify-center sm:justify-between items-center text-center select-none">
+                    <span class="text-[12px] font-mono-tech uppercase tracking-widest text-[var(--ump-color-accent)] font-bold">UmpCard Strike Zone Map</span>
+                    <span class="text-[11px] font-mono-tech text-gray-400 uppercase">Last 100 Called Pitches</span>
+                  </div>
+                  
+                  <div class="relative w-full max-w-[200px] aspect-[5/6] bg-black/40 border border-white/5 rounded-lg flex items-center justify-center p-2">
+                    <svg id="profile-umpcard-svg" viewBox="0 0 200 240" class="w-full h-full">
+                      <!-- Grid guidelines (subtle) -->
+                      <line x1="100" y1="20" x2="100" y2="200" stroke="rgba(255,255,255,0.04)" stroke-width="1" stroke-dasharray="2 2" />
+                      <line x1="20" y1="125" x2="180" y2="125" stroke="rgba(255,255,255,0.04)" stroke-width="1" stroke-dasharray="2 2" />
+                      
+                      <!-- Home Plate outline at the bottom -->
+                      <polygon points="64.6,215 135.4,215 135.4,222 100,230 64.6,222" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" />
+                      
+                      <!-- Strike Zone box (Solid outline representing rulebook zone) -->
+                      <rect x="64.6" y="75" width="70.8" height="100" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5" />
+                      
+                      <!-- Plotted dots (rendered dynamically via JS) -->
+                      <g id="profile-umpcard-dots">
+                        <!-- Dots appended here: <circle cx="x" cy="y" r="4" class="fill-green-500" /> -->
+                      </g>
+                    </svg>
+                  </div>
+                  <div class="flex gap-4 mt-3 text-[11px] font-mono-tech uppercase font-bold text-gray-400 select-none">
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                      <span>Correct</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                      <span>Incorrect</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right: Advanced Analytics -->
+                <div class="ump-panel p-4 flex flex-col justify-between select-none">
+                  <div class="w-full border-b border-white/10 pb-2 mb-3">
+                    <span class="text-[12px] font-mono-tech uppercase tracking-widest text-[var(--ump-color-accent)] font-bold block">Umpire Persona & splits</span>
+                  </div>
+                  
+                  <div class="flex flex-col gap-4 flex-grow justify-center">
+                    <!-- Umpire Persona Archetype -->
+                    <div class="flex flex-col gap-1.5 bg-black/25 p-2 rounded border border-white/5">
+                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Umpire Persona Archetype</span>
+                      <div class="flex flex-col sm:flex-row justify-center sm:justify-between items-center gap-2">
+                        <span id="profile-persona-tag" class="px-2 py-1 text-[12px] font-mono-tech uppercase font-black text-black bg-purple-400 rounded text-center">PENDING DATA...</span>
+                        <span id="profile-borderline-acc" class="text-[12px] font-mono-tech font-bold text-white text-center sm:text-right">-- Borderline Acc</span>
+                      </div>
+                    </div>
+                    
+                    <!-- Squeeze vs Expand Bias Slider -->
+                    <div class="flex flex-col gap-1">
+                      <div class="flex justify-between text-[10.5px] font-mono-tech text-gray-400 font-bold uppercase tracking-wider">
+                        <span>Tight Zone (Squeezes)</span>
+                        <span>Generous Zone (Expansions)</span>
+                      </div>
+                      <div class="relative w-full h-2.5 bg-black/40 border border-white/10 rounded-sm overflow-hidden flex items-center justify-center">
+                        <!-- Center indicator line -->
+                        <div class="absolute top-0 bottom-0 w-0.5 bg-white/20 left-1/2 -translate-x-1/2 z-0"></div>
+                        <!-- Bias marker -->
+                        <div id="profile-bias-marker" class="absolute w-2 h-full bg-[var(--ump-color-accent)] border border-white rounded-sm shadow-md transition-all duration-300 z-10" style="left: 50%; transform: translateX(-50%);"></div>
+                      </div>
+                      <div id="profile-bias-text" class="text-[11px] font-mono-tech text-center text-gray-500 uppercase tracking-widest font-bold mt-0.5">Balanced strike zone</div>
+                    </div>
+                    
+                    <!-- Pitch Class Accuracy splits -->
+                    <div class="flex flex-col gap-2.5 pt-2 border-t border-white/5">
+                      <!-- Fastballs -->
+                      <div class="flex flex-col gap-1">
+                        <div class="flex justify-between items-baseline text-[11px] font-mono-tech font-bold uppercase tracking-wider">
+                          <span class="text-gray-400">Fastball Accuracy</span>
+                          <span id="profile-split-fastball-val" class="text-white">--</span>
+                        </div>
+                        <div class="ump-xp-bar-bg h-1.5 w-full border border-white/5 rounded overflow-hidden">
+                          <div id="profile-split-fastball-bar" class="ump-xp-bar-fill h-full rounded bg-blue-500" style="width: 0%;"></div>
+                        </div>
+                      </div>
+                      
+                      <!-- Breaking Balls -->
+                      <div class="flex flex-col gap-1">
+                        <div class="flex justify-between items-baseline text-[11px] font-mono-tech font-bold uppercase tracking-wider">
+                          <span class="text-gray-400">Breaking Ball Accuracy</span>
+                          <span id="profile-split-breaking-val" class="text-white">--</span>
+                        </div>
+                        <div class="ump-xp-bar-bg h-1.5 w-full border border-white/5 rounded overflow-hidden">
+                          <div id="profile-split-breaking-bar" class="ump-xp-bar-fill h-full rounded bg-amber-500" style="width: 0%;"></div>
+                        </div>
+                      </div>
+                      
+                      <!-- Offspeed -->
+                      <div class="flex flex-col gap-1">
+                        <div class="flex justify-between items-baseline text-[11px] font-mono-tech font-bold uppercase tracking-wider">
+                          <span class="text-gray-400">Offspeed Accuracy</span>
+                          <span id="profile-split-offspeed-val" class="text-white">--</span>
+                        </div>
+                        <div class="ump-xp-bar-bg h-1.5 w-full border border-white/5 rounded overflow-hidden">
+                          <div id="profile-split-offspeed-bar" class="ump-xp-bar-fill h-full rounded bg-emerald-500" style="width: 0%;"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- History Log list -->
+              <div class="flex flex-col gap-3">
+                <span class="ump-kicker">Challenge History Log</span>
+                <div class="ump-table-wrap">
+                  <table class="ump-table">
                     <thead>
-                      <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
+                      <tr>
                         <th class="p-3">Challenge Game</th>
                         <th class="p-3">Matchup</th>
                         <th class="p-3 text-center">Correct Calls</th>
@@ -572,39 +861,46 @@
                 </div>
               </div>
 
-              <!-- Crew Profile Settings Card -->
-              <div class="glass-panel-light p-5 rounded-xl border border-white/10 flex flex-col gap-4 mt-6">
-                <h3 class="text-xs font-mono-tech uppercase tracking-widest text-purple-400 font-bold border-b border-white/10 pb-1.5 flex justify-between items-center select-none">
-                  <span>Crew Profile & Settings</span>
+              <!-- Crew Profile Settings & Actions Card -->
+              <div class="ump-panel p-5 flex flex-col gap-4">
+                <h3 class="text-[12px] font-mono-tech uppercase tracking-widest text-[var(--ump-color-accent)] font-bold border-b border-white/10 pb-1.5 select-none">
+                  Crew settings & account management
                 </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <!-- Edit Favorite Team -->
                   <div class="flex flex-col gap-2">
-                    <label class="text-[9px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Favorite Team</label>
+                    <label class="text-[11.5px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Favorite Team</label>
                     <div class="flex items-center gap-3">
-                      <div class="w-10 h-10 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex items-center justify-center p-1">
+                      <div class="w-11 h-11 bg-black/40 rounded border border-white/10 overflow-hidden flex items-center justify-center p-1 shrink-0">
                         <img id="profile-fav-team-logo" class="w-full h-full object-contain" src="/generic.svg" alt="Favorite Team Logo" />
                       </div>
-                      <select id="profile-fav-team-select" class="bg-slate-900 border border-white/10 rounded-lg p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 cursor-pointer">
+                      <select id="profile-fav-team-select" class="bg-slate-900/60 border border-white/10 rounded p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 cursor-pointer min-h-[44px]">
                         <option value="none">Select Favorite Team</option>
                       </select>
                     </div>
                   </div>
                   
                   <!-- Change PIN -->
-                  <div class="flex flex-col gap-2">
-                    <label class="text-[9px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Change PIN Passcode (4-8 Digits)</label>
-                    <div class="flex flex-col md:flex-row gap-2">
-                      <input type="password" id="profile-new-pin" placeholder="NEW PIN" class="bg-slate-900 border border-white/10 rounded-lg p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 placeholder-gray-600" maxlength="8" />
-                      <input type="password" id="profile-new-pin-confirm" placeholder="CONFIRM PIN" class="bg-slate-900 border border-white/10 rounded-lg p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 placeholder-gray-600" maxlength="8" />
-                      <button id="btn-profile-save-pin" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-[10px] font-bold uppercase text-white transition-all cursor-pointer pointer-events-auto whitespace-nowrap">
+                  <div class="flex flex-col gap-3">
+                    <label class="text-[11.5px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Security credentials</label>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                      <input type="password" id="profile-new-pin" placeholder="NEW PIN" class="ump-input !p-2 text-xs font-mono-tech text-white placeholder-gray-600" maxlength="8" style="min-height: 44px;" />
+                      <input type="password" id="profile-new-pin-confirm" placeholder="CONFIRM PIN" class="ump-input !p-2 text-xs font-mono-tech text-white placeholder-gray-600" maxlength="8" style="min-height: 44px;" />
+                      <button id="btn-profile-save-pin" class="ump-btn ump-btn--primary ump-btn--sm whitespace-nowrap cursor-pointer min-h-[44px]">
                         Update PIN
                       </button>
                     </div>
-                    <div id="profile-pin-msg" class="text-[9px] font-mono-tech text-green-400 uppercase tracking-wider hidden">
+                    <div id="profile-pin-msg" class="text-[11px] font-mono-tech text-emerald-400 uppercase tracking-wider hidden">
                       PIN updated successfully!
                     </div>
                   </div>
+                </div>
+                
+                <!-- Log Out Button grouped cleanly at the bottom right of settings -->
+                <div class="flex justify-center sm:justify-end border-t border-white/10 pt-4 mt-2">
+                  <button id="btn-stats-logout" class="ump-btn ump-btn--sm ump-btn--ghost text-[11px] font-bold uppercase rounded text-white transition-all cursor-pointer">
+                    Log Out / Switch Umpire Profile
+                  </button>
                 </div>
               </div>
 
@@ -758,11 +1054,12 @@
           </div>
 
           <!-- Quick Actions Button Group -->
-          <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="btn-view-details" class="px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-              View ABS Review Details [V]
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-72 sm:w-auto pointer-events-auto">
+            <button id="btn-view-details" class="px-4 py-2 sm:px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer text-center w-full">
+              <span class="hidden sm:inline">View ABS Review Details [V]</span>
+              <span class="inline sm:hidden">ABS Review [V]</span>
             </button>
-            <button id="btn-quick-continue" class="px-6 h-12 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            <button id="btn-quick-continue" class="px-4 py-2 sm:px-6 h-12 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer text-center w-full">
               Continue <span id="quick-continue-timer" class="font-mono-tech text-emerald-400 ml-1"></span>
             </button>
           </div>
@@ -811,8 +1108,8 @@
           </div>
 
           <!-- Center Right: ABS Card and Ruling Pill -->
-          <div class="absolute top-[22%] right-6 flex flex-col items-center gap-2 select-none">
-            <div class="w-24 h-24 bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col items-center justify-center p-2">
+          <div id="abs-ruling-container" class="absolute top-[22%] right-6 flex flex-col items-center gap-2 select-none">
+            <div id="abs-card-emblem" class="w-24 h-24 bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col items-center justify-center p-2">
               <div class="flex items-center gap-0.5 bg-blue-900 px-1 py-0.5 rounded text-[8px] font-bold text-white mb-1 uppercase tracking-widest leading-none">
                 <span class="text-red-500 text-[6px]">?</span> ABS
               </div>
@@ -827,7 +1124,7 @@
           </div>
 
           <!-- Bottom Center Row: Call Result Pill + Continue Button side-by-side -->
-          <div class="absolute bottom-40 left-1/2 -translate-x-1/2 flex items-center justify-center gap-4 select-none pointer-events-auto">
+          <div id="abs-action-row" class="absolute bottom-40 left-1/2 -translate-x-1/2 flex items-center justify-center gap-4 select-none pointer-events-auto">
             <div id="abs-call-result-pill" class="glass-panel rounded-xl px-5 py-2.5 shadow-2xl flex items-center gap-3 border border-white/10 h-12">
               <span id="abs-result-title" class="text-xs font-bold text-gray-400 uppercase tracking-wider font-mono-tech">CALL CONFIRMED</span>
               <span id="abs-result-value" class="text-sm font-black px-2.5 py-1 rounded-md uppercase text-green-400 bg-green-950/50 border border-green-500/30 shadow-sm">STRIKE</span>
@@ -839,7 +1136,7 @@
           </div>
 
           <!-- Bottom Center: Two-Row Telemetry Ticker Overlay -->
-          <div class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl glass-panel p-4 rounded-xl border border-white/10 flex flex-col gap-2.5 select-none">
+          <div id="abs-telemetry-ticker" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl glass-panel p-4 rounded-xl border border-white/10 flex flex-col gap-2.5 select-none">
             <div class="flex items-center justify-center gap-5 md:gap-8">
               <div class="flex flex-col items-center">
                 <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Pitch Type</span>
@@ -905,7 +1202,8 @@
             <!-- Row 2: Values -->
             <div class="flex justify-between items-center w-full mt-0.5">
               <!-- Left: Count and Percent -->
-              <div class="flex items-center gap-2 font-mono-tech whitespace-nowrap flex-shrink-0">
+              <div class="flex items-center gap-1.5 font-mono-tech whitespace-nowrap flex-shrink-0">
+                <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide mr-0.5">Completed:</span>
                 <span id="ab-start-weekly-count" class="text-lg font-black text-white">0</span>
                 <span id="ab-start-weekly-total" class="text-xs text-slate-400">/ 200</span>
                 <span id="ab-start-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
@@ -1017,6 +1315,7 @@
           <div class="ab-summary-panel-scroll">
           <header class="ab-summary-header">
             <span class="ab-summary-outcome-badge" id="ab-summary-title">AT-BAT COMPLETE</span>
+            <div id="ab-summary-subtitle" class="ab-summary-subtitle hidden">FINISHED AT-BAT -- OF --</div>
             <h2 id="ab-summary-matchup" class="sr-only">P: -- vs B: --</h2>
           </header>
 
@@ -1160,7 +1459,8 @@
               <!-- Row 2: Values -->
               <div class="flex justify-between items-center w-full mt-0.5">
                 <!-- Left: Count and Percent -->
-                <div class="flex items-center gap-2 font-mono-tech whitespace-nowrap flex-shrink-0">
+                <div class="flex items-center gap-1.5 font-mono-tech whitespace-nowrap flex-shrink-0">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide mr-0.5">Completed:</span>
                   <span id="ab-summary-weekly-count" class="text-lg font-black text-white">0</span>
                   <span id="ab-summary-weekly-total" class="text-xs text-slate-400">/ 200</span>
                   <span id="ab-summary-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
@@ -1190,6 +1490,178 @@
                 <a id="ab-summary-film-link" href="#" target="_blank" rel="noopener" class="ab-summary-btn-secondary">FILM</a>
                 <a id="ab-summary-scorecard-link" href="#" target="_blank" rel="noopener" class="ab-summary-btn-secondary">CARD</a>
                 <button type="button" id="btn-ab-summary-home" class="ab-summary-btn-secondary">QUIT</button>
+              </div>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- SCREEN S: POST-STREAK SUMMARY OVERLAY -->
+      <div id="streak-summary-overlay" class="fixed inset-0 w-screen h-screen z-[150] pointer-events-none opacity-0 transition-all duration-300">
+        <div class="streak-summary-panel arcade-cabinet pointer-events-auto transform scale-95 transition-all duration-300">
+          <div class="arcade-cabinet-bezel" aria-hidden="true">
+            <span class="arcade-stitch arcade-stitch--tl"></span>
+            <span class="arcade-stitch arcade-stitch--tr"></span>
+            <span class="arcade-stitch arcade-stitch--bl"></span>
+            <span class="arcade-stitch arcade-stitch--br"></span>
+          </div>
+          <div class="ab-summary-marquee" aria-hidden="true">
+            <span class="ab-summary-marquee-icon">⚾</span>
+            <span class="ab-summary-marquee-text">STREAK ATTEMPT SUMMARY</span>
+            <span class="ab-summary-marquee-icon">⚾</span>
+          </div>
+          <div class="ab-summary-scanlines" aria-hidden="true"></div>
+          <div class="ab-summary-panel-scroll">
+            <header class="ab-summary-header">
+              <span class="ab-summary-outcome-badge bg-gradient-to-r from-amber-600 to-orange-600 text-white" id="streak-summary-title">STREAK ENDED</span>
+              <div id="streak-summary-subtitle" class="ab-summary-subtitle">STREAK: 0 PITCHES</div>
+            </header>
+
+            <!-- Matchup card for the missed pitch -->
+            <div class="ab-summary-matchup-card">
+              <div id="streak-summary-pitcher-card" class="ab-summary-player ab-summary-player--pitcher">
+                <div class="ab-summary-player-photo">
+                  <img id="streak-summary-pitcher-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
+                  <img id="streak-summary-pitcher-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
+                </div>
+                <div class="ab-summary-player-meta">
+                  <span class="ab-summary-player-role">Pitcher</span>
+                  <span id="streak-summary-pitcher-hand-badge" class="ab-summary-hand-badge">RHP</span>
+                  <div class="name-marquee-wrap">
+                    <span class="name-marquee-track">
+                      <span id="streak-summary-pitcher-name" class="ab-summary-player-name name-marquee-text">--</span>
+                      <span class="streak-summary-pitcher-name-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="ab-summary-vs">VS</div>
+              <div id="streak-summary-batter-card" class="ab-summary-player ab-summary-player--batter">
+                <div class="ab-summary-player-meta ab-summary-player-meta--right">
+                  <span class="ab-summary-player-role">Batter</span>
+                  <span id="streak-summary-batter-hand-badge" class="ab-summary-hand-badge">LHB</span>
+                  <div class="name-marquee-wrap">
+                    <span class="name-marquee-track">
+                      <span id="streak-summary-batter-name" class="ab-summary-player-name name-marquee-text">--</span>
+                      <span class="streak-summary-batter-name-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="ab-summary-player-photo">
+                  <img id="streak-summary-batter-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
+                  <img id="streak-summary-batter-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Stats board showing Streak metrics -->
+            <div id="streak-summary-calls-board" class="ab-summary-calls-board" aria-label="Streak metrics">
+              <p class="ump-text-label ab-summary-calls-board-title">ATTEMPT METRICS</p>
+              <div class="ab-summary-calls-board-grid">
+                <div class="ab-summary-calls-col">
+                  <span class="ab-summary-calls-label">STREAK</span>
+                  <span id="streak-summary-final-streak" class="ab-summary-calls-score text-amber-400">0</span>
+                  <span class="ab-summary-calls-pct">Pitches Called</span>
+                </div>
+                <div class="ab-summary-calls-col">
+                  <span class="ab-summary-calls-label">ACCURACY</span>
+                  <span id="streak-summary-accuracy" class="ab-summary-calls-score text-emerald-400">100%</span>
+                  <span id="streak-summary-fraction" class="ab-summary-calls-pct">0/0 Correct</span>
+                </div>
+              </div>
+              <p class="ab-summary-calls-note">Run ended by the final incorrect call shown above</p>
+            </div>
+
+            <!-- XP + level badge -->
+            <div id="streak-summary-xp-panel" class="ab-summary-xp-panel">
+              <div class="ab-summary-xp-header">
+                <div class="ab-summary-xp-title-row">
+                  <span id="streak-summary-xp-level" class="ump-level-badge ump-level-badge--rookie">LVL 1</span>
+                  <div class="ab-summary-xp-earned-wrap">
+                    <button type="button" id="streak-summary-xp-earned" class="ab-summary-xp-earned-btn">+0 XP</button>
+                  </div>
+                </div>
+                <div class="ab-summary-xp-progress-row">
+                  <span id="streak-summary-xp-progress" class="ab-summary-xp-progress-text">0 / 1,000 XP</span>
+                  <span id="streak-summary-xp-total" class="ab-summary-xp-total-text">0 XP total</span>
+                </div>
+              </div>
+              <div class="ump-xp-bar-bg">
+                <div id="streak-summary-xp-bar" class="ump-xp-bar-fill"></div>
+              </div>
+            </div>
+
+            <button type="button" id="btn-streak-summary-toggle-review" class="ab-summary-review-toggle" aria-expanded="false">
+              ▶ PITCH CHART
+            </button>
+
+            <div id="streak-summary-review" class="ab-summary-review is-collapsed" hidden>
+              <section class="ab-summary-chart-card" aria-label="Streak pitch chart">
+                <h3 class="ab-summary-chart-title">STREAK ZONE MAP</h3>
+                <div class="ab-summary-chart-layout">
+                  <aside class="ab-summary-pitch-sidebar">
+                    <p class="ump-text-label ab-summary-sidebar-title">PITCHES</p>
+                    <div id="streak-summary-pitch-list" class="ab-summary-pitch-list" role="listbox" aria-label="Pitches in this streak run"></div>
+                  </aside>
+
+                  <div class="ab-summary-zone-area">
+                    <div class="ab-summary-zone-frame" id="streak-summary-zone-frame">
+                      <div id="streak-summary-zone-distance" class="ab-summary-zone-distance hidden" aria-live="polite"></div>
+                      <svg id="streak-summary-matrix-svg" preserveAspectRatio="xMidYMid meet" viewBox="-2.0 0.0 4.0 4.0" aria-label="Strike zone pitch map">
+                        <g id="streak-summary-svg-zone"></g>
+                        <g id="streak-summary-svg-pitches"></g>
+                        <g id="streak-summary-svg-indicators"></g>
+                      </svg>
+                    </div>
+                    <div class="ab-summary-zone-key" aria-label="Chart legend">
+                      <div class="ab-summary-key-row"><i class="ab-summary-key-swatch ab-summary-key-swatch--zone"></i><span>Strike zone</span></div>
+                      <div class="ab-summary-key-row"><i class="ab-summary-key-swatch ab-summary-key-swatch--ball"></i><span>Ball</span></div>
+                      <div class="ab-summary-key-row"><i class="ab-summary-key-swatch ab-summary-key-swatch--strike"></i><span>Strike</span></div>
+                      <div class="ab-summary-key-row"><i class="ab-summary-key-swatch ab-summary-key-swatch--ok"></i><span>Correct</span></div>
+                      <div class="ab-summary-key-row"><i class="ab-summary-key-swatch ab-summary-key-swatch--miss"></i><span>Missed</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="streak-summary-pitch-details" class="ab-summary-pitch-detail-bar">
+                  <p class="ab-summary-pitch-detail-placeholder">TAP A PITCH FOR DETAILS</p>
+                </div>
+              </section>
+            </div>
+
+            <blockquote id="streak-summary-blurb" class="ab-summary-blurb">--</blockquote>
+
+          </div>
+
+          <footer class="ab-summary-footer-bar text-left">
+            <!-- Streak Division standing (Unified pre/post style) -->
+            <div id="streak-summary-challenge-details" class="ab-summary-challenge-dock--unified mb-3 rounded-lg overflow-hidden text-left p-3 bg-slate-900 border border-amber-500/25">
+              <div class="flex justify-between items-center w-full">
+                <span class="ab-summary-challenge-label text-amber-400 whitespace-nowrap">DAILY STREAK STANDINGS</span>
+                <div class="flex gap-3 text-right">
+                  <span class="ab-summary-challenge-stat-label w-24 text-center">BEST STREAK</span>
+                  <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center w-full mt-0.5 font-mono-tech">
+                <div class="flex items-center gap-1.5 whitespace-nowrap">
+                  <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Unlimited Plays Active</span>
+                </div>
+                <div class="flex gap-3 text-right items-baseline">
+                  <span id="streak-summary-best-streak" class="text-sm font-black text-white w-24 text-center whitespace-nowrap">0 Pitches</span>
+                  <span id="streak-summary-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ab-summary-footer-actions">
+              <button type="button" id="btn-streak-summary-advance" class="ab-summary-btn-primary bg-gradient-to-r from-amber-600 to-orange-600 text-white">
+                PLAY AGAIN <kbd class="ab-summary-kbd bg-amber-800">SPACE</kbd>
+              </button>
+              <div class="ab-summary-btn-row">
+                <a id="streak-summary-film-link" href="#" target="_blank" rel="noopener" class="ab-summary-btn-secondary">FILM</a>
+                <a id="streak-summary-scorecard-link" href="#" target="_blank" rel="noopener" class="ab-summary-btn-secondary">CARD</a>
+                <button type="button" id="btn-streak-summary-home" class="ab-summary-btn-secondary">QUIT</button>
               </div>
             </div>
           </footer>
@@ -1255,11 +1727,8 @@
                   <!-- Out of Zone background -->
                   <rect x="-2.0" y="0.0" width="4.0" height="4.0" fill="rgba(255, 255, 255, 0.01)" />
                   
-                  <!-- Dotted Standard Strike Zone Box (Width 17 inches: -0.7083 to 0.7083) -->
-                  <rect x="-0.7083" y="0.58" width="1.4166" height="1.84" fill="none" stroke="rgba(255, 255, 255, 0.2)" stroke-width="0.02" stroke-dasharray="0.06, 0.06" />
-                  
-                  <!-- Solid Extended strike zone box (width 17" + 2 * ball-radius = 2 * 0.8283) -->
-                  <rect x="-0.8283" y="0.48" width="1.6566" height="2.04" fill="none" stroke="rgba(255, 255, 255, 0.45)" stroke-width="0.03" />
+                  <!-- Standard Strike Zone Box (Solid) -->
+                  <rect x="-0.7083" y="0.58" width="1.4166" height="1.84" fill="none" stroke="rgba(255, 255, 255, 0.45)" stroke-width="0.03" />
                   
                   <!-- Grid container to hold points dynamically -->
                   <g id="svg-pitches-container"></g>

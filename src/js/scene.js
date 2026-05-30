@@ -2234,24 +2234,33 @@ export function clearTrajectoryTrace() {
  * Window resize handler
  */
 export function onResize(width, height) {
+  if (!renderer) return;
   const aspect = width / height;
   
-  umpireCamera.aspect = aspect;
-  umpireCamera.updateProjectionMatrix();
+  if (umpireCamera) {
+    umpireCamera.aspect = aspect;
+    umpireCamera.updateProjectionMatrix();
+  }
   
-  sideCamera.aspect = aspect;
-  sideCamera.updateProjectionMatrix();
+  if (sideCamera) {
+    sideCamera.aspect = aspect;
+    sideCamera.updateProjectionMatrix();
+  }
   
-  topCamera.aspect = aspect;
-  topCamera.updateProjectionMatrix();
+  if (topCamera) {
+    topCamera.aspect = aspect;
+    topCamera.updateProjectionMatrix();
+  }
   
   if (summaryReviewCamera) {
     summaryReviewCamera.aspect = aspect;
     summaryReviewCamera.updateProjectionMatrix();
   }
   
-  mainCamera.aspect = aspect;
-  mainCamera.updateProjectionMatrix();
+  if (mainCamera) {
+    mainCamera.aspect = aspect;
+    mainCamera.updateProjectionMatrix();
+  }
   
   renderer.setSize(width, height);
   render();

@@ -284,12 +284,12 @@
   height: 100%;
   width: 0;
   border-radius: var(--ump-radius-pill);
-  background: var(--ump-progress-fill);
+  background: var(--ump-xp-bar-bg-gradient, var(--ump-progress-fill));
   transition: width 1s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .ump-xp-bar-fill--welcome {
-  background: var(--ump-progress-fill-alt);
+  background: var(--ump-xp-bar-bg-gradient, var(--ump-progress-fill-alt));
 }
 
 /* ---- Stat cards ---- */

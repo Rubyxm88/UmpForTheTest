@@ -15,6 +15,16 @@ function mapLeaderboardRows(list, username) {
       typeof item.accuracy === 'string'
         ? item.accuracy
         : `${item.accuracy ?? 0}%`;
+
+    // Extract user stats xp safely
+    let xp = 0;
+    if (item.profiles) {
+      const profile = Array.isArray(item.profiles) ? item.profiles[0] : item.profiles;
+      const stats = profile?.user_stats;
+      const statsObj = Array.isArray(stats) ? stats[0] : stats;
+      xp = statsObj?.xp || 0;
+    }
+
     return {
       rank: idx + 1,
       name: isUser ? `${normalizedUser} (YOU)` : item.handle,
@@ -22,6 +32,7 @@ function mapLeaderboardRows(list, username) {
       score: item.score_text || String(item.score_raw ?? ''),
       team: item.team || 'None',
       isUser,
+      xp,
     };
   });
 }
@@ -46,7 +57,7 @@ export default async function handler(req, res) {
 
       const { data, error } = await supabase
         .from('leaderboard_entries')
-        .select('handle, team, accuracy, score_raw, score_text')
+        .select('handle, team, accuracy, score_raw, score_text, profiles(user_stats(xp))')
         .eq('board', board)
         .eq('period_key', periodKey)
         .order('score_raw', { ascending: false })
