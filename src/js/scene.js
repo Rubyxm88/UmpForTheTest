@@ -41,10 +41,16 @@ let pitcherTorso, pitcherLeftLeg, pitcherRightLeg, pitcherThrowingArm, pitcherGl
 // Camera transition state
 let targetCameraPos = new THREE.Vector3();
 let targetCameraLookAt = new THREE.Vector3();
-let currentCameraLookAt = new THREE.Vector3(0, 4.0, 60.5);
+let currentCameraLookAt = new THREE.Vector3(0, 1.5, 15.0);
 let cameraTransitionSpeed = 0.08;
 let umpireXOffset = 0.0;
 let umpireYOffset = 4.2;
+
+// SmoothDamp and batter handedness trackers for camera resets
+let currentBatterHandedness = 'RHB';
+let cameraVelocity = new THREE.Vector3(0, 0, 0);
+let lookAtVelocity = new THREE.Vector3(0, 0, 0);
+let lastFrameTime = performance.now();
 
 // Strike zone height trackers and HTML elements
 let currentSzBot = 1.6;
@@ -151,7 +157,7 @@ export function initScene(containerEl, canvasEl) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(containerEl.clientWidth, containerEl.clientHeight);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   // 4. Setup Lighting
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.22); // slightly brighter ambient
@@ -1255,6 +1261,34 @@ function makeGlowingHolographic(group, isTorsoScanline = false) {
  * Creates and updates the holographic batter scaled to realistic 6.0 ft adult height
  */
 export function updateHolographicBatter(handedness, sz_bot, sz_top) {
+  currentBatterHandedness = (handedness || 'RHB').includes('L') ? 'LHB' : 'RHB';
+  
+  // Set camera positions based on batter handedness (LHB vs RHB slots)
+  if (currentBatterHandedness === 'LHB') {
+    umpireXOffset = 0.35;
+    umpireYOffset = 3.95;
+    if (topCamera) topCamera.position.set(-5.8, 2.5, 0.7083);
+    if (summaryReviewCamera) summaryReviewCamera.position.set(-4.2, 2.8, 5.0);
+  } else {
+    umpireXOffset = -0.35;
+    umpireYOffset = 3.95;
+    if (topCamera) topCamera.position.set(5.8, 2.5, 0.7083);
+    if (summaryReviewCamera) summaryReviewCamera.position.set(4.2, 2.8, 5.0);
+  }
+  
+  if (umpireCamera) {
+    umpireCamera.position.set(umpireXOffset, umpireYOffset, -4.5);
+  }
+  
+  // Update targets immediately depending on active camera
+  if (activeCamera === umpireCamera) {
+    targetCameraPos.copy(umpireCamera.position);
+  } else if (activeCamera === topCamera) {
+    targetCameraPos.copy(topCamera.position);
+  } else if (activeCamera === summaryReviewCamera) {
+    targetCameraPos.copy(summaryReviewCamera.position);
+  }
+
   if (batterGroup) {
     scene.remove(batterGroup);
     batterGroup.traverse(child => {
@@ -1868,35 +1902,111 @@ export function setUmpireHeight(height) {
 }
 
 /**
- * Transition camera position and target orientation smoothly using position LERP and quaternion SLERP.
- * This prevents the camera from jerking or spinning 180 degrees when crossing the look-at target.
+ * Critically damped spring-damper helper for Vector3 interpolation (limits velocity/jerk)
+ */
+function smoothDampVec3(current, target, currentVelocity, smoothTime, maxSpeed, deltaTime) {
+  smoothTime = Math.max(0.0001, smoothTime);
+  const num = 2 / smoothTime;
+  const num2 = num * deltaTime;
+  const num3 = 1 / (1 + num2 + 0.48 * num2 * num2 + 0.235 * num2 * num2 * num2);
+  
+  let changeX = current.x - target.x;
+  let changeY = current.y - target.y;
+  let changeZ = current.z - target.z;
+  
+  const maxChange = maxSpeed * smoothTime;
+  const maxChangeSq = maxChange * maxChange;
+  const changeSq = changeX * changeX + changeY * changeY + changeZ * changeZ;
+  if (changeSq > maxChangeSq) {
+    const changeLen = Math.sqrt(changeSq);
+    changeX = (changeX / changeLen) * maxChange;
+    changeY = (changeY / changeLen) * maxChange;
+    changeZ = (changeZ / changeLen) * maxChange;
+  }
+  
+  const targetX = current.x - changeX;
+  const targetY = current.y - changeY;
+  const targetZ = current.z - changeZ;
+  
+  const tempX = (currentVelocity.x + num * changeX) * deltaTime;
+  const tempY = (currentVelocity.y + num * changeY) * deltaTime;
+  const tempZ = (currentVelocity.z + num * changeZ) * deltaTime;
+  
+  currentVelocity.x = (currentVelocity.x - num * tempX) * num3;
+  currentVelocity.y = (currentVelocity.y - num * tempY) * num3;
+  currentVelocity.z = (currentVelocity.z - num * tempZ) * num3;
+  
+  let outputX = targetX + (changeX + tempX) * num3;
+  let outputY = targetY + (changeY + tempY) * num3;
+  let outputZ = targetZ + (changeZ + tempZ) * num3;
+  
+  const origMinusTargetX = current.x - target.x;
+  const origMinusTargetY = current.y - target.y;
+  const origMinusTargetZ = current.z - target.z;
+  const outMinusTargetX = outputX - target.x;
+  const outMinusTargetY = outputY - target.y;
+  const outMinusTargetZ = outputZ - target.z;
+  
+  if (origMinusTargetX * outMinusTargetX + origMinusTargetY * outMinusTargetY + origMinusTargetZ * outMinusTargetZ < 0) {
+    outputX = target.x;
+    outputY = target.y;
+    outputZ = target.z;
+    currentVelocity.set(0, 0, 0);
+  }
+  
+  return new THREE.Vector3(outputX, outputY, outputZ);
+}
+
+/**
+ * Transition camera position and target orientation smoothly using spring-damper.
+ * This prevents the camera from jerking or spinning when crossing the look-at target.
  */
 export function updateCameraTransition() {
   const targetLook = new THREE.Vector3(0, 1.5, 15.0); // Default: looking down at plate area
   
   if (isZoomedIn) {
     const zoneCenter = (currentSzTop + currentSzBot) / 2;
-    targetCameraPos.set(umpireXOffset * 0.35, zoneCenter + 0.15, -1.8);
+    const aspect = mainCamera.aspect || 1.0;
+    const zScale = aspect < 1.0 ? Math.max(0.6, aspect) : 1.0;
+    const targetZ = -1.8 / zScale;
+    targetCameraPos.set(umpireXOffset * 0.35, zoneCenter + 0.15, targetZ);
     targetLook.set(0, zoneCenter, 0.7083);
-    cameraTransitionSpeed = 0.08;
   } else if (activeCamera === summaryReviewCamera) {
     const zoneCenter = strikeZoneMesh ? strikeZoneMesh.position.y : 2.5;
-    targetCameraPos.set(-4.2, 2.8, 5.0);
+    targetCameraPos.copy(summaryReviewCamera.position);
     targetLook.set(0, zoneCenter, 0.7083);
-    cameraTransitionSpeed = 0.08;
+  } else if (activeCamera === umpireCamera) {
+    targetCameraPos.set(umpireXOffset, umpireYOffset, -4.5);
+    targetLook.set(0, 1.5, 15.0);
+  } else if (activeCamera === sideCamera) {
+    targetCameraPos.copy(sideCamera.position);
+    const zoneCenter = strikeZoneMesh ? strikeZoneMesh.position.y : 2.5;
+    targetLook.set(0, zoneCenter, 0.7083);
+  } else if (activeCamera === topCamera) {
+    targetCameraPos.copy(topCamera.position);
+    const zoneCenter = strikeZoneMesh ? strikeZoneMesh.position.y : 2.5;
+    targetLook.set(0, zoneCenter, 0.7083);
   } else if (strikeZoneMesh) {
     if (activeCamera === sideCamera || activeCamera === topCamera) {
       targetLook.set(0, strikeZoneMesh.position.y, 0.7083);
     }
   }
 
-  // Calculate target rotation for active camera at target position looking at target targetLook
-  activeCamera.position.copy(targetCameraPos);
-  activeCamera.lookAt(targetLook);
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
 
-  // Smoothly interpolate main camera position and rotation (quaternion)
-  mainCamera.position.lerp(activeCamera.position, cameraTransitionSpeed);
-  mainCamera.quaternion.slerp(activeCamera.quaternion, cameraTransitionSpeed);
+  if (dt > 0) {
+    const smoothTime = 0.25; 
+    const maxSpeed = 35.0; 
+    
+    const nextPos = smoothDampVec3(mainCamera.position, targetCameraPos, cameraVelocity, smoothTime, maxSpeed, dt);
+    mainCamera.position.copy(nextPos);
+    
+    const nextLook = smoothDampVec3(currentCameraLookAt, targetLook, lookAtVelocity, smoothTime, maxSpeed, dt);
+    currentCameraLookAt.copy(nextLook);
+    mainCamera.lookAt(currentCameraLookAt);
+  }
 }
 
 /**
@@ -1920,6 +2030,32 @@ export function setCameraAngle(angleName) {
     activeCamera = summaryReviewCamera;
     targetCameraPos.copy(summaryReviewCamera.position);
     cameraTransitionSpeed = 0.08;
+  }
+}
+
+/**
+ * Start position check: verifies that the camera is exactly in the correct position for calling the pitch.
+ * If there is significant drift or if it's out of position, snap it instantly to avoid transition lag.
+ */
+export function verifyAndForceUmpireCameraPosition() {
+  const isLHB = (currentBatterHandedness || 'RHB').includes('L');
+  const expectedX = isLHB ? 0.35 : -0.35;
+  const expectedY = 3.95;
+  const expectedZ = -4.5;
+  
+  const targetPos = new THREE.Vector3(expectedX, expectedY, expectedZ);
+  const distance = mainCamera.position.distanceTo(targetPos);
+  
+  if (distance > 0.05) {
+    console.log(`[Camera Verify] Camera out of position by ${distance.toFixed(3)}m. Snapping to (${expectedX}, ${expectedY}, ${expectedZ}).`);
+    mainCamera.position.copy(targetPos);
+    cameraVelocity.set(0, 0, 0);
+    lookAtVelocity.set(0, 0, 0);
+    
+    const zoneCenter = strikeZoneMesh ? strikeZoneMesh.position.y : 2.5;
+    const targetLook = new THREE.Vector3(0, zoneCenter, 0.7083);
+    currentCameraLookAt.copy(targetLook);
+    mainCamera.lookAt(currentCameraLookAt);
   }
 }
 

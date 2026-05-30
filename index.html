@@ -67,19 +67,216 @@
     </div>
 
     <!-- UI Overlay Layer -->
-    <div id="hud-layer" class="absolute inset-0 w-full h-full z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+    <div id="hud-layer" class="absolute inset-0 w-full h-full z-10 pointer-events-none flex flex-col">
       
-      <!-- Game Status Badge (Floating top center) -->
-      <div id="game-status-badge" class="absolute top-20 md:top-24 left-1/2 -translate-x-1/2 px-5 py-2 bg-slate-950/90 backdrop-blur border border-white/10 text-white text-xs font-extrabold uppercase font-mono-tech tracking-widest rounded-full shadow-xl z-40 transition-all duration-300 opacity-0 pointer-events-none flex items-center gap-2.5">
-        <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" id="game-status-dot"></span>
-        <span id="game-status-text">WAITING FOR PITCH</span>
+      <!-- NEW UNIFIED MAIN TOP NAVIGATION BAR -->
+      <div id="main-top-nav" class="ump-hud-bar flex flex-col p-2.5 md:p-3 gap-2 select-none pointer-events-auto transition-all duration-300 opacity-0 hidden z-[60] mx-3 mt-3 md:mx-5 md:mt-5 mb-2">
+        <!-- ROW 1: Persistent Telemetry & Navigation (Always visible) -->
+        <div class="w-full flex flex-row justify-between items-center gap-2 md:gap-4">
+          <!-- Left: Title / Logo -->
+          <div class="flex items-center gap-1.5 flex-shrink-0">
+            <span class="text-sm md:text-lg" aria-hidden="true">⚾</span>
+            <span id="nav-logo-text" class="hidden sm:inline-block" style="font-family:var(--ump-font-pixel);font-size:0.42rem;letter-spacing:0.08em;color:var(--retro-chalk);">UMP<span style="color:var(--retro-gold);">SIM3000</span></span>
+            <span id="nav-logo-badge" style="font-family:var(--ump-font-pixel);font-size:0.32rem;padding:0.12rem 0.3rem;background:var(--retro-gold-dark);color:var(--retro-chalk);border:1px solid var(--retro-gold);" class="hidden md:inline-block">ARCADE</span>
+          </div>
+
+          <!-- Right: User details, XP progress, and System Actions grouped together -->
+          <div class="flex items-center gap-3 md:gap-4 ml-auto flex-shrink-0">
+            <!-- User telemetry Widget -->
+            <div id="nav-user-telemetry" class="flex items-center gap-1.5 md:gap-2 px-2 py-1" style="background:rgba(0,0,0,0.35);border:1px solid var(--retro-grass);">
+              <img id="hud-user-team-logo" src="/generic.svg" class="w-4 h-4 md:w-5 md:h-5 object-contain drop-shadow p-0.5" style="background:rgba(0,0,0,0.4);border-radius:50%;border:1px solid var(--retro-gold-dark);" alt="Team Logo" />
+              <div class="flex flex-col text-left justify-center">
+                <div class="flex items-center gap-1 leading-none">
+                  <span id="hud-user-level-badge" class="ump-level-badge ump-level-badge--rookie text-[6px] md:text-[7px] py-0.2 px-0.8 leading-none font-bold">LVL 1</span>
+                  <span id="hud-user-favorite-badge" style="font-family:var(--ump-font-pixel);font-size:0.3rem;padding:0.05rem 0.2rem;background:rgba(45,107,66,0.2);color:var(--retro-grass);border:1px solid rgba(45,107,66,0.4);" class="uppercase hidden md:inline-block">NONE</span>
+                </div>
+                <span id="hud-user-handle" style="font-family:var(--ump-font-body);font-size:0.85rem;color:var(--retro-chalk);letter-spacing:0.03em;" class="uppercase mt-0.5 truncate max-w-[85px] md:max-w-none">GUEST_UMPIRE</span>
+              </div>
+            </div>
+
+            <!-- XP progress bar -->
+            <div id="nav-xp-progress" class="hidden sm:flex flex-col gap-1 w-16 md:w-24 text-left justify-center">
+              <div class="flex justify-between text-[5px] md:text-[6px] font-mono-tech text-gray-400 font-bold leading-none">
+                <span>XP PROGRESS</span>
+                <span id="hud-user-xp-text" class="truncate max-w-[40px] leading-none font-bold">0 XP</span>
+              </div>
+              <div class="ump-xp-bar-bg h-1">
+                <div id="hud-user-xp-bar" class="ump-xp-bar-fill h-full"></div>
+              </div>
+            </div>
+
+            <!-- Divider -->
+            <div id="nav-divider" class="w-px h-6 bg-white/10 hidden sm:block"></div>
+
+            <!-- System Settings + Action Button -->
+            <div id="nav-system-actions" class="flex items-center gap-1.5 md:gap-2">
+              <button id="btn-global-audio-mute" class="p-1 transition-all cursor-pointer pointer-events-auto" style="background:rgba(0,0,0,0.4);border:1px solid var(--retro-grass);color:var(--retro-chalk);" title="Mute/Unmute Audio">
+                <svg id="svg-audio-unmuted" class="svg-audio-unmuted w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                </svg>
+                <svg id="svg-audio-muted" class="svg-audio-muted w-3 h-3 hidden" style="color:var(--retro-stitch);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm11.364-6.364l-4.243 4.243m0-4.243l4.243 4.243"/>
+                </svg>
+              </button>
+              <button id="btn-global-settings-toggle" class="p-1 transition-all cursor-pointer pointer-events-auto" style="background:rgba(0,0,0,0.4);border:1px solid var(--retro-grass);color:var(--retro-chalk);" title="Settings">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+              <button id="btn-adaptive-nav-action" class="nav-action-btn px-2 py-1 md:px-2.5 md:py-1 cursor-pointer pointer-events-auto flex items-center justify-center gap-1 transition-all" style="font-family:var(--ump-font-pixel);font-size:0.35rem;letter-spacing:0.06em;text-transform:uppercase;background:linear-gradient(180deg,var(--retro-stitch),var(--retro-stitch-dark));border:2px solid var(--retro-gold-dark);color:var(--retro-chalk);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 2px 0 #030810;">
+                <span id="adaptive-nav-action-text">LOGOUT</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ROW 2: Contextual Panel (Toggled based on State) -->
+        <div id="nav-context-row" class="w-full pt-1.5 transition-all duration-300 opacity-0 pointer-events-none hidden" style="border-top:1px solid rgba(45,107,66,0.35);">
+          <!-- Sub-panel 1: Dashboard Tabs -->
+          <div id="dashboard-nav-tabs" class="flex max-w-sm mx-auto w-full transition-all duration-300 opacity-0 pointer-events-none hidden" role="tablist" aria-label="Dashboard sections" style="background:rgba(0,0,0,0.35);border:2px solid var(--retro-grass);">
+            <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active !py-1 text-[10px] md:text-xs">Play</button>
+            <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab !py-1 text-[10px] md:text-xs">Standings</button>
+            <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab !py-1 text-[10px] md:text-xs">Profile</button>
+          </div>
+
+          <!-- Sub-panel 2: Gameplay Telemetry & Count Section -->
+          <div id="gameplay-nav-telemetry" class="w-full flex flex-row items-stretch gap-1.5 md:gap-2 transition-all duration-300 opacity-0 pointer-events-none hidden">
+            <!-- Left: Matchup details (pitcher / batter) -->
+            <div id="matchup-card" class="nav-matchup-card flex items-center gap-1 md:gap-2 flex-1 min-w-0 justify-start pointer-events-auto">
+              <!-- Pitcher card (clickable) -->
+              <div id="gameplay-pitcher-card-trigger" class="ab-summary-player ab-summary-player--pitcher ab-summary-player--mini cursor-pointer hover:brightness-125 transition-all">
+                <div class="ab-summary-player-photo">
+                  <img id="card-pitcher-img" class="ab-summary-player-portrait" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
+                  <img id="card-pitcher-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
+                </div>
+                <div class="ab-summary-player-meta">
+                  <span class="ab-summary-player-role">Pitcher</span>
+                  <span id="card-pitcher-hand" class="ab-summary-hand-badge">RHP</span>
+                  <div class="name-marquee-wrap">
+                    <span class="name-marquee-track">
+                      <span id="card-pitcher-name" class="ab-summary-player-name name-marquee-text">--</span>
+                      <span class="card-pitcher-name-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- VS Divider -->
+              <span class="ab-summary-vs">VS</span>
+
+              <!-- Batter card (clickable) -->
+              <div id="gameplay-batter-card-trigger" class="ab-summary-player ab-summary-player--batter ab-summary-player--mini cursor-pointer hover:brightness-125 transition-all">
+                <div class="ab-summary-player-meta ab-summary-player-meta--right">
+                  <span class="ab-summary-player-role">Batter</span>
+                  <span id="card-batter-hand" class="ab-summary-hand-badge">LHB</span>
+                  <div class="name-marquee-wrap">
+                    <span class="name-marquee-track">
+                      <span id="card-batter-name" class="ab-summary-player-name name-marquee-text">--</span>
+                      <span class="card-batter-name-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="ab-summary-player-photo">
+                  <img id="card-batter-img" class="ab-summary-player-portrait" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
+                  <img id="card-batter-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Center: Diamond Count Board -->
+            <div class="count-section shrink-0 flex items-center gap-2 md:gap-3">
+              <!-- Diamond SVG -->
+              <div class="count-diamond-wrap" aria-label="Base runners">
+                <svg class="count-diamond-svg" viewBox="0 0 44 44" width="44" height="44">
+                  <!-- Base paths -->
+                  <line x1="22" y1="6" x2="38" y2="22" stroke="rgba(184,173,150,0.2)" stroke-width="1"/>
+                  <line x1="38" y1="22" x2="22" y2="38" stroke="rgba(184,173,150,0.2)" stroke-width="1"/>
+                  <line x1="22" y1="38" x2="6" y2="22" stroke="rgba(184,173,150,0.2)" stroke-width="1"/>
+                  <line x1="6" y1="22" x2="22" y2="6" stroke="rgba(184,173,150,0.2)" stroke-width="1"/>
+                  <!-- 2nd base -->
+                  <rect id="scorebug-base2" x="18" y="2" width="8" height="8" rx="1" transform="rotate(45 22 6)" class="count-diamond-base"/>
+                  <!-- 3rd base -->
+                  <rect id="scorebug-base3" x="2" y="18" width="8" height="8" rx="1" transform="rotate(45 6 22)" class="count-diamond-base"/>
+                  <!-- 1st base -->
+                  <rect id="scorebug-base1" x="34" y="18" width="8" height="8" rx="1" transform="rotate(45 38 22)" class="count-diamond-base"/>
+                  <!-- Home plate -->
+                  <polygon points="22,35 19,38 22,41 25,38" fill="rgba(184,173,150,0.35)" stroke="rgba(184,173,150,0.5)" stroke-width="0.8"/>
+                </svg>
+              </div>
+
+              <!-- B/S/O Count Board -->
+              <div class="count-board">
+                <div class="count-board-row">
+                  <span class="count-board-label count-board-label--ball">B</span>
+                  <div id="balls-indicator" class="count-board-dots">
+                    <div class="count-bulb count-bulb--ball"></div>
+                    <div class="count-bulb count-bulb--ball"></div>
+                    <div class="count-bulb count-bulb--ball"></div>
+                  </div>
+                </div>
+                <div class="count-board-row">
+                  <span class="count-board-label count-board-label--strike">S</span>
+                  <div id="strikes-indicator" class="count-board-dots">
+                    <div class="count-bulb count-bulb--strike"></div>
+                    <div class="count-bulb count-bulb--strike"></div>
+                  </div>
+                </div>
+                <div class="count-board-row">
+                  <span class="count-board-label count-board-label--out">O</span>
+                  <div id="outs-indicator" class="count-board-dots">
+                    <div class="count-bulb count-bulb--out"></div>
+                    <div class="count-bulb count-bulb--out"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Inning & Score -->
+              <div class="count-game-info">
+                <div class="count-inning-line">
+                  <span id="scorebug-inning" class="count-inning-text">▲ 1ST</span>
+                </div>
+                <div class="count-score-line">
+                  <span id="scorebug-score" class="count-score-text">AWY 0 - HOM 0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Section: Challenge Tracker & Status -->
+            <div id="nav-challenge-tracker" class="hidden md:flex items-center gap-2 justify-end shrink-0">
+              <div class="flex flex-col text-right min-w-0 pr-1.5" style="border-right:1px solid rgba(45,107,66,0.35);">
+                <span style="font-family:var(--ump-font-pixel);font-size:0.3rem;color:var(--retro-gold);letter-spacing:0.08em;text-transform:uppercase;">Challenge Tracker</span>
+                <span id="pitch-counter-text" style="font-family:var(--ump-font-body);font-size:0.8rem;color:var(--retro-chalk);margin-top:0.1rem;" class="truncate max-w-[120px] md:max-w-none">WEEKLY CHALLENGE | AB 1</span>
+              </div>
+
+              <div class="flex items-center gap-1.5 px-1.5 py-0.5 select-none shrink-0" style="background:rgba(0,0,0,0.4);border:1px solid var(--retro-grass);font-family:var(--ump-font-pixel);font-size:0.28rem;color:var(--retro-chalk-dim);text-transform:uppercase;letter-spacing:0.06em;" id="gameplay-status-pill">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" id="gameplay-status-dot"></span>
+                <span id="gameplay-status-text">WAITING</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- Close Call Telemetry Pill (Floating center) -->
-      <div id="close-call-pill" class="absolute px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 border border-amber-400/30 rounded-full font-black text-[10px] text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 scale-95 opacity-0 transition-all duration-300 z-40 pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
-        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-        <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
-      </div>
+      <!-- NEW STRUCTURED MAIN VIEW CONTAINER -->
+      <div id="hud-main-view" class="flex-grow w-full relative pointer-events-none flex flex-col justify-between">
+        
+        <!-- Game Status Badge (Floating top center relative to hud-main-view) -->
+        <div id="game-status-badge" class="absolute top-4 left-1/2 -translate-x-1/2 px-5 py-2 bg-slate-950/90 backdrop-blur border border-white/10 text-white text-xs font-extrabold uppercase font-mono-tech tracking-widest rounded-full shadow-xl z-40 transition-all duration-300 opacity-0 pointer-events-none flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" id="game-status-dot"></span>
+          <span id="game-status-text">WAITING FOR PITCH</span>
+        </div>
+
+        <!-- Correct/Incorrect Toast Notification overlaying the status badge -->
+        <div id="toast-message" class="absolute top-4 left-1/2 -translate-x-1/2 transform px-6 py-2 rounded-full font-black uppercase tracking-wider text-xs md:text-sm shadow-xl opacity-0 scale-95 transition-all duration-300 border pointer-events-none whitespace-nowrap z-50">
+          <!-- Text dynamically inserted -->
+        </div>
+
+        <!-- Close Call Telemetry Pill (Floating center) -->
+        <div id="close-call-pill" class="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 border border-amber-400/30 rounded-full font-black text-[10px] text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 scale-95 opacity-0 transition-all duration-300 z-40 pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+          <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
+        </div>
 
       <!-- SCREEN A: WELCOME SCREEN (UmpSim3000 Arcade Login) -->
       <div id="welcome-screen" class="ump-screen absolute inset-0 w-full h-full backdrop-blur-md bg-grid-pattern flex flex-col justify-center items-center z-[55] pointer-events-auto transition-opacity duration-500">
@@ -164,6 +361,9 @@
           <button id="btn-welcome-start" type="button" class="ump-btn ump-btn--primary ump-btn--block pointer-events-auto">
             Insert Coin & Play
           </button>
+          <a href="/nav-playbook.html" target="_blank" class="ump-link mt-4 text-[10px] tracking-widest !text-amber-400 hover:!text-amber-300 pointer-events-auto block text-center" style="font-family: var(--ump-font-pixel); font-size: 8px;">
+            [ Launch Navigation Design Playbook ]
+          </a>
         </div>
       </div>
 
@@ -194,37 +394,9 @@
       <!-- SCREEN C: MAIN DASHBOARD MENU HUB -->
       <div id="start-screen" class="ump-screen absolute inset-0 w-full h-full bg-grid-pattern flex flex-col items-center z-50 pointer-events-auto transition-opacity duration-500 overflow-y-scroll scrollbar-thin">
         
-        <div class="w-full max-w-4xl h-24 md:h-20 flex-shrink-0"></div>
+        <!-- Spacer left for fixed top nav -->
 
-        <div class="ump-panel ump-panel--flush w-full max-w-4xl flex flex-col overflow-hidden min-h-[min(680px,calc(100dvh-6rem))]">
-
-          <header class="menu-header">
-            <div class="menu-header__marquee" aria-hidden="true">
-              <span>⚾</span><span>PITCH UMP 3D</span><span>⚾</span>
-            </div>
-            <div class="menu-header__body">
-              <div class="menu-header__kicker">CREW CHIEF DASHBOARD</div>
-              <div class="menu-header__title-row">
-                <div class="menu-header__title">PLAY BALL</div>
-                <div class="menu-header__badge">ARCADE EDITION</div>
-              </div>
-              <div class="menu-header__sub">
-                Mobile-first UI • Retro baseball theme • Fast to read
-              </div>
-            </div>
-          </header>
-          
-          <div class="ump-tab-bar" role="tablist" aria-label="Dashboard sections">
-            <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active">
-              Play Challenge
-            </button>
-            <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab">
-              Leaderboards
-            </button>
-            <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab">
-              My Stats &amp; Profile
-            </button>
-          </div>
+        <div class="ump-panel ump-panel--flush w-full max-w-4xl flex flex-col overflow-hidden min-h-[min(680px,calc(100dvh-6rem))] border-t border-white/10 rounded-2xl">
 
           <!-- Tab Contents -->
           <div class="p-6 flex-1 flex flex-col justify-start overflow-y-auto scrollbar-thin">
@@ -233,11 +405,11 @@
               
               <!-- Challenges Hub (Featured Cards) -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div id="weekly-challenge-card" class="ump-card">
-                  <span class="ump-badge ump-badge--featured">Featured</span>
+                <div id="weekly-challenge-card" class="ump-card border-emerald-500/35 hover:border-emerald-400/50 shadow-[0_0_15px_rgba(16,185,129,0.08)] hover:shadow-[0_0_20px_rgba(16,185,129,0.18)]">
+                  <span class="absolute top-0 right-0 px-2.5 py-1 bg-emerald-600 text-white text-[8px] font-mono-tech uppercase tracking-widest border-b border-l border-emerald-500/30 rounded-bl-lg pointer-events-none z-10">Featured</span>
                   <div>
-                    <h3 class="ump-card__title">
-                      <span class="ump-card__dot" aria-hidden="true"></span>
+                    <h3 class="ump-card__title text-xs md:text-sm text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-2">
+                      <span class="ump-card__dot bg-emerald-500" aria-hidden="true"></span>
                       Weekly Challenge
                     </h3>
                     <p class="ump-card__body">
@@ -252,17 +424,17 @@
                     <div class="ump-progress">
                       <div id="weekly-challenge-progress-bar" class="ump-progress__fill" style="width: 0%"></div>
                     </div>
-                    <div class="grid grid-cols-2 gap-2 mt-3">
-                      <button id="btn-start-weekly-challenge" type="button" class="ump-btn ump-btn--primary ump-btn--sm pointer-events-auto">Start Challenge</button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                      <button id="btn-start-weekly-challenge" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 border-emerald-500/50 text-white ump-btn--sm pointer-events-auto">Start Challenge</button>
                       <button id="btn-info-weekly-challenge" type="button" class="ump-btn ump-btn--ghost ump-btn--sm pointer-events-auto">More Info</button>
                     </div>
                   </div>
                 </div>
 
-                <div id="streak-challenge-card" class="ump-card">
+                <div id="streak-challenge-card" class="ump-card border-amber-500/35 hover:border-amber-400/50 shadow-[0_0_15px_rgba(245,158,11,0.08)] hover:shadow-[0_0_20px_rgba(245,158,11,0.18)]">
                   <div>
-                    <h3 class="ump-card__title">
-                      <span class="ump-card__dot ump-card__dot--warn" aria-hidden="true"></span>
+                    <h3 class="ump-card__title text-xs md:text-sm text-amber-400 font-bold uppercase tracking-wider flex items-center gap-2">
+                      <span class="ump-card__dot bg-amber-500" aria-hidden="true"></span>
                       Streak Challenge
                     </h3>
                     <p class="ump-card__body">
@@ -270,18 +442,18 @@
                     </p>
                   </div>
                   <div>
-                    <div class="ump-panel--subtle flex flex-col gap-1 px-3 py-1.5 mb-1.5 text-left">
-                      <div class="flex justify-between items-center gap-2">
-                        <span class="ump-label">Best Streak (All-Time)</span>
-                        <span id="daily-streak-historical" class="ump-stat-card__value ump-stat-card__value--warn text-lg">0 PITCHES</span>
+                    <div class="ump-panel--subtle flex flex-col gap-2 p-3 mb-2 text-left rounded-xl">
+                      <div class="flex justify-between items-center text-[10px] font-mono-tech">
+                        <span class="text-gray-400 uppercase tracking-widest">Best Streak (All-Time):</span>
+                        <span id="daily-streak-historical" class="text-white font-black">0 PITCHES</span>
                       </div>
-                      <div class="flex justify-between items-center gap-2">
-                        <span class="ump-label">Today</span>
-                        <span id="daily-streak-outcome" class="ump-subtitle text-lg">NOT STARTED</span>
+                      <div class="flex justify-between items-center text-[10px] font-mono-tech mt-1">
+                        <span class="text-gray-400 uppercase tracking-widest">Today:</span>
+                        <span id="daily-streak-outcome" class="text-amber-400 font-black">NOT STARTED</span>
                       </div>
                     </div>
-                    <div class="grid grid-cols-2 gap-2 mt-3">
-                      <button id="btn-start-daily-streak" type="button" class="ump-btn ump-btn--warn ump-btn--sm pointer-events-auto">Play Streak</button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                      <button id="btn-start-daily-streak" type="button" class="ump-btn bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border-amber-500/50 text-white ump-btn--sm pointer-events-auto">Play Streak</button>
                       <button id="btn-info-streak-challenge" type="button" class="ump-btn ump-btn--ghost ump-btn--sm pointer-events-auto">More Info</button>
                     </div>
                   </div>
@@ -321,9 +493,9 @@
             <!-- Tab Content: LEADERBOARDS -->
             <div id="tab-content-leaderboard" class="w-full hidden flex-col">
               <div class="flex justify-between items-center mb-4">
-                <span id="leaderboard-division-title" class="text-xs font-bold uppercase tracking-widest text-purple-400 font-mono-tech">Umpire Crew Standings</span>
+                <span id="leaderboard-division-title" class="text-xs font-bold uppercase tracking-widest text-emerald-400 font-mono-tech">Umpire Crew Standings</span>
                 <div class="flex gap-2">
-                  <button id="leader-btn-weekly" class="px-3 py-1 bg-purple-600 text-[10px] font-bold uppercase rounded-md text-white cursor-pointer">Weekly Challenge</button>
+                  <button id="leader-btn-weekly" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold uppercase rounded-md text-white cursor-pointer">Weekly Challenge</button>
                   <button id="leader-btn-daily" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">Daily Streak</button>
                   <button id="leader-btn-alltime" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">Team Standings</button>
                 </div>
@@ -411,7 +583,7 @@
                     <label class="text-[9px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Favorite Team</label>
                     <div class="flex items-center gap-3">
                       <div class="w-10 h-10 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex items-center justify-center p-1">
-                        <img id="profile-fav-team-logo" class="w-full h-full object-contain" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="Favorite Team Logo" />
+                        <img id="profile-fav-team-logo" class="w-full h-full object-contain" src="/generic.svg" alt="Favorite Team Logo" />
                       </div>
                       <select id="profile-fav-team-select" class="bg-slate-900 border border-white/10 rounded-lg p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 cursor-pointer">
                         <option value="none">Select Favorite Team</option>
@@ -446,195 +618,8 @@
           Keyboard: <kbd class="kbd-hint">Space</kbd> throw/continue · <kbd class="kbd-hint">A</kbd> ball · <kbd class="kbd-hint">D</kbd> strike
         </div>
 
-      </div>
-
-      <!-- TOP STACK (Persistent Profile telemetry & Active gameplay match telemetry) -->
-      <div class="w-full max-w-4xl mx-auto flex flex-col gap-2 pointer-events-none relative z-[60]">
-         
-         <!-- PERSISTENT PROFILE TELEMETRY HUD BAR -->
-         <div id="persistent-profile-hud" class="w-full flex flex-col md:flex-row justify-between items-center bg-slate-900/80 border border-white/10 rounded-2xl p-4 gap-4 select-none pointer-events-auto transition-opacity duration-300 opacity-0 hidden">
-           <!-- Left Side: User Info & Team Logo -->
-           <div class="flex items-center gap-3">
-             <img id="hud-user-team-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" class="w-10 h-10 object-contain drop-shadow bg-slate-950/40 rounded-full p-1 border border-white/10 animate-pulse" alt="Team Logo" />
-             <div class="flex flex-col text-left">
-               <div class="flex items-center gap-2 flex-wrap">
-                 <span id="hud-user-level-badge" class="ump-level-badge ump-level-badge--rookie">LVL 1</span>
-                 <span id="hud-user-favorite-badge" class="text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech">NONE</span>
-               </div>
-               <span id="hud-user-handle" class="text-base font-black text-white uppercase tracking-wider">GUEST_UMPIRE</span>
-             </div>
-           </div>
-
-           <!-- Middle: XP / Points Progress Bar -->
-           <div class="flex-1 max-w-md w-full flex flex-col gap-1 px-2">
-             <div class="flex justify-between text-[10px] font-mono-tech font-bold text-gray-400">
-               <span>ACCUMULATED SCORE / EXPERIENCE</span>
-               <span id="hud-user-xp-text">0 PTS</span>
-             </div>
-             <div class="ump-xp-bar-bg">
-               <div id="hud-user-xp-bar" class="ump-xp-bar-fill"></div>
-             </div>
-           </div>
-
-           <!-- Right Side: Quick Action buttons (Settings & Logout) -->
-           <div class="flex items-center gap-2">
-             <button id="btn-dashboard-settings-toggle" class="px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-gray-800 hover:bg-purple-600 rounded-xl border border-white/10 transition-all cursor-pointer pointer-events-auto flex items-center gap-1.5 text-white">
-               <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                 <circle cx="12" cy="12" r="3"/>
-               </svg>
-               <span>SETTINGS</span>
-             </button>
-             <button id="btn-hud-logout" class="px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-xl border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-                </svg>
-                <span>LOGOUT</span>
-              </button>
-           </div>
-         </div>
-         
-         <!-- MATCHUP SUB-HEADER BAR (Hitter, Pitcher, Live pitch status) -->
-          <div id="matchup-card" class="w-full glass-panel p-2.5 rounded-xl border border-white/10 flex flex-row justify-between items-center gap-4 opacity-0 transition-opacity duration-300 pointer-events-none select-none shadow-xl">
-              <!-- Left Side: Pitcher Info -->
-              <div class="flex items-center gap-2.5 w-2/5 min-w-0 text-left">
-                <div id="card-pitcher-img-wrapper" class="relative w-11 h-11 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  <img id="card-pitcher-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Pitcher Headshot" />
-                  <img id="card-pitcher-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="Team Logo" />
-                </div>
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-[9px] font-mono-tech text-purple-400 uppercase tracking-widest font-bold">PITCHER</span>
-                    <span id="card-pitcher-hand" class="text-[8px] font-mono-tech font-bold uppercase px-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25">RHP</span>
-                  </div>
-                  <div class="name-marquee-wrap name-marquee-wrap--card">
-                    <span class="name-marquee-track">
-                      <span id="card-pitcher-name" class="text-xs font-bold text-white tracking-wide name-marquee-text">--</span>
-                      <span class="card-pitcher-name-dup text-xs font-bold text-white tracking-wide name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
-                    </span>
-                  </div>
-                  <span id="card-pitcher-stats" class="text-[9px] text-gray-400 font-mono-tech mt-0.5 truncate">ERA: 2.84</span>
-                </div>
-              </div>
-
-              <!-- Center Side: TV-Style Score Bug -->
-              <div class="flex items-center gap-4 bg-slate-950/85 border border-white/10 rounded-xl px-4 py-1.5 flex-shrink-0 select-none shadow-inner h-[52px]">
-                <!-- Base Runners Diamond -->
-                <div class="relative w-8 h-8 flex-shrink-0 select-none">
-                  <!-- 2nd base (top) -->
-                  <div id="scorebug-base2" class="absolute top-[2px] left-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 border border-white/20 bg-slate-800 transition-colors duration-200"></div>
-                  <!-- 3rd base (left) -->
-                  <div id="scorebug-base3" class="absolute top-1/2 -translate-y-1/2 left-[2px] w-2.5 h-2.5 rotate-45 border border-white/20 bg-slate-800 transition-colors duration-200"></div>
-                  <!-- 1st base (right) -->
-                  <div id="scorebug-base1" class="absolute top-1/2 -translate-y-1/2 right-[2px] w-2.5 h-2.5 rotate-45 border border-white/20 bg-slate-800 transition-colors duration-200"></div>
-                </div>
-
-                <!-- Inning, Scores, and Counts -->
-                <div class="flex flex-col justify-center min-w-[120px] border-l border-white/10 pl-3">
-                  <div class="flex items-center gap-2 text-[9px] font-mono-tech font-black text-white leading-none">
-                    <!-- Inning details -->
-                    <span id="scorebug-inning" class="text-purple-400">▲ 1ST</span>
-                    <div class="w-px h-2.5 bg-white/20"></div>
-                    <!-- Score -->
-                    <span id="scorebug-score" class="tracking-widest">AWY 1 - HOM 0</span>
-                  </div>
-                  
-                  <div class="flex items-center gap-3 mt-1.5 text-[8px] font-mono-tech font-bold text-gray-400 leading-none">
-                    <!-- Count (Balls, Strikes, Outs) -->
-                    <div class="flex items-center gap-1">
-                      <span>B:</span>
-                      <div id="balls-indicator" class="flex gap-0.5">
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                      </div>
-                    </div>
-                    
-                    <div class="flex items-center gap-1">
-                      <span>S:</span>
-                      <div id="strikes-indicator" class="flex gap-0.5">
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                      </div>
-                    </div>
-
-                    <div class="flex items-center gap-1">
-                      <span>O:</span>
-                      <div id="outs-indicator" class="flex gap-0.5">
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                        <div class="w-2 h-2 rounded-full border border-gray-600 bg-transparent transition-colors duration-200"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Right Side: Batter Info -->
-              <div class="flex items-center justify-end gap-2.5 w-2/5 min-w-0 text-right">
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center justify-end gap-1.5">
-                    <span id="card-batter-hand" class="text-[8px] font-mono-tech font-bold uppercase px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25">LHB</span>
-                    <span class="text-[9px] font-mono-tech text-cyan-400 uppercase tracking-widest font-bold">BATTER</span>
-                  </div>
-                  <div class="name-marquee-wrap name-marquee-wrap--card">
-                    <span class="name-marquee-track">
-                      <span id="card-batter-name" class="text-xs font-bold text-white tracking-wide name-marquee-text">--</span>
-                      <span class="card-batter-name-dup text-xs font-bold text-white tracking-wide name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
-                    </span>
-                  </div>
-                  <span id="card-batter-stats" class="text-[9px] text-gray-400 font-mono-tech mt-0.5 truncate">AVG: .298</span>
-                </div>
-                <div id="card-batter-img-wrapper" class="relative w-11 h-11 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                  <img id="card-batter-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Batter Headshot" />
-                  <img id="card-batter-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="Team Logo" />
-                </div>
-              </div>
-          </div>
-
-          <!-- GAME HUD: HEADER (TOP BAR) -->
-          <div id="hud-header" class="w-full flex flex-col md:flex-row justify-between items-center gap-4 opacity-0 transition-opacity duration-300 pointer-events-auto">
-            <!-- Left Side: Challenge Tracker Banner -->
-            <div id="challenge-tracker-hud" class="flex items-center gap-3 bg-slate-900/80 border border-white/10 px-4 py-2 rounded-xl text-left pointer-events-auto select-none">
-              <div class="flex flex-col">
-                <span class="text-[8px] uppercase text-purple-400 font-mono-tech font-extrabold tracking-widest leading-none">Challenge Tracker</span>
-                <span id="pitch-counter-text" class="text-[11px] font-mono-tech font-black text-white mt-1">WEEKLY CHALLENGE | AB 1 OF 200</span>
-              </div>
-            </div>
-
-            <!-- Right Side: Status Pill & Utility Buttons -->
-            <div class="flex items-center gap-3">
-              <div class="flex items-center gap-1.5 bg-slate-950/60 border border-white/5 px-3 py-2 rounded-full text-[9px] font-mono-tech text-gray-300 uppercase tracking-widest select-none" id="gameplay-status-pill">
-                <span class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_#22c55e] animate-pulse" id="gameplay-status-dot"></span>
-                <span id="gameplay-status-text">WAITING FOR PITCH</span>
-              </div>
-
-              <!-- Home / Back Button -->
-              <button id="btn-main-menu" class="flex items-center justify-center bg-slate-900/80 border border-white/10 hover:bg-white/5 hover:scale-105 active:scale-95 p-2 rounded-xl transition-all cursor-pointer pointer-events-auto text-white w-9 h-9" title="Return to Main Menu">
-                <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                </svg>
-              </button>
-              
-              <!-- Mute / Unmute Button -->
-              <button id="btn-audio-mute" class="flex items-center justify-center bg-slate-900/80 border border-white/10 hover:bg-white/5 hover:scale-105 active:scale-95 p-2 rounded-xl transition-all cursor-pointer pointer-events-auto text-white w-9 h-9 animate-fade-in" title="Mute/Unmute Audio">
-                <svg id="svg-audio-unmuted" class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
-                </svg>
-                <svg id="svg-audio-muted" class="w-4 h-4 text-red-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm11.364-6.364l-4.243 4.243m0-4.243l4.243 4.243"/>
-                </svg>
-              </button>
-              
-              <!-- Settings Button -->
-              <button id="btn-settings-toggle" class="flex items-center justify-center bg-slate-900/80 border border-white/10 hover:bg-white/5 hover:scale-105 active:scale-95 p-2 rounded-xl transition-all cursor-pointer pointer-events-auto text-white w-9 h-9" title="Game Settings">
-                <svg class="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
+   
+       </div>
 
       <!-- Settings Panel Sidebar (Camera & Sandbox Controls) -->
       <div id="camera-controls-panel" class="fixed z-[60] w-72 glass-panel p-5 rounded-xl border border-white/10 flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none mt-2">
@@ -750,10 +735,7 @@
       <!-- GAME HUD: MIDDLE VIEW (TIMER, DECISION PROMPT & TOASTS) -->
       <div id="hud-middle" class="w-full flex-1 flex flex-col justify-center items-center relative py-6">
         
-        <!-- Center Toast Notifications -->
-        <div id="toast-message" class="absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-4 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-0 scale-90 transition-all duration-300 border-2 pointer-events-none whitespace-nowrap z-30">
-          <!-- Text dynamically inserted -->
-        </div>
+
 
         <!-- Quick Preview Controls (floating at bottom of viewport) -->
         <div id="quick-preview-controls" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-0 pointer-events-none scale-90 transition-all duration-300 z-30">
@@ -777,11 +759,11 @@
 
           <!-- Quick Actions Button Group -->
           <div class="flex items-center gap-2 pointer-events-auto">
-            <button id="btn-view-details" class="px-6 h-12 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            <button id="btn-view-details" class="px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
               View ABS Review Details [V]
             </button>
             <button id="btn-quick-continue" class="px-6 h-12 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-              Continue <span id="quick-continue-timer" class="font-mono-tech text-purple-400 ml-1"></span>
+              Continue <span id="quick-continue-timer" class="font-mono-tech text-emerald-400 ml-1"></span>
             </button>
           </div>
         </div>
@@ -799,7 +781,7 @@
             </button>
             
             <div id="countdown-timer-container" class="relative w-12 h-12 flex items-center justify-center bg-slate-900/60 rounded-full border border-white/10 shadow-lg">
-              <svg class="w-12 h-12 transform -rotate-90">
+              <svg class="w-12 h-12 transform -rotate-90" viewBox="0 0 48 48">
                 <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.06)" stroke-width="3" fill="transparent" />
                 <circle id="countdown-timer-ring" cx="24" cy="24" r="20" stroke="#a855f7" stroke-width="3" fill="transparent" class="transition-all duration-100" />
               </svg>
@@ -850,7 +832,7 @@
               <span id="abs-result-title" class="text-xs font-bold text-gray-400 uppercase tracking-wider font-mono-tech">CALL CONFIRMED</span>
               <span id="abs-result-value" class="text-sm font-black px-2.5 py-1 rounded-md uppercase text-green-400 bg-green-950/50 border border-green-500/30 shadow-sm">STRIKE</span>
             </div>
-            <button id="btn-broadcast-continue" class="px-6 h-12 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2">
+            <button id="btn-broadcast-continue" class="px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2">
               Continue [Space]
               <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
             </button>
@@ -891,93 +873,125 @@
       </div>
 
       <!-- SCREEN G: UP-TO-BAT MATCHUP PREVIEW OVERLAY (Untimed Walk-up card) -->
-      <div id="ab-start-overlay" class="absolute inset-0 w-full h-full flex flex-col justify-center items-center p-3 md:p-4 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-300">
-        <div class="max-w-2xl w-full glass-panel flex flex-col pointer-events-auto relative overflow-hidden">
+      <div id="ab-start-overlay" class="absolute inset-0 w-full h-full flex flex-col justify-center items-center p-3 md:p-4 z-40 pointer-events-none opacity-0 transition-all duration-300">
+        <div class="max-w-2xl w-full ab-start-cabinet flex flex-col pointer-events-auto relative overflow-hidden transform scale-95 transition-all duration-300">
+          <!-- Arcade bezel stitches -->
+          <div class="arcade-cabinet-bezel" aria-hidden="true">
+            <span class="arcade-stitch arcade-stitch--tl"></span>
+            <span class="arcade-stitch arcade-stitch--tr"></span>
+            <span class="arcade-stitch arcade-stitch--bl"></span>
+            <span class="arcade-stitch arcade-stitch--br"></span>
+          </div>
+          <!-- Scanline CRT overlay -->
+          <div class="ab-start-scanlines" aria-hidden="true"></div>
           <div class="ab-start-marquee" aria-hidden="true">
             <span>⚾</span><span>NEXT AT-BAT</span><span>⚾</span>
           </div>
           <div class="ab-start-body">
-          <span id="ab-start-challenge-badge" class="px-3 py-1 uppercase">WEEKLY CHALLENGE</span>
-          <h2 id="ab-start-title" class="uppercase mt-2">UPCOMING AT-BAT</h2>
-          <p id="ab-start-subtitle" class="mt-1 uppercase">AB 1 OF 200</p>
+          <h2 id="ab-start-title" class="ab-start-title">UPCOMING AT-BAT</h2>
+          <p id="ab-start-subtitle" class="ab-start-subtitle">AB 1 OF 200</p>
           
-          <!-- Pitcher vs Batter Faceoff Display -->
-          <div class="flex flex-col md:flex-row items-center justify-between w-full bg-white/5 border border-white/10 rounded-xl p-5 mt-6 mb-4 select-none relative overflow-hidden gap-4">
-            <!-- Background glow -->
-            <div class="absolute inset-0 bg-gradient-to-r from-purple-600/5 to-blue-600/5 opacity-50"></div>
-            
-            <!-- Pitcher Column -->
-            <div class="flex items-center gap-3 z-10 w-full md:w-[42%] text-left">
-              <div class="relative w-14 h-14 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                <img id="ab-start-pitcher-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Pitcher Headshot" />
-                <img id="ab-start-pitcher-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="Team Logo" />
+          <!-- Weekly Challenge Progression Dock (Unified pre/post style) -->
+          <div id="ab-start-weekly-challenge-details" class="ab-summary-challenge-dock--unified hidden mb-3 rounded-lg overflow-hidden text-left">
+            <!-- Row 1: Labels -->
+            <div class="flex justify-between items-center w-full">
+              <span class="ab-summary-challenge-label text-slate-400 whitespace-nowrap">WEEKLY CHALLENGE</span>
+              <div class="flex gap-3 text-right">
+                <span class="ab-summary-challenge-stat-label w-20 text-center">ACCURACY</span>
+                <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
               </div>
-              <div class="flex flex-col min-w-0">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[7px] font-mono-tech text-purple-400 uppercase tracking-widest font-bold">PITCHER</span>
-                  <span id="ab-start-pitcher-hand" class="text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25">RHP</span>
-                </div>
-                <div class="name-marquee-wrap name-marquee-wrap--wide">
+            </div>
+            
+            <!-- Row 2: Values -->
+            <div class="flex justify-between items-center w-full mt-0.5">
+              <!-- Left: Count and Percent -->
+              <div class="flex items-center gap-2 font-mono-tech whitespace-nowrap flex-shrink-0">
+                <span id="ab-start-weekly-count" class="text-lg font-black text-white">0</span>
+                <span id="ab-start-weekly-total" class="text-xs text-slate-400">/ 200</span>
+                <span id="ab-start-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
+              </div>
+              
+              <!-- Right: Accuracy and Rank Values -->
+              <div class="flex gap-3 text-right items-baseline font-mono-tech">
+                <span id="ab-start-weekly-accuracy-text" class="text-sm font-black text-white w-20 text-center whitespace-nowrap">--</span>
+                <span id="ab-start-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
+              </div>
+            </div>
+
+            <!-- Row 3: Full-width Progress Bar -->
+            <div class="w-full mt-1">
+              <div class="ab-summary-weekly-bar-bg w-full h-2.5 bg-slate-950 rounded-full overflow-hidden">
+                <div id="ab-start-weekly-progress-bar" class="ab-summary-weekly-bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Pitcher vs Batter Faceoff Display (Themed to match Umpire Box Score) -->
+          <div class="ab-summary-matchup-card">
+            <!-- Pitcher Column -->
+            <div id="ab-start-pitcher-card" class="ab-summary-player ab-summary-player--pitcher">
+              <div class="ab-summary-player-photo">
+                <img id="ab-start-pitcher-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Pitcher Headshot" />
+                <img id="ab-start-pitcher-logo" class="ab-summary-team-logo" src="/generic.svg" alt="Team Logo" />
+              </div>
+              <div class="ab-summary-player-meta">
+                <span class="ab-summary-player-role">Pitcher</span>
+                <span id="ab-start-pitcher-hand" class="ab-summary-hand-badge ab-summary-hand-badge--rhp">RHP</span>
+                <div class="name-marquee-wrap">
                   <span class="name-marquee-track">
-                    <span id="ab-start-pitcher" class="text-sm font-black text-white name-marquee-text">--</span>
-                    <span class="ab-start-pitcher-dup text-sm font-black text-white name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    <span id="ab-start-pitcher" class="ab-summary-player-name name-marquee-text">--</span>
+                    <span class="ab-start-pitcher-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
                   </span>
                 </div>
-                <span id="ab-start-pitcher-stats" class="text-[8px] text-gray-400 font-mono-tech mt-0.5">ERA: 2.84 | SO: 220</span>
               </div>
             </div>
             
             <!-- VS Indicator -->
-            <div class="flex flex-col items-center justify-center z-10 w-full md:w-[16%]">
-              <span class="text-xs font-black text-purple-500 bg-purple-500/10 border border-purple-500/25 px-3 py-1.5 rounded-lg font-mono-tech">VS</span>
-            </div>
+            <div class="ab-summary-vs">VS</div>
             
             <!-- Batter Column -->
-            <div class="flex items-center gap-3 z-10 w-full md:w-[42%] text-right justify-end">
-              <div class="flex flex-col min-w-0 items-end">
-                <div class="flex items-center gap-1.5">
-                  <span id="ab-start-batter-hand" class="text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25">LHB</span>
-                  <span class="text-[7px] font-mono-tech text-purple-400 uppercase tracking-widest font-bold">BATTER</span>
-                </div>
-                <div class="name-marquee-wrap name-marquee-wrap--wide">
+            <div id="ab-start-batter-card" class="ab-summary-player ab-summary-player--batter">
+              <div class="ab-summary-player-meta ab-summary-player-meta--right">
+                <span class="ab-summary-player-role">Batter</span>
+                <span id="ab-start-batter-hand" class="ab-summary-hand-badge ab-summary-hand-badge--lhb">LHB</span>
+                <div class="name-marquee-wrap">
                   <span class="name-marquee-track">
-                    <span id="ab-start-batter" class="text-sm font-black text-white name-marquee-text">--</span>
-                    <span class="ab-start-batter-dup text-sm font-black text-white name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
+                    <span id="ab-start-batter" class="ab-summary-player-name name-marquee-text">--</span>
+                    <span class="ab-start-batter-dup name-marquee-text name-marquee-dup" aria-hidden="true">--</span>
                   </span>
                 </div>
-                <span id="ab-start-batter-stats" class="text-[8px] text-gray-400 font-mono-tech mt-0.5">AVG: .298 | HR: 24</span>
               </div>
-              <div class="relative w-14 h-14 bg-white/5 rounded-lg border border-white/10 overflow-hidden flex-shrink-0 flex items-center justify-center">
-                <img id="ab-start-batter-img" class="w-full h-full object-cover" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Batter Headshot" />
-                <img id="ab-start-batter-logo" class="absolute bottom-0.5 right-0.5 w-4 h-4 rounded-full bg-slate-900 border border-white/20 p-0.5" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="Team Logo" />
+              <div class="ab-summary-player-photo">
+                <img id="ab-start-batter-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="Batter Headshot" />
+                <img id="ab-start-batter-logo" class="ab-summary-team-logo" src="/generic.svg" alt="Team Logo" />
               </div>
             </div>
           </div>
 
           <!-- Game Context Panel -->
-          <div id="ab-start-context" class="flex flex-col gap-3 bg-white/2 border border-white/5 rounded-xl p-4 mb-6 w-full text-xs font-mono-tech text-slate-300 text-left">
-            <div class="flex justify-between items-center">
-              <span>Inning: <b id="ab-start-inning" class="text-white">Top 1st</b></span>
-              <span>Outs: <b id="ab-start-outs" class="text-white">0 Outs</b></span>
+          <div id="ab-start-context" class="ab-start-context-panel">
+            <div class="ab-start-context-row">
+              <span>Inning: <b id="ab-start-inning">Top 1st</b></span>
+              <span>Outs: <b id="ab-start-outs">0 Outs</b></span>
             </div>
-            <div class="flex justify-between items-center border-t border-white/5 pt-2">
-              <span>Score: <b id="ab-start-score" class="text-white">0 - 0</b></span>
+            <div class="ab-start-context-row ab-start-context-row--border">
+              <span>Score: <b id="ab-start-score">0 - 0</b></span>
               <span class="flex items-center gap-1.5">
                 Base Runners:
                 <span id="ab-start-base-runners" class="flex gap-1.5">
-                  <span id="base-1" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="1st Base"></span>
-                  <span id="base-2" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="2nd Base"></span>
-                  <span id="base-3" class="w-2.5 h-2.5 rotate-45 bg-slate-700 border border-slate-600 transition-colors duration-200" title="3rd Base"></span>
+                  <span id="base-1" class="ab-start-base-diamond" title="1st Base"></span>
+                  <span id="base-2" class="ab-start-base-diamond" title="2nd Base"></span>
+                  <span id="base-3" class="ab-start-base-diamond" title="3rd Base"></span>
                 </span>
               </span>
             </div>
           </div>
           
-          <div class="flex flex-col gap-2.5 w-full">
-            <button id="btn-ab-start-confirm" class="w-full cursor-pointer uppercase">
+          <div class="flex flex-col gap-2 w-full">
+            <button id="btn-ab-start-confirm" class="ab-start-btn ab-start-btn--ready">
               READY [SPACE]
             </button>
-            <button id="btn-ab-start-exit" class="w-full cursor-pointer uppercase">
+            <button id="btn-ab-start-exit" class="ab-start-btn ab-start-btn--exit">
               EXIT MENU
             </button>
           </div>
@@ -986,8 +1000,8 @@
       </div>
 
       <!-- SCREEN L: POST-AT-BAT SUMMARY OVERLAY -->
-      <div id="ab-summary-overlay" class="absolute inset-0 w-full h-full z-40 pointer-events-none opacity-0 scale-95 transition-all duration-300">
-        <div class="ab-summary-panel arcade-cabinet pointer-events-auto">
+      <div id="ab-summary-overlay" class="fixed inset-0 w-screen h-screen z-[150] pointer-events-none opacity-0 transition-all duration-300">
+        <div class="ab-summary-panel arcade-cabinet pointer-events-auto transform scale-95 transition-all duration-300">
           <div class="arcade-cabinet-bezel" aria-hidden="true">
             <span class="arcade-stitch arcade-stitch--tl"></span>
             <span class="arcade-stitch arcade-stitch--tr"></span>
@@ -1008,10 +1022,10 @@
 
           <!-- Matchup card -->
           <div class="ab-summary-matchup-card">
-            <div class="ab-summary-player ab-summary-player--pitcher">
+            <div id="ab-summary-pitcher-card" class="ab-summary-player ab-summary-player--pitcher">
               <div class="ab-summary-player-photo">
                 <img id="ab-summary-pitcher-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
-                <img id="ab-summary-pitcher-logo" class="ab-summary-team-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="" />
+                <img id="ab-summary-pitcher-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
               </div>
               <div class="ab-summary-player-meta">
                 <span class="ab-summary-player-role">Pitcher</span>
@@ -1025,7 +1039,7 @@
               </div>
             </div>
             <div class="ab-summary-vs">VS</div>
-            <div class="ab-summary-player ab-summary-player--batter">
+            <div id="ab-summary-batter-card" class="ab-summary-player ab-summary-player--batter">
               <div class="ab-summary-player-meta ab-summary-player-meta--right">
                 <span class="ab-summary-player-role">Batter</span>
                 <span id="ab-summary-batter-hand-badge" class="ab-summary-hand-badge">LHB</span>
@@ -1038,26 +1052,12 @@
               </div>
               <div class="ab-summary-player-photo">
                 <img id="ab-summary-batter-img" src="https://midfield.mlbstatic.com/v1/people/generic/spots/120" alt="" />
-                <img id="ab-summary-batter-logo" class="ab-summary-team-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" alt="" />
+                <img id="ab-summary-batter-logo" class="ab-summary-team-logo" src="/generic.svg" alt="" />
               </div>
             </div>
           </div>
 
-          <!-- This AB only -->
-          <div class="ab-summary-stats ab-summary-stats--compact">
-            <div class="ab-summary-stat">
-              <span class="ab-summary-stat-label">PITCHES</span>
-              <span id="ab-summary-pitches" class="ab-summary-stat-value ab-summary-stat-value--purple">--</span>
-            </div>
-            <div class="ab-summary-stat">
-              <span class="ab-summary-stat-label">YOU</span>
-              <span id="ab-summary-accuracy" class="ab-summary-stat-value ab-summary-stat-value--blue">100%</span>
-            </div>
-            <div class="ab-summary-stat">
-              <span class="ab-summary-stat-label">UMP</span>
-              <span id="ab-summary-ump-accuracy" class="ab-summary-stat-value ab-summary-stat-value--green">--</span>
-            </div>
-          </div>
+
 
           <div id="ab-summary-calls-board" class="ab-summary-calls-board" aria-label="Call comparison vs ABS">
             <p class="ump-text-label ab-summary-calls-board-title">UMPSCORE VS ABS</p>
@@ -1147,26 +1147,36 @@
           </div>
 
           <footer class="ab-summary-footer-bar">
-            <div id="ab-summary-weekly-challenge-details" class="ab-summary-challenge-dock hidden">
-              <div class="ab-summary-challenge-hero">
-                <span class="ab-summary-challenge-label">WEEKLY CHALLENGE</span>
-                <p class="ab-summary-challenge-countline">
-                  <span id="ab-summary-weekly-count" class="ab-summary-challenge-big">0</span>
-                  <span id="ab-summary-weekly-total" class="ab-summary-challenge-total">/ 200</span>
-                </p>
-                <div class="ab-summary-weekly-bar-bg">
-                  <div id="ab-summary-weekly-progress-bar" class="ab-summary-weekly-bar-fill"></div>
+            <div id="ab-summary-weekly-challenge-details" class="ab-summary-challenge-dock--unified hidden">
+              <!-- Row 1: Labels -->
+              <div class="flex justify-between items-center w-full">
+                <span class="ab-summary-challenge-label text-slate-400 whitespace-nowrap">WEEKLY CHALLENGE</span>
+                <div class="flex gap-3 text-right">
+                  <span class="ab-summary-challenge-stat-label w-20 text-center">ACCURACY</span>
+                  <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
                 </div>
               </div>
-                <p id="ab-summary-weekly-pct" class="ab-summary-challenge-pct">0% Complete</p>
-                <div class="ab-summary-challenge-meta">
-                <div class="ab-summary-challenge-stat">
-                  <span class="ab-summary-challenge-stat-label">ACCURACY</span>
-                  <span id="ab-summary-weekly-accuracy-text" class="ab-summary-challenge-stat-value">--</span>
+              
+              <!-- Row 2: Values -->
+              <div class="flex justify-between items-center w-full mt-0.5">
+                <!-- Left: Count and Percent -->
+                <div class="flex items-center gap-2 font-mono-tech whitespace-nowrap flex-shrink-0">
+                  <span id="ab-summary-weekly-count" class="text-lg font-black text-white">0</span>
+                  <span id="ab-summary-weekly-total" class="text-xs text-slate-400">/ 200</span>
+                  <span id="ab-summary-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
                 </div>
-                <div class="ab-summary-challenge-stat">
-                  <span class="ab-summary-challenge-stat-label">RANK</span>
-                  <span id="ab-summary-leaderboard-snippet" class="ab-summary-challenge-stat-value">--</span>
+                
+                <!-- Right: Accuracy and Rank Values -->
+                <div class="flex gap-3 text-right items-baseline font-mono-tech">
+                  <span id="ab-summary-weekly-accuracy-text" class="text-sm font-black text-white w-20 text-center whitespace-nowrap">--</span>
+                  <span id="ab-summary-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
+                </div>
+              </div>
+
+              <!-- Row 3: Full-width Progress Bar -->
+              <div class="w-full mt-1">
+                <div class="ab-summary-weekly-bar-bg w-full h-2.5 bg-slate-950 rounded-full overflow-hidden">
+                  <div id="ab-summary-weekly-progress-bar" class="ab-summary-weekly-bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
                 </div>
               </div>
               <span id="ab-summary-weekly-progress-text" class="sr-only">0 / 200</span>
@@ -1285,7 +1295,7 @@
 
           <!-- Actions footer -->
           <div class="flex gap-3 mt-auto">
-            <button id="btn-scoreboard-home" class="flex-1 py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
+            <button id="btn-scoreboard-home" class="flex-1 py-4 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
               Return to Main Menu
             </button>
             <button id="btn-scoreboard-leaderboard" class="py-4 px-6 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
@@ -1347,7 +1357,8 @@
         </div>
       </div>
 
-    </div>
+      </div> <!-- Closes #hud-main-view -->
+    </div> <!-- Closes #hud-layer -->
 
       <!-- SCREEN: CUSTOM RETRO CONFIRM MODAL -->
       <div id="confirm-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/80 backdrop-blur-sm flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300">
@@ -1395,7 +1406,7 @@
             <!-- Away Team -->
             <div class="flex items-center gap-3 flex-1 justify-end">
               <span id="preview-away-name" class="text-sm font-black text-white uppercase tracking-wider">Away Team</span>
-              <img id="preview-away-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
+              <img id="preview-away-logo" src="/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
             </div>
             
             <!-- VS / Score -->
@@ -1410,7 +1421,7 @@
             
             <!-- Home Team -->
             <div class="flex items-center gap-3 flex-1 justify-start">
-              <img id="preview-home-logo" src="https://www.mlbstatic.com/team-logos/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
+              <img id="preview-home-logo" src="/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
               <span id="preview-home-name" class="text-sm font-black text-white uppercase tracking-wider">Home Team</span>
             </div>
           </div>
@@ -1460,15 +1471,14 @@
         </div>
       </div>
 
-      <!-- SCREEN: CHALLENGE DETAILS & STANDINGS MODAL -->
       <div id="challenge-detail-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/95 backdrop-blur-md flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300 overflow-y-auto p-4 md:p-6">
-        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-3xl border-2 border-purple-500/35 flex flex-col shadow-neon-box-glow relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/5 blur-3xl"></div>
+        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-3xl border-2 border-emerald-500/35 flex flex-col shadow-neon-box-glow relative overflow-hidden">
+          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-emerald-500/5 blur-3xl"></div>
           
           <!-- Header -->
           <div class="flex justify-between items-center border-b border-white/10 pb-4 mb-4 select-none">
             <div class="flex flex-col text-left">
-              <h3 id="challenge-detail-title" class="text-lg font-black text-purple-400 font-mono-tech uppercase tracking-widest leading-none">Weekly Challenge Info</h3>
+              <h3 id="challenge-detail-title" class="text-lg font-black text-emerald-400 font-mono-tech uppercase tracking-widest leading-none">Weekly Challenge Info</h3>
               <span id="challenge-detail-subtitle" class="text-xs text-gray-500 font-mono-tech mt-1">LEADERBOARDS & STATUS</span>
             </div>
             <button id="btn-challenge-detail-close" class="text-gray-400 hover:text-white cursor-pointer transition-colors p-2 text-sm font-mono-tech uppercase font-bold">✕ Close</button>
@@ -1479,7 +1489,7 @@
             <!-- Left Side: Challenge details list & stats -->
             <div class="md:col-span-5 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/10 pb-6 md:pb-0 md:pr-6 gap-4 select-none text-left">
               <div class="flex flex-col gap-3">
-                <span class="text-[9px] font-mono-tech text-purple-400 font-extrabold uppercase tracking-widest">Challenge Metrics</span>
+                <span class="text-[9px] font-mono-tech text-emerald-400 font-extrabold uppercase tracking-widest">Challenge Metrics</span>
                 <p id="challenge-detail-desc" class="text-xs text-gray-300 leading-relaxed">
                   Analyze pitch-by-pitch datasets sourced directly from controversial called strikes and balls.
                 </p>
@@ -1489,7 +1499,7 @@
                   <div class="flex justify-between"><span>Completed Runs:</span><span id="challenge-detail-completed" class="text-white font-bold">--</span></div>
                 </div>
               </div>
-              <button id="btn-challenge-detail-play" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg hover:scale-[1.02] pointer-events-auto">
+              <button id="btn-challenge-detail-play" class="w-full py-4 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg hover:scale-[1.02] pointer-events-auto">
                 Play Now
               </button>
             </div>

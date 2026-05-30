@@ -15,6 +15,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      input: {
+        main: 'index.html',
+        playbook: 'nav-playbook.html',
+      },
       output: {
         manualChunks: {
           three: ['three'],

@@ -10,6 +10,8 @@
 @theme {
   --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono-tech: 'Share Tech Mono', monospace;
+  --ump-font-pixel: 'Press Start 2P', monospace;
+  --ump-font-body: 'VT323', 'Courier New', monospace;
   --color-bg-base: #06090e;
   --color-bg-surface: rgba(13, 20, 30, 0.7);
   --color-brand-purple: #9333ea;
@@ -25,6 +27,12 @@
   color-scheme: dark;
   background-color: var(--color-bg-base);
   font-size: 19.25px; /* 10% bump from 17.5px */
+}
+
+html, body {
+  height: 100% !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
 }
 
 body {
@@ -222,25 +230,179 @@ input[type="range"] {
 
 /* Retro baseball pass for in-game HUD (keeps Tailwind layout, replaces colors) */
 #persistent-profile-hud,
-#matchup-card,
-#hud-header #challenge-tracker-hud,
-#hud-header #gameplay-status-pill,
 #camera-controls-panel {
   background: linear-gradient(180deg, rgba(18,34,56,0.88), rgba(10,22,40,0.82)) !important;
   border-color: rgba(232, 197, 71, 0.22) !important;
   box-shadow: inset 0 0 0 2px rgba(26, 48, 80, 0.55), 0 10px 30px rgba(0,0,0,0.45) !important;
 }
 
-#hud-header #gameplay-status-text,
-#hud-header #pitch-counter-text,
-#matchup-card,
-#persistent-profile-hud {
+#main-top-nav {
+  background: linear-gradient(180deg, var(--retro-panel) 0%, var(--retro-dugout) 100%) !important;
+  border: 2px solid var(--retro-gold-dark) !important;
+  border-radius: 12px !important;
+  box-shadow: inset 0 0 0 1px #1a3050, 0 10px 30px rgba(0,0,0,0.55) !important;
+  margin: 0.5rem auto 0.35rem !important;
+  width: calc(100% - 1rem) !important;
+  max-width: 600px !important; /* Default dashboard size */
+  padding: 0.45rem 0.75rem !important;
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  overflow: hidden !important;
+}
+
+/* Dynamic Capsule Morphing States */
+#main-top-nav.capsule-welcome {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(-20px) !important;
+  visibility: hidden !important;
+}
+
+#main-top-nav.capsule-team-select {
+  border-radius: 12px !important;
+  max-width: 480px !important;
+  padding: 0.35rem 0.75rem !important;
+}
+
+#main-top-nav.capsule-dashboard {
+  border-radius: 12px !important;
+  max-width: 600px !important;
+  padding: 0.45rem 0.75rem !important;
+}
+
+#main-top-nav.capsule-gameplay {
+  border-radius: 999px !important;
+  max-width: 360px !important;
+  padding: 0.25rem 0.6rem !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+}
+
+#main-top-nav.capsule-gameplay > div {
+  width: auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+}
+
+#main-top-nav.capsule-gameplay #nav-context-row {
+  border-top: none !important;
+  padding-top: 0 !important;
+}
+
+#main-top-nav.capsule-scoreboard {
+  border-radius: 8px !important;
+  max-width: 500px !important;
+  padding: 0.4rem 0.75rem !important;
+}
+
+/* Gameplay State: Element Visibility Adjustments */
+#main-top-nav.capsule-gameplay #nav-user-telemetry,
+#main-top-nav.capsule-gameplay #nav-xp-progress,
+#main-top-nav.capsule-gameplay #nav-divider,
+#main-top-nav.capsule-gameplay #btn-adaptive-nav-action,
+#main-top-nav.capsule-gameplay #nav-logo-text,
+#main-top-nav.capsule-gameplay #nav-logo-badge {
+  display: none !important;
+}
+
+/* Gameplay State: Escape & Float Matchup Card (Bottom-Left) */
+#main-top-nav.capsule-gameplay #matchup-card {
+  position: fixed !important;
+  bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+  left: calc(1rem + env(safe-area-inset-left)) !important;
+  z-index: 50 !important;
+  width: 220px !important;
+  background: rgba(10, 22, 40, 0.92) !important;
+  border: 2px solid var(--retro-gold-dark) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+  padding: 0.5rem !important;
+  flex-direction: column !important;
+  gap: 0.35rem !important;
+}
+
+/* Gameplay State: Escape & Float Challenge Tracker (Bottom-Right) */
+#main-top-nav.capsule-gameplay #nav-challenge-tracker {
+  position: fixed !important;
+  bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+  right: calc(1rem + env(safe-area-inset-right)) !important;
+  z-index: 50 !important;
+  background: rgba(10, 22, 40, 0.92) !important;
+  border: 2px solid var(--retro-gold-dark) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
+  padding: 0.5rem !important;
+  flex-direction: column !important;
+  gap: 0.35rem !important;
+  align-items: flex-end !important;
+}
+
+/* Gameplay State: Escape & Float Settings/Audio (Top-Right) */
+#main-top-nav.capsule-gameplay #nav-system-actions {
+  position: fixed !important;
+  top: 1rem !important;
+  right: calc(1rem + env(safe-area-inset-right)) !important;
+  z-index: 60 !important;
+}
+
+/* Mobile-first overrides (Screen Width < 768px) */
+@media (max-width: 768px) {
+  #main-top-nav.capsule-team-select {
+    max-width: 280px !important;
+    padding: 0.35rem 0.5rem !important;
+  }
+  
+  #main-top-nav.capsule-dashboard {
+    max-width: 340px !important;
+    border-radius: 14px !important;
+    padding: 0.35rem 0.6rem !important;
+  }
+  
+  #main-top-nav.capsule-gameplay {
+    max-width: 220px !important;
+    padding: 0.2rem 0.5rem !important;
+  }
+  
+  #main-top-nav.capsule-scoreboard {
+    max-width: 320px !important;
+    padding: 0.35rem 0.5rem !important;
+  }
+
+  /* Hide Diamond Base runners SVG on mobile capsule to make it super compact */
+  #main-top-nav.capsule-gameplay .count-diamond-wrap {
+    display: none !important;
+  }
+
+  /* Compact scorebug text on mobile */
+  #main-top-nav.capsule-gameplay .count-game-info {
+    font-size: 8px !important;
+  }
+
+  /* Reposition floating widgets on mobile to avoid layout overlaps */
+  #main-top-nav.capsule-gameplay #matchup-card {
+    width: 180px !important;
+    bottom: calc(0.5rem + env(safe-area-inset-bottom)) !important;
+    left: calc(0.5rem + env(safe-area-inset-left)) !important;
+    padding: 0.35rem !important;
+  }
+
+  #main-top-nav.capsule-gameplay #nav-challenge-tracker {
+    bottom: calc(0.5rem + env(safe-area-inset-bottom)) !important;
+    right: calc(0.5rem + env(safe-area-inset-right)) !important;
+    padding: 0.35rem !important;
+  }
+}
+
+#persistent-profile-hud,
+#main-top-nav {
   color: var(--retro-chalk) !important;
 }
 
-#hud-header #challenge-tracker-hud span.uppercase,
 #persistent-profile-hud .font-mono-tech,
-#matchup-card .font-mono-tech,
+#main-top-nav .font-mono-tech,
 #camera-controls-panel .font-mono-tech {
   color: var(--retro-chalk-dim) !important;
 }
@@ -264,28 +426,13 @@ input[type="range"] {
 @media (max-width: 640px) {
   /* Mobile HUD anchoring: prevent lateral drift + respect safe areas */
   #hud-layer {
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
-    padding-top: max(0.5rem, env(safe-area-inset-top)) !important;
-    padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
+    padding: 0 !important;
   }
   #hud-layer > .max-w-4xl {
     width: 100% !important;
     max-width: 28rem !important;
     margin-left: auto !important;
     margin-right: auto !important;
-  }
-  #game-status-badge {
-    top: calc(max(0.5rem, env(safe-area-inset-top)) + 3.75rem) !important;
-  }
-
-  #matchup-card {
-    border-radius: 0 !important;
-    border-width: 2px !important;
-  }
-  #persistent-profile-hud {
-    border-radius: 0 !important;
-    border-width: 2px !important;
   }
 }
 
@@ -390,7 +537,7 @@ input[type="range"] {
 #start-screen:not(.opacity-100),
 #scoreboard-screen:not(.opacity-100),
 #camera-controls-panel:not(.opacity-100),
-#matchup-card:not(.opacity-100),
+
 #replay-badge:not(.opacity-100),
 #umpcard-overlay:not(.opacity-100),
 #ab-start-overlay:not(.opacity-100),
@@ -530,77 +677,11 @@ input[type="range"] {
     display: none !important;
   }
 
-  /* 2. Matchup Card Mobile Styling */
-  #matchup-card {
-    padding: 0.35rem 0.5rem !important;
+  /* 2. Top Nav Mobile Margins & Spacings */
+  #main-top-nav {
+    margin: 0.5rem 0.5rem 0.25rem 0.5rem !important;
+    padding: 0.75rem !important;
     gap: 0.5rem !important;
-    border-radius: 12px !important;
-  }
-  #matchup-card #card-pitcher-img-wrapper,
-  #matchup-card #card-batter-img-wrapper {
-    display: none !important; /* Hide headshot photos and team logos wrapper */
-  }
-  #matchup-card span[id$="-stats"] {
-    display: none !important; /* Hide stats (ERA, AVG) on mobile */
-  }
-  #matchup-card span[id$="-hand"],
-  #matchup-card span.font-mono-tech.uppercase {
-    display: none !important; /* Hide labels (PITCHER, BATTER, LHP, LHB) */
-  }
-  #matchup-card #card-pitcher-name {
-    font-size: 0 !important;
-  }
-  #matchup-card #card-pitcher-name::before {
-    content: attr(data-lastname) !important;
-    font-size: 10px !important;
-    font-weight: bold !important;
-    text-transform: uppercase !important;
-  }
-  #matchup-card #card-batter-name {
-    font-size: 0 !important;
-  }
-  #matchup-card #card-batter-name::before {
-    content: attr(data-lastname) !important;
-    font-size: 10px !important;
-    font-weight: bold !important;
-    text-transform: uppercase !important;
-  }
-  /* Middle Side: Counts styling */
-  #matchup-card .bg-slate-950\/60 {
-    padding: 0.25rem 0.5rem !important;
-    border-radius: 8px !important;
-  }
-  #matchup-card .bg-slate-950\/60 > div.flex.gap-5 {
-    display: none !important; /* Hide text labels (Balls, Strikes, Outs) */
-  }
-  #matchup-card .bg-slate-950\/60 > div.flex.mt-1 {
-    margin-top: 0 !important;
-    gap: 0.5rem !important;
-  }
-  #matchup-card .bg-slate-950\/60 div.w-3.h-3 {
-    width: 0.45rem !important;
-    height: 0.45rem !important;
-  }
-
-  /* 3. HUD Header Mobile Styling */
-  #hud-header {
-    flex-direction: row !important;
-    justify-content: center !important;
-    padding: 0 0.5rem !important;
-    margin-top: -0.25rem !important;
-  }
-  #hud-header .bg-slate-900\/80 {
-    padding: 0.25rem 0.5rem !important;
-    border-radius: 8px !important;
-  }
-  #hud-header #pitch-counter-text {
-    font-size: 8px !important;
-  }
-  #hud-header span.uppercase {
-    font-size: 7px !important;
-  }
-  #hud-header .flex.items-center.gap-3:not(:first-child) {
-    display: none !important; /* Hide duplicate buttons / status pills on mobile */
   }
 
   /* 4. Canvas Container adjustment */
@@ -621,36 +702,36 @@ input[type="range"] {
     transform: translateX(-50%) !important;
   }
   #decision-prompt-title {
-    font-family: 'Press Start 2P', monospace !important;
+    font-family: var(--ump-font-pixel) !important;
     font-size: 0.44rem !important;
     color: var(--retro-gold) !important;
     letter-spacing: 0.06em !important;
     text-shadow: 0 2px 0 rgba(0,0,0,0.55) !important;
   }
   #decision-prompt button {
-    padding: 0.55rem 0.8rem !important;
-    font-size: 0.5rem !important;
-    width: 124px !important;
-    border-radius: 0 !important;
-    font-family: 'Press Start 2P', monospace !important;
-    border-width: 3px !important;
-    box-shadow: inset 0 2px 0 rgba(255,255,255,0.1), 0 3px 0 rgba(0,0,0,0.65) !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 11px !important;
+    width: 110px !important;
+    border-radius: 12px !important;
+    font-family: inherit !important;
+    font-weight: 800 !important;
+    border-width: 2px !important;
   }
   #decision-prompt #countdown-timer-container {
-    width: 2.7rem !important;
-    height: 2.7rem !important;
-    border-radius: 0 !important;
-    border: 3px solid var(--retro-gold-dark) !important;
-    background: rgba(0, 0, 0, 0.55) !important;
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    border-radius: 9999px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(10, 22, 40, 0.95) !important;
   }
   #decision-prompt #countdown-timer-container svg {
-    width: 2.7rem !important;
-    height: 2.7rem !important;
+    width: 2.25rem !important;
+    height: 2.25rem !important;
   }
   #decision-prompt #countdown-timer-text {
-    font-family: 'VT323', monospace !important;
-    font-size: 1.25rem !important;
-    letter-spacing: 0.06em !important;
+    font-family: inherit !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
     color: var(--retro-chalk) !important;
   }
 
@@ -658,16 +739,17 @@ input[type="range"] {
   #quick-preview-controls {
     bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
     width: 90% !important;
-    max-width: 320px !important;
+    max-width: 380px !important;
     left: 50% !important;
     transform: translateX(-50%) !important;
   }
   #quick-preview-controls #pitch-detail-bug {
     width: 100% !important;
-    padding: 0.5rem !important;
-    border-radius: 0 !important;
-    border: 2px solid var(--retro-grass) !important;
-    background: rgba(0,0,0,0.55) !important;
+    padding: 0.75rem !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(232, 197, 71, 0.2) !important;
+    background: rgba(10, 22, 40, 0.95) !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
   }
   #quick-preview-controls #pitch-detail-bug div {
     font-size: 10px !important;
@@ -677,12 +759,13 @@ input[type="range"] {
   }
   #quick-preview-controls button {
     flex: 1 !important;
-    height: 2.5rem !important;
-    font-size: 10px !important;
+    height: 2.75rem !important;
+    font-size: 11px !important;
     padding: 0 0.5rem !important;
-    border-radius: 0 !important;
-    font-family: 'Press Start 2P', monospace !important;
-    border: 2px solid var(--retro-gold-dark) !important;
+    border-radius: 8px !important;
+    font-family: inherit !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.05em !important;
   }
 }
 
@@ -971,7 +1054,7 @@ a, button {
 }
 
 .ump-text-label {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: var(--retro-pixel-xs);
   line-height: 1.5;
   letter-spacing: 0.04em;
@@ -981,6 +1064,12 @@ a, button {
 
 /* Post at-bat summary overlay */
 #ab-summary-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 150 !important;
   background: rgba(6, 14, 24, 0.92) !important;
   backdrop-filter: blur(6px) !important;
   display: flex !important;
@@ -1008,7 +1097,7 @@ a, button {
     inset 0 0 28px rgba(45, 107, 66, 0.12),
     0 8px 0 #030810,
     0 16px 32px rgba(0, 0, 0, 0.55);
-  font-family: 'VT323', 'Courier New', monospace;
+  font-family: var(--ump-font-body);
   font-size: var(--retro-data);
   line-height: 1.25;
   text-align: left;
@@ -1047,7 +1136,7 @@ a, button {
   padding: 0.35rem 0.5rem;
   background: linear-gradient(90deg, var(--retro-stitch), #8b1428, var(--retro-stitch));
   border-bottom: 2px solid var(--retro-gold-dark);
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: var(--retro-pixel-xs);
   color: var(--retro-chalk);
   letter-spacing: 0.06em;
@@ -1116,7 +1205,7 @@ a, button {
 .ab-summary-outcome-badge {
   display: inline-block;
   padding: 0.4rem 0.55rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: var(--retro-pixel-xs);
   line-height: 1.55;
   letter-spacing: 0.04em;
@@ -1196,7 +1285,7 @@ a, button {
 }
 
 .ab-summary-player-role {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.4rem;
   line-height: 1.4;
   letter-spacing: 0.06em;
@@ -1207,7 +1296,7 @@ a, button {
 .ab-summary-hand-badge {
   display: inline-block;
   width: fit-content;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
   line-height: 1.4;
   padding: 0.1rem 0.28rem;
@@ -1330,7 +1419,7 @@ a, button {
 }
 
 .ab-summary-calls-label {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.36rem;
   color: var(--retro-chalk-dim);
 }
@@ -1342,7 +1431,7 @@ a, button {
 }
 
 .ab-summary-calls-pct {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
   color: var(--retro-gold);
 }
@@ -1357,14 +1446,14 @@ a, button {
 
 .ab-summary-pitch-calls-mini {
   flex-shrink: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.32rem;
   color: var(--retro-chalk-dim);
   letter-spacing: 0.02em;
 }
 
 .ab-summary-pitch-detail-ump {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.34rem;
 }
 
@@ -1381,7 +1470,7 @@ a, button {
 
 .ab-summary-vs {
   flex-shrink: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.42rem;
   line-height: 1.4;
   letter-spacing: 0.06em;
@@ -1409,7 +1498,7 @@ a, button {
 }
 
 .ab-summary-stat-label {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
   line-height: 1.45;
   letter-spacing: 0.04em;
@@ -1452,7 +1541,7 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-xp-earned-btn {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.4rem;
   line-height: 1.45;
   color: var(--retro-ok);
@@ -1585,7 +1674,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-challenge-pct {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.4rem;
   line-height: 1.45;
   color: var(--retro-ok);
@@ -1617,7 +1706,7 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-summary-review-toggle,
 .ab-summary-btn-primary,
 .ab-summary-btn-secondary {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: var(--retro-pixel-sm);
   line-height: 1.5;
   letter-spacing: 0.04em;
@@ -1660,11 +1749,11 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-summary-challenge-dock {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.45rem;
-  padding: 0.5rem 0.55rem;
-  background: linear-gradient(135deg, rgba(45, 107, 66, 0.25), rgba(10, 22, 40, 0.85));
-  border: 2px solid var(--retro-grass);
-  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.4);
+  gap: 0.3rem;
+  padding: 0.35rem 0.5rem;
+  background: linear-gradient(135deg, rgba(45, 107, 66, 0.2), rgba(10, 22, 40, 0.85));
+  border: 1px solid var(--retro-grass);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
 }
 
 .ab-summary-challenge-dock.hidden {
@@ -1672,8 +1761,8 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-challenge-label {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.4rem;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.44rem;
   line-height: 1.45;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1681,18 +1770,18 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-challenge-countline {
-  margin: 0.15rem 0 0.35rem;
+  margin: 0.05rem 0 0.15rem;
   line-height: 1;
 }
 
 .ab-summary-challenge-big {
-  font-size: 1.5rem;
+  font-size: 1.15rem;
   color: var(--retro-chalk);
   text-shadow: 0 0 12px rgba(92, 219, 149, 0.35);
 }
 
 .ab-summary-challenge-total {
-  font-size: 1.15rem;
+  font-size: 0.85rem;
   color: var(--retro-chalk-dim);
   margin-left: 0.15rem;
 }
@@ -1700,13 +1789,37 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-summary-challenge-meta {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.45rem;
+  gap: 0.3rem;
+}
+.ab-summary-challenge-dock--unified {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.3rem !important;
+  padding: 0.35rem 0.55rem !important;
+  background: linear-gradient(135deg, rgba(45, 107, 66, 0.25), rgba(10, 22, 40, 0.95)) !important;
+  border: 1px solid var(--retro-grass) !important;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4) !important;
+}
+
+.player-card-popout {
+  animation: popout-fade-in 0.15s ease-out;
+}
+
+@keyframes popout-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .ab-summary-challenge-stat-label {
   display: block;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.38rem;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.40rem;
   line-height: 1.4;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1714,7 +1827,7 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-challenge-stat-value {
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   color: var(--retro-chalk);
 }
 
@@ -1800,7 +1913,7 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-weekly-bar-bg {
-  height: 0.5rem;
+  height: 0.25rem;
   background: rgba(2, 6, 23, 0.8);
   border-radius: 9999px;
   overflow: hidden;
@@ -1831,7 +1944,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-chart-title {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.42rem;
   line-height: 1.5;
   letter-spacing: 0.06em;
@@ -1896,7 +2009,7 @@ body.ab-summary-active #hud-keyboard-help {
   z-index: 2;
   max-width: calc(100% - 0.5rem);
   padding: 0.15rem 0.35rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
   line-height: 1.45;
   color: var(--retro-dugout);
@@ -1933,7 +2046,7 @@ body.ab-summary-active #hud-keyboard-help {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.36rem;
   line-height: 1.45;
   color: var(--retro-chalk-dim);
@@ -2023,7 +2136,7 @@ body.ab-summary-active #hud-keyboard-help {
   background: rgba(0, 0, 0, 0.35);
   cursor: pointer;
   text-align: left;
-  font-family: 'VT323', monospace;
+  font-family: var(--ump-font-body);
   font-size: 1rem;
   line-height: 1.1;
   color: var(--retro-chalk);
@@ -2053,7 +2166,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-pitch-num {
   flex-shrink: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
   color: var(--retro-gold);
   min-width: 0.85rem;
@@ -2069,7 +2182,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-pitch-verdict {
   flex-shrink: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
 }
 
@@ -2085,7 +2198,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-pitch-detail-placeholder {
   margin: 0;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.36rem;
   line-height: 1.5;
   color: var(--retro-chalk-dim);
@@ -2102,7 +2215,7 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-pitch-detail-pill {
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.36rem;
   padding: 0.15rem 0.3rem;
   color: var(--retro-dugout);
@@ -2117,7 +2230,7 @@ body.ab-summary-active #hud-keyboard-help {
 
 .ab-summary-pitch-detail-dist {
   margin-left: auto;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.36rem;
   color: var(--retro-gold);
 }
@@ -2206,7 +2319,7 @@ body.ab-summary-active #hud-keyboard-help {
   backdrop-filter: blur(6px);
 }
 
-#ab-start-overlay .glass-panel {
+.ab-start-cabinet {
   position: relative;
   max-width: 26rem;
   width: 100%;
@@ -2222,12 +2335,24 @@ body.ab-summary-active #hud-keyboard-help {
     inset 0 0 0 2px #1a3050,
     0 8px 0 #030810,
     0 16px 32px rgba(0, 0, 0, 0.55) !important;
-  font-family: 'VT323', 'Courier New', monospace;
+  font-family: var(--ump-font-body);
   color: #f4ecd8;
 }
 
-#ab-start-overlay .glass-panel > .absolute {
-  display: none;
+/* Scanline CRT overlay for retro arcade look */
+.ab-start-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.06) 2px,
+    rgba(0, 0, 0, 0.06) 4px
+  );
+  mix-blend-mode: multiply;
 }
 
 .ab-start-marquee {
@@ -2238,11 +2363,13 @@ body.ab-summary-active #hud-keyboard-help {
   padding: 0.35rem 0.5rem;
   background: linear-gradient(90deg, #c41e3a, #8b1428, #c41e3a);
   border-bottom: 2px solid #9a7a1e;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   font-size: 0.42rem;
   line-height: 1.5;
   color: #f4ecd8;
   letter-spacing: 0.06em;
+  position: relative;
+  z-index: 3;
 }
 
 .countdown-timer-text--hurry {
@@ -2251,34 +2378,38 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-start-body {
-  padding: 0.55rem 0.6rem 0.6rem;
+  padding: 0.3rem 0.45rem 0.35rem;
   text-align: center;
+  position: relative;
+  z-index: 3;
 }
 
-#ab-start-overlay #ab-start-challenge-badge {
-  font-family: 'Press Start 2P', monospace;
+.ab-start-badge {
+  display: inline-block;
+  font-family: var(--ump-font-pixel);
   font-size: 0.38rem;
-  padding: 0.2rem 0.45rem;
-  border-radius: 0;
-  background: #2d6b42 !important;
+  padding: 0.12rem 0.3rem;
+  background: #2d6b42;
   border: 2px solid #9a7a1e;
-  box-shadow: none;
   color: #f4ecd8;
+  text-transform: uppercase;
 }
 
-#ab-start-overlay #ab-start-title {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.5rem;
-  line-height: 1.55;
+.ab-start-title {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.45rem !important;
+  line-height: 1.45;
   color: #e8c547;
-  margin-top: 0.35rem;
+  margin-top: 0.2rem;
+  text-transform: uppercase;
 }
 
-#ab-start-overlay #ab-start-subtitle {
-  font-family: 'VT323', monospace;
-  font-size: 1.1rem;
+.ab-start-subtitle {
+  font-family: var(--ump-font-body);
+  font-size: 0.95rem;
   color: #b8ad96;
-  margin-top: 0.15rem;
+  margin-top: 0.08rem;
+  text-transform: uppercase;
 }
 
 /* Avoid escaped Tailwind selectors (CSS optimizer warnings). */
@@ -2286,44 +2417,91 @@ body.ab-summary-active #hud-keyboard-help {
   background: rgba(0, 0, 0, 0.35) !important;
   border: 2px solid #2d6b42 !important;
   border-radius: 0 !important;
-  margin-top: 0.4rem !important;
-  margin-bottom: 0.35rem !important;
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.2rem !important;
 }
 
-#ab-start-overlay #ab-start-context {
-  background: rgba(0, 0, 0, 0.35) !important;
-  border: 2px solid #9a7a1e !important;
-  border-radius: 0 !important;
-  padding: 0.4rem !important;
-  margin-bottom: 0.4rem !important;
-  font-size: 1rem;
+/* Context panel — retro themed */
+.ab-start-context-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid #9a7a1e;
+  padding: 0.35rem 0.4rem;
+  margin-bottom: 0.3rem;
+  width: 100%;
+  font-family: var(--ump-font-body);
+  font-size: 0.85rem;
+  color: #b8ad96;
+  text-align: left;
 }
 
-#ab-start-overlay #btn-ab-start-confirm {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.48rem;
-  line-height: 1.5;
-  padding: 0.5rem 0.6rem !important;
-  border-radius: 0 !important;
-  background: linear-gradient(180deg, #c41e3a 0%, #8b1428 100%) !important;
-  border: 3px solid #9a7a1e !important;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1), 0 3px 0 #030810 !important;
+.ab-start-context-panel b {
+  color: #f4ecd8;
+  font-weight: 700;
 }
 
-#ab-start-overlay #btn-ab-start-confirm:hover {
-  filter: brightness(1.1);
-  transform: none !important;
+.ab-start-context-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-#ab-start-overlay #btn-ab-start-exit {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.4rem;
+.ab-start-context-row--border {
+  border-top: 1px solid rgba(45, 107, 66, 0.35);
+  padding-top: 0.4rem;
+}
+
+.ab-start-base-diamond {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  transform: rotate(45deg);
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(45, 107, 66, 0.5);
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Buttons — retro arcade */
+.ab-start-btn {
+  width: 100%;
+  cursor: pointer;
+  text-transform: uppercase;
+  text-align: center;
+  position: relative;
+  z-index: 3;
+  transition: filter 0.15s;
+}
+
+.ab-start-btn--ready {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.45rem;
   line-height: 1.45;
-  padding: 0.38rem !important;
-  border-radius: 0 !important;
-  background: #122238 !important;
-  border: 2px solid #2d6b42 !important;
-  color: #b8ad96 !important;
+  padding: 0.35rem 0.5rem;
+  background: linear-gradient(180deg, #c41e3a 0%, #8b1428 100%);
+  border: 3px solid #9a7a1e;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.1), 0 3px 0 #030810;
+  color: #f4ecd8;
+}
+
+.ab-start-btn--ready:hover {
+  filter: brightness(1.15);
+}
+
+.ab-start-btn--exit {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.38rem;
+  line-height: 1.4;
+  padding: 0.28rem;
+  background: #122238;
+  border: 2px solid #2d6b42;
+  color: #b8ad96;
+}
+
+.ab-start-btn--exit:hover {
+  filter: brightness(1.15);
+  color: #f4ecd8;
 }
 
 #ab-start-overlay .name-marquee-wrap--wide {
@@ -2331,20 +2509,37 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 #ab-start-overlay .name-marquee-text {
-  font-family: 'VT323', monospace;
+  font-family: var(--ump-font-body);
   font-size: 1.15rem;
   font-weight: 400;
   color: #f4ecd8;
 }
 
 #ab-start-overlay .name-marquee-dup {
-  font-family: 'VT323', monospace;
+  font-family: var(--ump-font-body);
   font-size: 1.15rem;
   font-weight: 400;
   color: #f4ecd8;
 }
 
 @media (max-width: 640px) {
+  /* Shrink matchup card and photos inside At-Bat start overlay on mobile */
+  #ab-start-overlay .ab-summary-matchup-card {
+    gap: 0.15rem;
+    padding: 0.3rem 0.2rem;
+  }
+  #ab-start-overlay .ab-summary-player {
+    gap: 0.25rem;
+  }
+  #ab-start-overlay .ab-summary-player-photo {
+    width: 2rem;
+    height: 2rem;
+  }
+  #ab-start-overlay .name-marquee-text,
+  #ab-start-overlay .name-marquee-dup {
+    font-size: 0.72rem !important;
+  }
+
   /* Avoid escaped Tailwind selectors (CSS optimizer warnings). */
   #ab-start-overlay .ab-start-body {
     display: flex;
@@ -2354,7 +2549,7 @@ body.ab-summary-active #hud-keyboard-help {
 
   /* Post-AB summary: full-width sheet, no HUD bleed-through */
   #ab-summary-overlay {
-    z-index: 80 !important;
+    z-index: 150 !important;
     padding: 0.35rem 0.4rem max(0.5rem, env(safe-area-inset-bottom)) !important;
     padding-top: max(0.35rem, env(safe-area-inset-top)) !important;
     align-items: center !important;
@@ -2482,16 +2677,16 @@ body.ab-summary-active #hud-keyboard-help {
   }
 
   .ab-summary-challenge-dock {
-    padding: 0.5rem 0.55rem;
-    gap: 0.4rem;
+    padding: 0.25rem 0.35rem;
+    gap: 0.25rem;
   }
 
   .ab-summary-challenge-big {
-    font-size: 1.15rem;
+    font-size: 0.95rem;
   }
 
   .ab-summary-challenge-meta {
-    gap: 0.35rem;
+    gap: 0.25rem;
   }
 
   .ab-summary-chart-layout {
@@ -2689,7 +2884,7 @@ body.ab-summary-active #hud-keyboard-help {
   font-weight: 800;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   color: var(--retro-gold);
   margin-bottom: 0.65rem;
 }
@@ -2698,7 +2893,7 @@ body.ab-summary-active #hud-keyboard-help {
   margin: 0.5rem 0 0.25rem;
   font-size: 1.35rem;
   font-weight: 900;
-  font-family: 'Press Start 2P', monospace;
+  font-family: var(--ump-font-pixel);
   color: var(--retro-chalk);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2707,7 +2902,7 @@ body.ab-summary-active #hud-keyboard-help {
 .level-up-subtitle {
   margin: 0;
   font-size: 0.72rem;
-  font-family: 'VT323', monospace;
+  font-family: var(--ump-font-body);
   color: var(--retro-chalk-dim);
 }
 
@@ -2785,4 +2980,474 @@ body.ab-summary-active #hud-keyboard-help {
   100% { transform: rotate(-360deg); }
 }
 
+/* NEW UI Layout Flow & Interactive Player Cards styles */
+#hud-main-view {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  width: 100%;
+  position: relative;
+  pointer-events: none;
+}
 
+/* Pre-AB Player Card Styling */
+.ump-matchup-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.25rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  position: relative;
+  overflow: hidden;
+  gap: 1rem;
+  user-select: none;
+}
+
+@media (min-width: 768px) {
+  .ump-matchup-container {
+    flex-direction: row;
+    gap: 1rem;
+  }
+}
+
+.ump-matchup-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.05) 0%, rgba(6, 182, 212, 0.05) 100%);
+  pointer-events: none;
+}
+
+.ump-player-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 10;
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 768px) {
+  .ump-player-card {
+    width: 44%;
+    background: transparent;
+    border-color: transparent;
+  }
+  .ump-player-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 20px rgba(168, 85, 247, 0.15);
+  }
+}
+
+.ump-player-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+.ump-player-card:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.ump-player-card--batter {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.ump-player-card__avatar-wrap {
+  position: relative;
+  width: 3.5rem;
+  height: 3.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ump-player-card__avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ump-player-card__team-logo {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 1px;
+}
+
+.ump-player-card__meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-grow: 1;
+}
+
+.ump-player-card--batter .ump-player-card__meta {
+  align-items: flex-end;
+}
+
+.ump-player-card__role-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.ump-player-card__role {
+  font-size: 7px;
+  font-family: var(--font-mono-tech);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ump-player-card--pitcher .ump-player-card__role {
+  color: var(--ump-color-primary-light);
+}
+
+.ump-player-card--batter .ump-player-card__role {
+  color: var(--ump-color-info-light);
+}
+
+.ump-player-card__hand {
+  font-size: 7px;
+  font-family: var(--font-mono-tech);
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  line-height: 1.2;
+}
+
+.ump-player-card--pitcher .ump-player-card__hand {
+  background: rgba(249, 115, 22, 0.1);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.25);
+}
+
+.ump-player-card--batter .ump-player-card__hand {
+  background: rgba(6, 182, 212, 0.1);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+.ump-player-card__name {
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: #ffffff;
+  margin-top: 0.125rem;
+  white-space: nowrap;
+}
+
+.ump-player-card__hint {
+  font-size: 7px;
+  font-family: var(--font-mono-tech);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.05em;
+  margin-top: 0.125rem;
+}
+
+/* Player Stats popup Modal overlay styling */
+#player-card-modal-overlay {
+  z-index: 250;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#player-card-modal-overlay.opacity-100 {
+  pointer-events: auto !important;
+  transform: scale(1) !important;
+}
+
+/* Staggered micro-animation for box score pitch rows loading */
+@keyframes retroFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  opacity: 0;
+  animation: retroFadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Mini cabinet-style player cards for top nav */
+.ab-summary-player--mini {
+  gap: 0.35rem;
+}
+
+.ab-summary-player--mini .ab-summary-player-photo {
+  width: 2.0rem;
+  height: 2.0rem;
+  border-radius: 0.3rem;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+}
+
+.ab-summary-player--mini .ab-summary-team-logo {
+  width: 0.65rem;
+  height: 0.65rem;
+  bottom: 1px;
+  right: 1px;
+}
+
+.ab-summary-player--mini .ab-summary-player-role {
+  font-size: 0.42rem;
+  line-height: 1.2;
+}
+
+.ab-summary-player--mini .ab-summary-player-name {
+  font-size: 0.65rem;
+  line-height: 1.2;
+  font-family: var(--ump-font-pixel);
+}
+
+.ab-summary-player--mini .ab-summary-hand-badge {
+  font-size: 0.42rem;
+  padding: 0.02rem 0.18rem;
+  border-radius: 0.15rem;
+}
+
+/* Neon Glow LED Scorebug Bulbs */
+.count-bulb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: radial-gradient(circle at 2px 2px, #334155, #0f172a);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 1px 0px rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease-in-out;
+}
+
+.count-bulb--ball.active {
+  background: radial-gradient(circle at 2px 2px, #4ade80, #15803d);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.95), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.count-bulb--strike.active {
+  background: radial-gradient(circle at 2px 2px, #f87171, #b91c1c);
+  box-shadow: 0 0 8px rgba(248, 113, 113, 0.95), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.count-bulb--out.active {
+  background: radial-gradient(circle at 2px 2px, #fbbf24, #b45309);
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.95), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 640px) {
+  .ab-summary-player--mini .ab-summary-player-photo {
+    width: 1.8rem;
+    height: 1.8rem;
+  }
+  .ab-summary-player--mini .ab-summary-player-name {
+    font-size: 0.58rem;
+  }
+}
+
+/* ═════════════════════════════════════════════════
+   RETRO TOP NAVIGATION — UMP HUD BAR
+   ═════════════════════════════════════════════════ */
+
+.ump-hud-bar {
+  background: linear-gradient(180deg, #122238 0%, #0a1628 60%, #060e18 100%);
+  border: 3px solid var(--retro-gold-dark, #9a7a1e);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 0 0 1px #1a3050,
+    0 6px 0 #030810,
+    0 12px 24px rgba(0, 0, 0, 0.45);
+  position: relative;
+}
+
+/* Subtle scanline texture on the nav bar */
+.ump-hud-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.04) 3px,
+    rgba(0, 0, 0, 0.04) 6px
+  );
+  z-index: 0;
+}
+
+.ump-hud-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ═════════════════════════════════════════════════
+   NAV MATCHUP CARD — Retro themed mini player cards
+   ═════════════════════════════════════════════════ */
+
+.nav-matchup-card {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(45, 107, 66, 0.4);
+  padding: 0.25rem 0.4rem;
+}
+
+/* ═════════════════════════════════════════════════
+   COUNT SECTION — Diamond + Count Board + Game Info
+   ═════════════════════════════════════════════════ */
+
+.count-section {
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid var(--retro-gold-dark, #9a7a1e);
+  padding: 0.3rem 0.5rem;
+  position: relative;
+}
+
+/* Diamond SVG wrapper */
+.count-diamond-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.count-diamond-svg {
+  display: block;
+}
+
+/* Base squares — empty state */
+.count-diamond-base {
+  fill: rgba(15, 23, 42, 0.6);
+  stroke: rgba(184, 173, 150, 0.35);
+  stroke-width: 1;
+  transition: fill 0.25s, stroke 0.25s, filter 0.25s;
+}
+
+/* Base occupied — lit up amber/orange */
+.count-diamond-base.active {
+  fill: #e8c547;
+  stroke: #fbbf24;
+  filter: drop-shadow(0 0 4px rgba(232, 197, 71, 0.6));
+}
+
+/* Count Board — B/S/O vertical layout */
+.count-board {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 0.35rem;
+  border-left: 1px solid rgba(45, 107, 66, 0.35);
+}
+
+.count-board-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.count-board-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.count-board-label {
+  font-family: var(--ump-font-pixel, 'Press Start 2P', monospace);
+  font-size: 0.32rem;
+  font-weight: 700;
+  width: 0.7rem;
+  text-align: center;
+}
+
+.count-board-label--ball { color: #4ade80; }
+.count-board-label--strike { color: #f87171; }
+.count-board-label--out { color: #fbbf24; }
+
+/* Game Info — Inning & Score */
+.count-game-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding-left: 0.35rem;
+  border-left: 1px solid rgba(45, 107, 66, 0.35);
+  min-width: 3.8rem;
+}
+
+.count-inning-line,
+.count-score-line {
+  display: flex;
+  align-items: center;
+}
+
+.count-inning-text {
+  font-family: var(--ump-font-pixel, 'Press Start 2P', monospace);
+  font-size: 0.32rem;
+  color: var(--retro-gold, #e8c547);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.count-score-text {
+  font-family: var(--ump-font-body, 'VT323', monospace);
+  font-size: 0.85rem;
+  color: var(--retro-chalk, #f4ecd8);
+  letter-spacing: 0.03em;
+}
+
+/* ═════════════════════════════════════════════════
+   MOBILE OVERRIDES — Count Section compact
+   ═════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .count-section {
+    padding: 0.2rem 0.3rem;
+    gap: 0.25rem;
+  }
+
+  .count-diamond-svg {
+    width: 34px;
+    height: 34px;
+  }
+
+  .count-game-info {
+    min-width: 2.8rem;
+    padding-left: 0.25rem;
+  }
+
+  .count-inning-text {
+    font-size: 0.28rem;
+  }
+
+  .count-score-text {
+    font-size: 0.75rem;
+  }
+
+  .nav-matchup-card {
+    padding: 0.15rem 0.25rem;
+  }
+}

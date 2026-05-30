@@ -66,6 +66,7 @@ import {
   clearSummaryPitchReview,
   updateWelcomeCamera,
   getActiveCameraName,
+  verifyAndForceUmpireCameraPosition,
 } from './scene.js';
 import {
   XP_PER_LEVEL,
@@ -366,6 +367,11 @@ let abSummaryOverlay, abSummaryTitle, abSummaryMatchup, abSummaryAccuracy, abSum
 let pauseScreen, btnResumeGame;
 let matchupCard, cardPitcherName, cardPitcherHand, cardBatterName, cardBatterHand, replayBadge;
 
+// Player Card Modal variables
+let playerCardModalOverlay, btnClosePlayerModal, playerModalImg, playerModalTeamLogo;
+let playerModalRole, playerModalName, playerModalTeam, playerModalStatsGrid;
+let playerModalHand, playerModalHeightWeight;
+
 // UI Mode Switcher
 let btnUiClassic, btnUiAdaptive, btnUiCinematic;
 // Pause Screen Stats & Buttons
@@ -504,6 +510,7 @@ function setMarqueePlayerName(primaryEl, dupSelectorOrEl, name, options = {}) {
 
   const measureMarquee = () => {
     wrap.classList.remove('name-marquee-wrap--scroll');
+    if (wrap.clientWidth === 0) return;
     const textWidth = primaryEl.scrollWidth;
     const needsScroll = textWidth > wrap.clientWidth + 2;
     wrap.classList.toggle('name-marquee-wrap--scroll', needsScroll);
@@ -582,20 +589,16 @@ function bindAbSummaryXpPopoverOnce() {
 
 function hideGameplayHudForSummary(hide) {
   document.body.classList.toggle('ab-summary-active', hide);
-  const profileHud = document.getElementById('persistent-profile-hud');
-  if (profileHud && hide) {
-    profileHud.classList.add('hidden');
-  } else if (profileHud && !hide && localStorage.getItem('ump_username')) {
-    profileHud.classList.remove('hidden');
+  const profileHud = document.getElementById('main-top-nav');
+  if (profileHud) {
+    const show = !hide && localStorage.getItem('ump_username') !== null;
+    setOverlayVisible(profileHud, show);
   }
   if (matchupCard) {
-    if (hide) setOverlayVisible(matchupCard, false);
+    setOverlayVisible(matchupCard, !hide);
   }
   if (gameStatusBadge) {
-    gameStatusBadge.classList.toggle('opacity-0', hide);
-    gameStatusBadge.classList.toggle('pointer-events-none', hide);
-    if (hide) gameStatusBadge.classList.add('!hidden');
-    else gameStatusBadge.classList.remove('!hidden');
+    setOverlayVisible(gameStatusBadge, !hide);
   }
   if (closeCallPill && hide) {
     closeCallPill.classList.add('opacity-0', 'scale-95');
@@ -1861,7 +1864,7 @@ function initProfileSettingsUI() {
   } else {
     profileFavTeamSelect.value = "none";
     if (profileFavTeamLogo) {
-      profileFavTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      profileFavTeamLogo.src = "/generic.svg";
     }
   }
   
@@ -1872,7 +1875,7 @@ function initProfileSettingsUI() {
     if (val === 'none') {
       activeFavoriteTeam = null;
       localStorage.removeItem('pitch_ump_favorite_team');
-      if (profileFavTeamLogo) profileFavTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      if (profileFavTeamLogo) profileFavTeamLogo.src = "/generic.svg";
       if (userFavoriteTeamBadge) userFavoriteTeamBadge.textContent = 'FAVORITE TEAM: NONE';
       
       if (currentHandle) {
@@ -2054,7 +2057,7 @@ function cacheDOM() {
   btnStartGame = document.getElementById('btn-start-game');
   btnStartOriolesFull = document.getElementById('btn-start-orioles-full');
   
-  hudHeader = document.getElementById('hud-header');
+  hudHeader = document.getElementById('gameplay-nav-telemetry');
   pitchCounterText = document.getElementById('pitch-counter-text');
   ballsIndicator = document.getElementById('balls-indicator');
   strikesIndicator = document.getElementById('strikes-indicator');
@@ -2088,12 +2091,12 @@ function cacheDOM() {
   
   toastMessage = document.getElementById('toast-message');
   cameraControlsPanel = document.getElementById('camera-controls-panel');
-  btnSettingsToggle = document.getElementById('btn-settings-toggle');
+  btnSettingsToggle = document.getElementById('btn-global-settings-toggle');
   chkBgmEnabled = document.getElementById('chk-bgm-enabled');
   selBgmTrack = document.getElementById('sel-bgm-track');
   closeCallPill = document.getElementById('close-call-pill');
   closeCallDistText = document.getElementById('close-call-dist-text');
-  btnAudioMute = document.getElementById('btn-audio-mute');
+  btnAudioMute = document.getElementById('btn-global-audio-mute');
   svgAudioUnmuted = document.getElementById('svg-audio-unmuted');
   svgAudioMuted = document.getElementById('svg-audio-muted');
   scorebugBase1 = document.getElementById('scorebug-base1');
@@ -2267,7 +2270,7 @@ function cacheDOM() {
   detailModalAbGrid = document.getElementById('detail-modal-ab-grid');
 
 
-  matchupCard = document.getElementById('matchup-card');
+  matchupCard = document.getElementById('gameplay-nav-telemetry');
   cardPitcherName = document.getElementById('card-pitcher-name');
   cardPitcherHand = document.getElementById('card-pitcher-hand');
   cardBatterName = document.getElementById('card-batter-name');
@@ -2336,14 +2339,14 @@ function cacheDOM() {
   // Restored Streak & HUD elements
   btnStartDailyStreak = document.getElementById('btn-start-daily-streak');
   dailyAttemptStatus = document.getElementById('daily-attempt-status');
-  btnHudLogout = document.getElementById('btn-hud-logout');
+  btnHudLogout = document.getElementById('btn-adaptive-nav-action');
 
   // Collapsible Matchup Card elements
   btnMatchupToggle = document.getElementById('btn-matchup-toggle');
 
   // Settings elements
   btnCloseSettings = document.getElementById('btn-close-settings');
-  btnDashboardSettingsToggle = document.getElementById('btn-dashboard-settings-toggle');
+  btnDashboardSettingsToggle = document.getElementById('btn-global-settings-toggle');
   settingsUiClassic = document.getElementById('settings-ui-classic');
   settingsUiAdaptive = document.getElementById('settings-ui-adaptive');
   settingsUiCinematic = document.getElementById('settings-ui-cinematic');
@@ -2405,6 +2408,18 @@ function cacheDOM() {
   leaderBtnAlltime = document.getElementById('leader-btn-alltime');
   leaderboardTableBody = document.getElementById('leaderboard-table-body');
   leaderboardDivisionTitle = document.getElementById('leaderboard-division-title');
+
+  // Player Card Modal elements
+  playerCardModalOverlay = document.getElementById('player-card-modal-overlay');
+  btnClosePlayerModal = document.getElementById('btn-close-player-modal');
+  playerModalImg = document.getElementById('player-modal-img');
+  playerModalTeamLogo = document.getElementById('player-modal-team-logo');
+  playerModalRole = document.getElementById('player-modal-role');
+  playerModalName = document.getElementById('player-modal-name');
+  playerModalTeam = document.getElementById('player-modal-team');
+  playerModalStatsGrid = document.getElementById('player-modal-stats-grid');
+  playerModalHand = document.getElementById('player-modal-hand');
+  playerModalHeightWeight = document.getElementById('player-modal-height-weight');
 }
 
 async function submitLoginAction() {
@@ -2830,8 +2845,13 @@ function attachEvents() {
       }
       initAudio();
       if (abStartOverlay) {
-        abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-        abStartOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+        abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+        abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+        const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+        if (startPanel) {
+          startPanel.classList.add('scale-95');
+          startPanel.classList.remove('scale-100');
+        }
       }
       goToMainMenu();
     });
@@ -2843,6 +2863,11 @@ function attachEvents() {
       if (abSummaryOverlay) {
         abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
         abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+        const summaryPanel = abSummaryOverlay.querySelector('.ab-summary-panel');
+        if (summaryPanel) {
+          summaryPanel.classList.add('scale-95');
+          summaryPanel.classList.remove('scale-100');
+        }
       }
       if (overviewTimerInterval) {
         clearInterval(overviewTimerInterval);
@@ -2894,7 +2919,7 @@ function attachEvents() {
     });
   }
 
-  if (btnDashboardSettingsToggle) {
+  if (btnDashboardSettingsToggle && btnDashboardSettingsToggle !== btnSettingsToggle) {
     btnDashboardSettingsToggle.addEventListener('click', (e) => {
       e.stopPropagation();
       isSettingsOpen = !isSettingsOpen;
@@ -3085,14 +3110,15 @@ function attachEvents() {
       try {
         cloud = await apiRegister(handleValNormalized, pinVal);
       } catch (regErr) {
-        if (loginErrorMsg) {
-          loginErrorMsg.textContent =
-            regErr.status === 409
-              ? 'ERROR: HANDLE ALREADY TAKEN — LOG IN INSTEAD'
-              : 'ERROR: COULD NOT REGISTER — CHECK CONNECTION';
-          loginErrorMsg.classList.remove('hidden');
+        if (regErr.status === 409) {
+          if (loginErrorMsg) {
+            loginErrorMsg.textContent = 'ERROR: HANDLE ALREADY TAKEN — LOG IN INSTEAD';
+            loginErrorMsg.classList.remove('hidden');
+          }
+          return;
         }
-        return;
+        console.warn('Cloud registration unavailable, creating local profile:', regErr);
+        cloud = { handle: handleValNormalized, stats: {} };
       }
 
       await applyCloudSessionToLocal(handleValNormalized, pinVal, cloud);
@@ -3227,6 +3253,92 @@ function attachEvents() {
     });
   }
 
+  // Player Card Popout Click Triggers
+  const abStartPitcherCard = document.getElementById('ab-start-pitcher-card');
+  if (abStartPitcherCard) {
+    abStartPitcherCard.style.cursor = 'pointer';
+    abStartPitcherCard.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('ab-start-pitcher');
+      const handEl = document.getElementById('ab-start-pitcher-hand');
+      if (nameEl) {
+        showPlayerStatsPopout(abStartPitcherCard, nameEl.textContent.trim(), 'PITCHER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+  const abStartBatterCard = document.getElementById('ab-start-batter-card');
+  if (abStartBatterCard) {
+    abStartBatterCard.style.cursor = 'pointer';
+    abStartBatterCard.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('ab-start-batter');
+      const handEl = document.getElementById('ab-start-batter-hand');
+      if (nameEl) {
+        showPlayerStatsPopout(abStartBatterCard, nameEl.textContent.trim(), 'BATTER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+  // Umpire Box Score (Summary overlay) Player Card clicks
+  const abSummaryPitcherCardTrigger = document.getElementById('ab-summary-pitcher-card');
+  if (abSummaryPitcherCardTrigger) {
+    abSummaryPitcherCardTrigger.style.cursor = 'pointer';
+    abSummaryPitcherCardTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('ab-summary-pitcher-name');
+      const handEl = document.getElementById('ab-summary-pitcher-hand-badge');
+      if (nameEl) {
+        showPlayerStatsPopout(abSummaryPitcherCardTrigger, nameEl.textContent.trim(), 'PITCHER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+  const abSummaryBatterCardTrigger = document.getElementById('ab-summary-batter-card');
+  if (abSummaryBatterCardTrigger) {
+    abSummaryBatterCardTrigger.style.cursor = 'pointer';
+    abSummaryBatterCardTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('ab-summary-batter-name');
+      const handEl = document.getElementById('ab-summary-batter-hand-badge');
+      if (nameEl) {
+        showPlayerStatsPopout(abSummaryBatterCardTrigger, nameEl.textContent.trim(), 'BATTER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+  const gameplayPitcherCardTrigger = document.getElementById('gameplay-pitcher-card-trigger');
+  if (gameplayPitcherCardTrigger) {
+    gameplayPitcherCardTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('card-pitcher-name');
+      const handEl = document.getElementById('card-pitcher-hand');
+      if (nameEl) {
+        showPlayerStatsPopout(gameplayPitcherCardTrigger, nameEl.textContent.trim(), 'PITCHER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+  const gameplayBatterCardTrigger = document.getElementById('gameplay-batter-card-trigger');
+  if (gameplayBatterCardTrigger) {
+    gameplayBatterCardTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      const nameEl = document.getElementById('card-batter-name');
+      const handEl = document.getElementById('card-batter-hand');
+      if (nameEl) {
+        showPlayerStatsPopout(gameplayBatterCardTrigger, nameEl.textContent.trim(), 'BATTER', handEl ? handEl.textContent.trim() : 'R');
+      }
+    });
+  }
+
+
+
   // STOP TOUCH PROPAGATION ON BUTTONS
   const preventBubble = (e) => {
     e.stopPropagation();
@@ -3252,6 +3364,12 @@ function attachEvents() {
     if (e.key === 'Escape') {
       if (e.repeat) return; // Prevent rapid toggle on key hold
       e.preventDefault();
+      // If player card popout is open, close it first
+      const activePopout = document.querySelector('.player-card-popout');
+      if (activePopout) {
+        activePopout.remove();
+        return;
+      }
       // If ump scorecard is open, close it first
       if (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100')) {
         hideUmpireScorecardModal();
@@ -3287,39 +3405,7 @@ function attachEvents() {
       return;
     }
     const key = e.key.toLowerCase();
-    
-    // Keyboard camera nudge adjustments
-    const moveStepX = 0.05;
-    const moveStepY = 0.04;
-    const ALLOWED_CAMERA_DRAG_STATES = [STATES.START, STATES.IDLE, STATES.DECISION_PENDING, STATES.ABS_REVIEW];
-    
-    if (ALLOWED_CAMERA_DRAG_STATES.includes(currentState)) {
-      // W / ArrowUp -> stand up/increase height
-      if (e.key === 'ArrowUp' || key === 'w') {
-        e.preventDefault();
-        postponeAutoPlay();
-        setUmpireHeight(getUmpireYOffset() + moveStepY);
-      }
-      // S / ArrowDown -> crouch/decrease height
-      else if (e.key === 'ArrowDown' || key === 's') {
-        e.preventDefault();
-        postponeAutoPlay();
-        setUmpireHeight(getUmpireYOffset() - moveStepY);
-      }
-      
-      // Left/Right movements only when NOT in DECISION_PENDING (since ArrowLeft/A and ArrowRight/D make calls there)
-      if (currentState !== STATES.DECISION_PENDING) {
-        if (e.key === 'ArrowLeft' || key === 'a') {
-          e.preventDefault();
-          postponeAutoPlay();
-          setUmpireSlot(getUmpireXOffset() - moveStepX);
-        } else if (e.key === 'ArrowRight' || key === 'd') {
-          e.preventDefault();
-          postponeAutoPlay();
-          setUmpireSlot(getUmpireXOffset() + moveStepX);
-        }
-      }
-    }
+    // Keyboard camera adjustments removed (free move disabled)
     
     if (currentState === STATES.IDLE && e.key === ' ') {
       e.preventDefault();
@@ -3368,62 +3454,9 @@ function attachEvents() {
     }
   }
 
-  // Touch/Drag and Swipe Events on Canvas Container
+  // Touch/Swipe and Tap Events on Canvas Container (free move disabled)
   const canvasContainer = document.getElementById('canvas-container');
-  let isDragging = false;
-  let startX = 0;
-  let startY = 0;
-  let startUmpireX = 0;
-  let startUmpireY = 0;
-  const ALLOWED_CAMERA_DRAG_STATES = [STATES.START, STATES.IDLE, STATES.DECISION_PENDING, STATES.ABS_REVIEW];
 
-  const onDragStart = (clientX, clientY) => {
-    if (!ALLOWED_CAMERA_DRAG_STATES.includes(currentState)) return;
-    initAudio();
-    isDragging = true;
-    startX = clientX;
-    startY = clientY;
-    startUmpireX = getUmpireXOffset();
-    startUmpireY = getUmpireYOffset();
-  };
-
-  const onDragMove = (clientX, clientY) => {
-    if (!isDragging || !ALLOWED_CAMERA_DRAG_STATES.includes(currentState)) return;
-    postponeAutoPlay();
-    const dx = clientX - startX;
-    const dy = clientY - startY;
-
-    // Map delta pixels to 3D offsets in feet
-    const xSensitivity = 0.005;
-    const ySensitivity = 0.004;
-
-    const newX = startUmpireX + dx * xSensitivity;
-    const newY = startUmpireY - dy * ySensitivity; // Drag up -> increase height
-
-    setUmpireSlot(newX);
-    setUmpireHeight(newY);
-  };
-
-  const onDragEnd = () => {
-    isDragging = false;
-  };
-
-  // Mouse event listeners for camera dragging
-  if (canvasContainer) {
-    canvasContainer.addEventListener('mousedown', (e) => {
-      onDragStart(e.clientX, e.clientY);
-    });
-  }
-
-  window.addEventListener('mousemove', (e) => {
-    onDragMove(e.clientX, e.clientY);
-  });
-
-  window.addEventListener('mouseup', () => {
-    onDragEnd();
-  });
-
-  // Touch event listeners for mobile swipe-to-call and touch-dragging
   if (canvasContainer) {
     canvasContainer.addEventListener('touchstart', (e) => {
       initAudio();
@@ -3431,21 +3464,10 @@ function attachEvents() {
         const touch = e.touches[0];
         touchStartX = touch.clientX;
         touchStartY = touch.clientY;
-        onDragStart(touch.clientX, touch.clientY);
-      }
-    }, { passive: true });
-
-    canvasContainer.addEventListener('touchmove', (e) => {
-      if (isDragging && e.touches && e.touches[0]) {
-        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
       }
     }, { passive: true });
 
     canvasContainer.addEventListener('touchend', (e) => {
-      if (isDragging) {
-        onDragEnd();
-      }
-      
       if (!e.changedTouches || !e.changedTouches[0]) return;
       
       const touchEndX = e.changedTouches[0].clientX;
@@ -3685,22 +3707,15 @@ function transitionToState(newState) {
   }
 
   // Manage main menu screens visibility
-  const persistentProfileHud = document.getElementById('persistent-profile-hud');
   const showWelcome = newState === STATES.WELCOME || !localStorage.getItem('ump_username');
   if (showWelcome) {
     setOverlayVisible(welcomeScreen, true);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, false);
-    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, false);
-    setOverlayVisible(hudHeader, false);
-    setOverlayVisible(matchupCard, false);
   } else if (newState === STATES.TEAM_SELECT) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, true);
     setOverlayVisible(startScreen, false);
-    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, false);
-    setOverlayVisible(hudHeader, false);
-    setOverlayVisible(matchupCard, false);
     if (teamSearchInput) {
       teamSearchInput.value = "";
     }
@@ -3710,9 +3725,6 @@ function transitionToState(newState) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, true);
-    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, true);
-    setOverlayVisible(hudHeader, false);
-    setOverlayVisible(matchupCard, false);
     isSettingsOpen = false;
     updateSettingsVisibility();
     switchTab('play');
@@ -3721,23 +3733,25 @@ function transitionToState(newState) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
     setOverlayVisible(startScreen, false);
-    if (persistentProfileHud) setOverlayVisible(persistentProfileHud, true);
   }
+
+  // Update unified top nav bar context
+  updateUnifiedTopNav(newState);
   
   if (btnHudLogout) {
-    const logoutSpan = btnHudLogout.querySelector('span');
+    const logoutSpan = btnHudLogout.querySelector('span') || document.getElementById('adaptive-nav-action-text');
     const isPlaying = newState !== STATES.START && newState !== STATES.WELCOME && newState !== STATES.TEAM_SELECT;
     
     if (logoutSpan) {
-      logoutSpan.textContent = isPlaying ? "EXIT" : "LOGOUT";
+      logoutSpan.textContent = isPlaying ? "GO HOME" : "LOGOUT";
     } else {
-      btnHudLogout.textContent = isPlaying ? "EXIT" : "LOGOUT";
+      btnHudLogout.textContent = isPlaying ? "GO HOME" : "LOGOUT";
     }
     
     if (isPlaying) {
-      btnHudLogout.className = "px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-gray-800 hover:bg-gray-700 rounded-xl border border-white/10 text-gray-300 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1.5";
+      btnHudLogout.className = "px-2 py-1.5 md:px-3 md:py-1.5 text-[8px] md:text-[9px] font-mono-tech font-extrabold uppercase tracking-widest bg-gray-800/80 hover:bg-[var(--retro-gold-dark)]/30 rounded-sm border border-white/10 text-gray-300 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1";
     } else {
-      btnHudLogout.className = "px-3.5 py-2 text-[11px] font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-xl border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1.5";
+      btnHudLogout.className = "px-2 py-1.5 md:px-3 md:py-1.5 text-[8px] md:text-[9px] font-mono-tech font-extrabold uppercase tracking-widest bg-red-950/40 hover:bg-red-600 rounded-sm border border-red-500/20 text-red-400 hover:text-white transition-all cursor-pointer pointer-events-auto flex items-center justify-center gap-1";
     }
   }
   
@@ -3849,10 +3863,14 @@ function transitionToState(newState) {
         const pH = currentPitch.pitcher_hand || "RHP";
         const bH = currentPitch.batter_hand || "RHB";
         
+        const isMobile = window.innerWidth < 640;
+
         if (cardPitcherName) {
-          setMarqueePlayerName(cardPitcherName, '.card-pitcher-name-dup', matchup.pitcher);
           const pParts = matchup.pitcher.trim().split(/\s+/);
-          cardPitcherName.setAttribute('data-lastname', pParts[pParts.length - 1].toUpperCase());
+          const pLastName = pParts[pParts.length - 1];
+          const pDisplay = isMobile ? pLastName : matchup.pitcher;
+          setMarqueePlayerName(cardPitcherName, '.card-pitcher-name-dup', pDisplay);
+          cardPitcherName.setAttribute('data-lastname', pLastName.toUpperCase());
         }
         if (cardPitcherHand) {
           cardPitcherHand.textContent = pH;
@@ -3863,9 +3881,11 @@ function transitionToState(newState) {
           }
         }
         if (cardBatterName) {
-          setMarqueePlayerName(cardBatterName, '.card-batter-name-dup', matchup.batter);
           const bParts = matchup.batter.trim().split(/\s+/);
-          cardBatterName.setAttribute('data-lastname', bParts[bParts.length - 1].toUpperCase());
+          const bLastName = bParts[bParts.length - 1];
+          const bDisplay = isMobile ? bLastName : matchup.batter;
+          setMarqueePlayerName(cardBatterName, '.card-batter-name-dup', bDisplay);
+          cardBatterName.setAttribute('data-lastname', bLastName.toUpperCase());
         }
         if (cardBatterHand) {
           cardBatterHand.textContent = bH;
@@ -4715,6 +4735,7 @@ function tick() {
  */
 function triggerPitchRelease() {
   if (currentState !== STATES.IDLE) return;
+  verifyAndForceUmpireCameraPosition();
   transitionToState(STATES.WINDUP);
 }
 
@@ -4988,7 +5009,7 @@ function advanceGameFlow(immediate = false) {
     isGameOver = true;
   } else if (gameMode === 'weekly_challenge') {
     const isHalfInningEnd = (currentPitchIndex >= pitchesList.length);
-    if (isHalfInningEnd) {
+    if (isHalfInningEnd && activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) {
       isGameOver = true;
     }
   } else if (gameMode === 'daily_streak') {
@@ -5066,18 +5087,26 @@ function advanceGameFlow(immediate = false) {
 }
 
 function showABOutcomeToast(text) {
+  if (gameStatusBadge) {
+    gameStatusBadge.classList.add('opacity-0');
+    gameStatusBadge.classList.remove('opacity-100');
+  }
   toastMessage.innerHTML = `<span class="text-purple-300 font-bold font-mono-tech">${text}</span>`;
-  toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-purple-950/95 text-white border-2 border-purple-500/40 shadow-purple-500/10 pointer-events-auto z-30 whitespace-nowrap';
+  toastMessage.className = 'absolute top-4 left-1/2 -translate-x-1/2 transform px-6 py-2 rounded-full font-black uppercase tracking-wider text-xs md:text-sm shadow-xl opacity-100 scale-100 transition-all duration-300 bg-purple-950/95 text-white border border-purple-500/40 shadow-purple-500/10 pointer-events-auto z-50 whitespace-nowrap';
   setTimeout(() => {
-    toastMessage.classList.add('opacity-0', 'scale-90', '-translate-y-8');
-    toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+    toastMessage.classList.add('opacity-0', 'scale-95');
+    toastMessage.classList.remove('opacity-100', 'scale-100');
+    if (gameStatusBadge && currentState !== STATES.START && currentState !== STATES.SCOREBOARD && currentState !== STATES.WELCOME && currentState !== STATES.TEAM_SELECT) {
+      gameStatusBadge.classList.remove('opacity-0');
+      gameStatusBadge.classList.add('opacity-100');
+    }
   }, 2200);
 }
 
 /**
  * Displays the At-Bat Start overlay with matchup info and a 3-second auto-start countdown
  */
-function showAtBatStartScreen(onConfirmCallback) {
+function showAtBatStartScreen(onConfirmCallback, isResume = false) {
   if (!localStorage.getItem('ump_username')) {
     if (onConfirmCallback) onConfirmCallback();
     return;
@@ -5216,7 +5245,7 @@ function showAtBatStartScreen(onConfirmCallback) {
   if (challengeBadge) {
     if (gameMode === 'weekly_challenge') {
       challengeBadge.textContent = 'Weekly Challenge';
-      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg shadow-purple-500/25';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-emerald-600 to-green-600 rounded-full shadow-lg shadow-green-500/25';
     } else if (gameMode === 'daily_streak') {
       challengeBadge.textContent = 'Daily Streak';
       challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-amber-600 to-orange-600 rounded-full shadow-lg';
@@ -5228,28 +5257,93 @@ function showAtBatStartScreen(onConfirmCallback) {
       challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-slate-600 to-slate-700 rounded-full';
     }
   }
-  if (startSubtitle) {
-    if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
-      const total = weeklyPlaylistABs.length || 200;
-      startSubtitle.textContent = `At-bat ${activeWeeklyAbIndex + 1} of ${total}`;
-    } else {
-      startSubtitle.textContent = 'Make the call';
+
+  const startWeeklyDetails = document.getElementById('ab-start-weekly-challenge-details');
+  if (gameMode === 'weekly_challenge' && weeklyPlaylistABs && weeklyPlaylistABs.length > 0) {
+    if (startWeeklyDetails) {
+      startWeeklyDetails.classList.remove('hidden');
+      
+      const totalCount = weeklyPlaylistABs.length || 200;
+      const completedCount = weeklyPlaylistABs.filter(ab => ab.completed).length;
+      
+      const countEl = document.getElementById('ab-start-weekly-count');
+      const totalEl = document.getElementById('ab-start-weekly-total');
+      const pctEl = document.getElementById('ab-start-weekly-pct');
+      const accuracyEl = document.getElementById('ab-start-weekly-accuracy-text');
+      const leaderboardEl = document.getElementById('ab-start-leaderboard-snippet');
+      const progressBarEl = document.getElementById('ab-start-weekly-progress-bar');
+      
+      if (countEl) countEl.textContent = String(completedCount);
+      if (totalEl) totalEl.textContent = `/ ${totalCount}`;
+      
+      const percent = Math.round((completedCount / totalCount) * 100);
+      if (pctEl) pctEl.textContent = `${percent}% Complete`;
+      
+      let overallCorrect = 0;
+      let overallTotal = 0;
+      weeklyPlaylistABs.forEach((ab) => {
+        if (ab.completed) {
+          overallCorrect += ab.userCorrectCount || 0;
+          overallTotal += ab.userTotalCount || 0;
+        }
+      });
+      const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
+      if (accuracyEl) accuracyEl.textContent = `${overallAccuracy}%`;
+      
+      if (progressBarEl) {
+        progressBarEl.style.width = `${percent}%`;
+      }
+      
+      const username = localStorage.getItem('ump_username') || 'Player';
+      updateAbStartLeaderboardSnippet(username);
+    }
+    if (startSubtitle) {
+      startSubtitle.classList.add('hidden');
+    }
+  } else {
+    if (startWeeklyDetails) {
+      startWeeklyDetails.classList.add('hidden');
+    }
+    if (startSubtitle) {
+      startSubtitle.classList.remove('hidden');
+      if (gameMode === 'daily_compete') {
+        const total = weeklyPlaylistABs.length || 200;
+        startSubtitle.textContent = `At-bat ${activeWeeklyAbIndex + 1} of ${total}`;
+      } else {
+        startSubtitle.textContent = 'Make the call';
+      }
     }
   }
+
   if (startTitle) {
-    startTitle.textContent = gameMode === 'weekly_challenge' ? 'Next weekly at-bat' : 'Upcoming at-bat';
+    startTitle.textContent = gameMode === 'weekly_challenge' 
+      ? (isResume ? 'Resume Weekly Challenge' : 'Next weekly at-bat')
+      : (isResume ? 'At-bat in progress' : 'Upcoming at-bat');
   }
 
   // Show overlay with transition
-  abStartOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-  abStartOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
-  if (matchupCard) {
-    setOverlayVisible(matchupCard, false);
+  abStartOverlay.classList.remove('opacity-0', 'pointer-events-none');
+  abStartOverlay.classList.add('opacity-100', 'pointer-events-auto');
+  const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+  if (startPanel) {
+    startPanel.classList.remove('scale-95');
+    startPanel.classList.add('scale-100');
   }
+  // Hide gameplay telemetry while overlay is up (updateUnifiedTopNav handles this check)
+  updateUnifiedTopNav(currentState);
 
   if (abStartTimerText) {
     abStartTimerText.textContent = "Ready when you are.";
   }
+
+  // Re-trigger marquee calculation once transition is complete and container width is active
+  setTimeout(() => {
+    if (pitch) {
+      const matchup = getMatchupNames(pitch);
+      setMarqueePlayerName(abStartPitcher, '.ab-start-pitcher-dup', matchup.pitcher);
+      setMarqueePlayerName(abStartBatter, '.ab-start-batter-dup', matchup.batter);
+    }
+  }, 350);
 
   // Store callback for confirm
   window._abStartCallback = onConfirmCallback;
@@ -5275,9 +5369,15 @@ function confirmAtBatStart() {
 
   animateMatchupToTopNav(() => {
     if (abStartOverlay) {
-      abStartOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-      abStartOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+      abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+      abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+      const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+      if (startPanel) {
+        startPanel.classList.add('scale-95');
+        startPanel.classList.remove('scale-100');
+      }
     }
+    updateUnifiedTopNav(currentState);
 
     if (window._abStartCallback) {
       window._abStartCallback();
@@ -5335,6 +5435,11 @@ function returnToMainMenu() {
   if (abStartOverlay) {
     abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
     abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+    if (startPanel) {
+      startPanel.classList.add('scale-95');
+      startPanel.classList.remove('scale-100');
+    }
   }
 
   hideQuickPreviewPanel();
@@ -5373,27 +5478,27 @@ function updateLiveScoreboard() {
   const ballsDots = ballsIndicator.children;
   for (let i = 0; i < ballsDots.length; i++) {
     if (i < ballsCount) {
-      ballsDots[i].className = 'w-2 h-2 rounded-full bg-green-500 shadow-lg shadow-green-500/50';
+      ballsDots[i].className = 'count-bulb count-bulb--ball active';
     } else {
-      ballsDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
+      ballsDots[i].className = 'count-bulb count-bulb--ball';
     }
   }
   
   const strikesDots = strikesIndicator.children;
   for (let i = 0; i < strikesDots.length; i++) {
     if (i < strikesCount) {
-      strikesDots[i].className = 'w-2 h-2 rounded-full bg-red-500 shadow-lg shadow-red-500/50';
+      strikesDots[i].className = 'count-bulb count-bulb--strike active';
     } else {
-      strikesDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
+      strikesDots[i].className = 'count-bulb count-bulb--strike';
     }
   }
 
   const outsDots = outsIndicator.children;
   for (let i = 0; i < outsDots.length; i++) {
     if (i < outsCount) {
-      outsDots[i].className = 'w-2 h-2 rounded-full bg-amber-500 shadow-lg shadow-amber-500/50';
+      outsDots[i].className = 'count-bulb count-bulb--out active';
     } else {
-      outsDots[i].className = 'w-2 h-2 rounded-full border border-gray-600 bg-transparent';
+      outsDots[i].className = 'count-bulb count-bulb--out';
     }
   }
 
@@ -5429,9 +5534,9 @@ function updateLiveScoreboard() {
     scorebugBases.forEach((el, idx) => {
       if (el) {
         if (runners[idx]) {
-          el.className = 'absolute w-2.5 h-2.5 rotate-45 bg-orange-500 border border-orange-400 transition-colors duration-200';
+          el.classList.add('active');
         } else {
-          el.className = 'absolute w-2.5 h-2.5 rotate-45 bg-slate-800 border border-white/20 transition-colors duration-200';
+          el.classList.remove('active');
         }
       }
     });
@@ -5573,6 +5678,11 @@ function populateBroadcastReviewData(historyItem) {
  * Renders large screen alerts with custom feedback messages
  */
 function showDecisionToast(isCorrect, absCall) {
+  if (gameStatusBadge) {
+    gameStatusBadge.classList.add('opacity-0');
+    gameStatusBadge.classList.remove('opacity-100');
+  }
+
   const historyItem = pitchHistory[pitchHistory.length - 1];
   
   if (historyItem.isSwingPlay) {
@@ -5587,20 +5697,24 @@ function showDecisionToast(isCorrect, absCall) {
       text = `<span class="text-gray-400 font-black">${historyItem.swingHitType}</span>`;
     }
     toastMessage.innerHTML = `${text} &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-    toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-slate-900/95 text-white border-2 border-amber-500/40 shadow-amber-500/10 pointer-events-auto z-30 whitespace-nowrap';
+    toastMessage.className = 'absolute top-4 left-1/2 -translate-x-1/2 transform px-6 py-2 rounded-full font-black uppercase tracking-wider text-xs md:text-sm shadow-xl opacity-100 scale-100 transition-all duration-300 bg-slate-900/95 text-white border border-amber-500/40 shadow-amber-500/10 pointer-events-auto z-50 whitespace-nowrap';
   } else {
     if (isCorrect) {
       toastMessage.innerHTML = `<span class="text-green-400 font-black shadow-neon-green-glow">CORRECT CALL</span> &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-      toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-green-950/95 text-white border-2 border-green-500/40 shadow-green-500/10 pointer-events-auto z-30 whitespace-nowrap';
+      toastMessage.className = 'absolute top-4 left-1/2 -translate-x-1/2 transform px-6 py-2 rounded-full font-black uppercase tracking-wider text-xs md:text-sm shadow-xl opacity-100 scale-100 transition-all duration-300 bg-green-950/95 text-white border border-green-500/40 shadow-green-500/10 pointer-events-auto z-50 whitespace-nowrap';
     } else {
       toastMessage.innerHTML = `<span class="text-red-400 font-black shadow-neon-strike-glow">MISSED CALL</span> &nbsp;|&nbsp; ABS: ${absCall === 'S' ? 'STRIKE' : 'BALL'}`;
-      toastMessage.className = 'absolute top-[35%] left-1/2 -translate-x-1/2 transform translate-y-0 px-8 py-4 rounded-2xl font-black uppercase tracking-wider text-xl md:text-3xl shadow-2xl opacity-100 scale-100 transition-all duration-300 bg-red-950/95 text-white border-2 border-red-500/40 shadow-red-500/10 pointer-events-auto z-30 whitespace-nowrap';
+      toastMessage.className = 'absolute top-4 left-1/2 -translate-x-1/2 transform px-6 py-2 rounded-full font-black uppercase tracking-wider text-xs md:text-sm shadow-xl opacity-100 scale-100 transition-all duration-300 bg-red-950/95 text-white border border-red-500/40 shadow-red-500/10 pointer-events-auto z-50 whitespace-nowrap';
     }
   }
 
   setTimeout(() => {
-    toastMessage.classList.add('opacity-0', 'scale-90', '-translate-y-8');
-    toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+    toastMessage.classList.add('opacity-0', 'scale-95');
+    toastMessage.classList.remove('opacity-100', 'scale-100');
+    if (gameStatusBadge && currentState !== STATES.START && currentState !== STATES.SCOREBOARD && currentState !== STATES.WELCOME && currentState !== STATES.TEAM_SELECT) {
+      gameStatusBadge.classList.remove('opacity-0');
+      gameStatusBadge.classList.add('opacity-100');
+    }
   }, 1800);
 }
 
@@ -6058,6 +6172,11 @@ function goToMainMenu() {
   if (abStartOverlay) {
     abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
     abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+    if (startPanel) {
+      startPanel.classList.add('scale-95');
+      startPanel.classList.remove('scale-100');
+    }
   }
   
   isGamePaused = false;
@@ -6066,8 +6185,13 @@ function goToMainMenu() {
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
   }
   if (abSummaryOverlay) {
-    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-    abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    const summaryPanel = abSummaryOverlay.querySelector('.ab-summary-panel');
+    if (summaryPanel) {
+      summaryPanel.classList.add('scale-95');
+      summaryPanel.classList.remove('scale-100');
+    }
   }
 
   setOverlayVisible(hudHeader, false);
@@ -6310,6 +6434,18 @@ function setAbSummaryReviewExpanded(expanded) {
     btnAbSummaryToggleReview.setAttribute('aria-expanded', expanded ? 'true' : 'false');
     btnAbSummaryToggleReview.textContent = expanded ? '▼ HIDE CHART' : '▶ PITCH CHART';
   }
+  
+  const callsBoard = document.getElementById('ab-summary-calls-board');
+  const xpPanel = document.getElementById('ab-summary-xp-panel');
+  if (callsBoard) {
+    if (expanded) callsBoard.classList.add('hidden');
+    else callsBoard.classList.remove('hidden');
+  }
+  if (xpPanel) {
+    if (expanded) xpPanel.classList.add('hidden');
+    else xpPanel.classList.remove('hidden');
+  }
+
   if (!abSummaryReviewSection) return;
   const cabinet = document.querySelector('.arcade-cabinet');
   if (cabinet) cabinet.classList.toggle('arcade-cabinet--chart-open', expanded);
@@ -6359,6 +6495,21 @@ async function updateAbSummaryLeaderboardSnippet(username) {
       : 'Submit score to rank';
   } catch {
     abSummaryLeaderboardSnippet.textContent = '—';
+  }
+}
+
+async function updateAbStartLeaderboardSnippet(username) {
+  const startLeaderboardEl = document.getElementById('ab-start-leaderboard-snippet');
+  if (!startLeaderboardEl || !username) return;
+  startLeaderboardEl.textContent = '…';
+  try {
+    const { rows } = await getLeaderboardRows('weekly', username);
+    const me = rows.find((r) => r.isUser);
+    startLeaderboardEl.textContent = me
+      ? `#${me.rank} · ${me.accuracy}`
+      : 'No rank yet';
+  } catch {
+    startLeaderboardEl.textContent = '—';
   }
 }
 
@@ -6413,13 +6564,16 @@ async function showAtBatSummaryScreen(outcomeText) {
     replayBadge.classList.remove('opacity-100');
   }
 
+  let pitcher = "Pitcher";
+  let batter = "Batter";
+
   try {
   
   const displayOutcome = outcomeText || lastAbOutcomeText || "At-Bat Complete";
   abSummaryTitle.textContent = displayOutcome.toUpperCase();
   
-  const pitcher = lastAbPitcher || "Pitcher";
-  const batter = lastAbBatter || "Batter";
+  pitcher = lastAbPitcher || "Pitcher";
+  batter = lastAbBatter || "Batter";
   abSummaryMatchup.textContent = `P: ${pitcher.toUpperCase()} vs B: ${batter.toUpperCase()}`;
   
   // Fetch headshot images and logos
@@ -6474,8 +6628,8 @@ async function showAtBatSummaryScreen(outcomeText) {
   const correctCount = abPitches.filter(x => x.userCorrect).length;
   const accuracy = abPitches.length > 0 ? Math.round((correctCount / abPitches.length) * 100) : 100;
   
-  abSummaryAccuracy.textContent = `${accuracy}%`;
-  abSummaryPitches.textContent = abPitches.length;
+  if (abSummaryAccuracy) abSummaryAccuracy.textContent = `${accuracy}%`;
+  if (abSummaryPitches) abSummaryPitches.textContent = abPitches.length;
   if (abSummaryCorrectCount) {
     abSummaryCorrectCount.textContent = abPitches.length > 0 ? `${correctCount}/${abPitches.length}` : '—';
   }
@@ -6499,32 +6653,48 @@ async function showAtBatSummaryScreen(outcomeText) {
   const xpProgressBar = document.getElementById('ab-summary-xp-bar');
 
   if (username) {
-    const userStats = await getGlobalUserStats(username);
-    const totalXp = userStats.xp || 0;
-    const previousXp = Math.max(0, totalXp - xpBreakdown.total);
-    const prev = getXpProgressInLevel(previousXp);
-    const next = getXpProgressInLevel(totalXp);
+    const statsKey = getStatsStorageKey(username);
+    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    
+    const updateStatsUI = (stats) => {
+      const totalXp = stats.xp || 0;
+      const previousXp = Math.max(0, totalXp - xpBreakdown.total);
+      const prev = getXpProgressInLevel(previousXp);
+      const next = getXpProgressInLevel(totalXp);
 
-    renderAbSummaryXpPopover(xpBreakdown, correctCount, isPerfect);
-    if (xpEarnedEl) {
-      xpEarnedEl.disabled = false;
-      xpEarnedEl.textContent = `+${xpBreakdown.total} XP`;
-      xpEarnedEl.className = isPerfect ? 'ab-summary-xp-earned-btn ab-summary-xp-earned-btn--bonus' : 'ab-summary-xp-earned-btn';
-      xpEarnedEl.title = 'Tap for XP breakdown';
-    }
-    applyLevelBadgeElement(xpLevelEl, next.level);
-    if (xpTotalEl) xpTotalEl.textContent = `${totalXp.toLocaleString()} XP total`;
-    if (xpProgressEl) xpProgressEl.textContent = `${prev.progress} → ${next.progress} / ${XP_PER_LEVEL} XP`;
-    setXpBarPercent(xpProgressBar, prev.pct, false);
-    setTimeout(() => {
-      setXpBarPercent(xpProgressBar, next.pct, true);
-      if (xpProgressEl) xpProgressEl.textContent = `${next.progress} / ${XP_PER_LEVEL} XP`;
-      applyLevelBadgeElement(xpLevelEl, next.level);
-      updateProfileStatsUI();
-      if (next.level > prev.level) {
-        showLevelUpCelebration(next.level, prev.level);
+      renderAbSummaryXpPopover(xpBreakdown, correctCount, isPerfect);
+      if (xpEarnedEl) {
+        xpEarnedEl.disabled = false;
+        xpEarnedEl.textContent = `+${xpBreakdown.total} XP`;
+        xpEarnedEl.className = isPerfect ? 'ab-summary-xp-earned-btn ab-summary-xp-earned-btn--bonus' : 'ab-summary-xp-earned-btn';
+        xpEarnedEl.title = 'Tap for XP breakdown';
       }
-    }, 200);
+      applyLevelBadgeElement(xpLevelEl, next.level);
+      if (xpTotalEl) xpTotalEl.textContent = `${totalXp.toLocaleString()} XP total`;
+      if (xpProgressEl) xpProgressEl.textContent = `${prev.progress} → ${next.progress} / ${XP_PER_LEVEL} XP`;
+      setXpBarPercent(xpProgressBar, prev.pct, false);
+      setTimeout(() => {
+        setXpBarPercent(xpProgressBar, next.pct, true);
+        if (xpProgressEl) xpProgressEl.textContent = `${next.progress} / ${XP_PER_LEVEL} XP`;
+        applyLevelBadgeElement(xpLevelEl, next.level);
+        updateProfileStatsUI();
+        if (next.level > prev.level) {
+          showLevelUpCelebration(next.level, prev.level);
+        }
+      }, 200);
+    };
+
+    // Render with local stats first (instantly)
+    updateStatsUI(localStats);
+
+    // Fetch cloud stats asynchronously and update if they differ
+    getGlobalUserStats(username).then(cloudStats => {
+      if (cloudStats && cloudStats.xp !== localStats.xp) {
+        updateStatsUI(cloudStats);
+      }
+    }).catch(err => {
+      console.warn("Async cloud stats update failed:", err);
+    });
   } else {
     hideAbSummaryXpPopover();
     if (xpEarnedEl) {
@@ -6558,7 +6728,8 @@ async function showAtBatSummaryScreen(outcomeText) {
       const typeShort = (pitchLabel.split(' ')[0] || pitchLabel).slice(0, 5);
       const youC = formatCallShort(item.userCall);
       const umpC = formatCallShort(item.realCall);
-      btn.className = `ab-summary-pitch-row ${isCorrect ? 'is-correct' : 'is-wrong'}`;
+      btn.className = `ab-summary-pitch-row ${isCorrect ? 'is-correct' : 'is-wrong'} animate-fade-in-up`;
+      btn.style.animationDelay = `${index * 60}ms`;
       btn.setAttribute('role', 'option');
       btn.setAttribute('aria-label', `Pitch ${index + 1}, ${pitchLabel}, ${mphVal} mph, you ${youC}, ump ${umpC}`);
       btn.innerHTML = `
@@ -6602,18 +6773,36 @@ async function showAtBatSummaryScreen(outcomeText) {
 
     let overallCorrect = 0;
     let overallTotal = 0;
-    weeklyPlaylistABs.forEach((ab) => {
+    let prevCorrect = 0;
+    let prevTotal = 0;
+    weeklyPlaylistABs.forEach((ab, idx) => {
       if (ab.completed) {
         overallCorrect += ab.userCorrectCount || 0;
         overallTotal += ab.userTotalCount || 0;
+        if (idx !== activeWeeklyAbIndex) {
+          prevCorrect += ab.userCorrectCount || 0;
+          prevTotal += ab.userTotalCount || 0;
+        }
       }
     });
     const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
+    const prevAccuracy = prevTotal > 0 ? Math.round((prevCorrect / prevTotal) * 100) : null;
 
     if (abSummaryWeeklyCount) abSummaryWeeklyCount.textContent = String(completedCount);
     if (abSummaryWeeklyTotal) abSummaryWeeklyTotal.textContent = `/ ${totalCount}`;
     if (abSummaryWeeklyAccuracyText) {
-      abSummaryWeeklyAccuracyText.textContent = `${overallAccuracy}%`;
+      if (prevAccuracy === null) {
+        abSummaryWeeklyAccuracyText.innerHTML = `${overallAccuracy}% <span class="text-[9px] text-slate-400 font-bold font-mono-tech ml-1">(=)</span>`;
+      } else {
+        const diff = overallAccuracy - prevAccuracy;
+        if (diff > 0) {
+          abSummaryWeeklyAccuracyText.innerHTML = `${overallAccuracy}% <span class="text-[9px] text-emerald-400 font-bold font-mono-tech ml-1">▲+${diff}%</span>`;
+        } else if (diff < 0) {
+          abSummaryWeeklyAccuracyText.innerHTML = `${overallAccuracy}% <span class="text-[9px] text-rose-400 font-bold font-mono-tech ml-1">▼${diff}%</span>`;
+        } else {
+          abSummaryWeeklyAccuracyText.innerHTML = `${overallAccuracy}% <span class="text-[9px] text-slate-400 font-bold font-mono-tech ml-1">(=)</span>`;
+        }
+      }
     }
     const weeklyPctEl = document.getElementById('ab-summary-weekly-pct');
     if (weeklyPctEl) {
@@ -6657,9 +6846,20 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
   
   // Always reveal overlay even if a stat/widget failed to populate
-  abSummaryOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-  abSummaryOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+  abSummaryOverlay.classList.remove('opacity-0', 'pointer-events-none');
+  abSummaryOverlay.classList.add('opacity-100', 'pointer-events-auto');
+  const summaryPanel = abSummaryOverlay.querySelector('.ab-summary-panel');
+  if (summaryPanel) {
+    summaryPanel.classList.remove('scale-95');
+    summaryPanel.classList.add('scale-100');
+  }
   
+  // Re-trigger marquee calculation once transition is complete and container width is active
+  setTimeout(() => {
+    setMarqueePlayerName(abSummaryPitcherName, '.ab-summary-pitcher-name-dup', pitcher, { uppercase: true });
+    setMarqueePlayerName(abSummaryBatterName, '.ab-summary-batter-name-dup', batter, { uppercase: true });
+  }, 350);
+
   startSummaryTimerCounter();
 }
 
@@ -6710,10 +6910,46 @@ function advanceNextAtBat() {
 
 function saveChallengeSessionToLocal() {
   const username = localStorage.getItem('ump_username');
+  
+  // Clean functions to prevent circular references in JSON serialization
+  const sanitizePitch = (pitch) => {
+    if (!pitch) return pitch;
+    const clean = { ...pitch };
+    delete clean.pitchTrajectory;
+    delete clean.trajectory;
+    return clean;
+  };
+
+  const sanitizeWeeklyPlaylist = (playlist) => {
+    if (!playlist) return playlist;
+    return playlist.map(ab => {
+      const cleanAb = { ...ab };
+      if (cleanAb.pitches) {
+        cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
+      }
+      return cleanAb;
+    });
+  };
+
+  const sanitizeHistory = (history) => {
+    if (!history) return history;
+    return history.map(item => {
+      const cleanItem = { ...item };
+      if (cleanItem.pitchData) {
+        cleanItem.pitchData = sanitizePitch(cleanItem.pitchData);
+      }
+      delete cleanItem.trajectory;
+      return cleanItem;
+    });
+  };
+
+  const sanitizedPlaylist = sanitizeWeeklyPlaylist(weeklyPlaylistABs);
+  const sanitizedHistory = sanitizeHistory(pitchHistory);
+
   const data = {
     completedABsCount,
     dnfDisconnectsCount,
-    weeklyPlaylistABs,
+    weeklyPlaylistABs: sanitizedPlaylist,
     activeWeeklyAbIndex,
     activeGameIndex,
     profileStats: {
@@ -6731,7 +6967,7 @@ function saveChallengeSessionToLocal() {
       currentPitchIndex,
       abBalls,
       abStrikes,
-      pitchHistory,
+      pitchHistory: sanitizedHistory,
       historyLength: pitchHistory.length
     };
   } else {
@@ -6743,17 +6979,27 @@ function saveChallengeSessionToLocal() {
     key = username ? `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${activeDailyDate}` : `pitch_ump_daily_compete_mvp_guest_${activeDailyDate}`;
   }
   
-  localStorage.setItem(key, JSON.stringify(data));
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.error("Failed to save challenge session to localStorage:", err);
+  }
   
   if (username) {
     getGlobalUserStats(username).then(stats => {
-      if (gameMode === 'daily_compete') {
-        if (!stats.dailyProgress) stats.dailyProgress = {};
-        stats.dailyProgress[activeDailyDate] = data;
-      } else {
-        stats.challengeProgress = data;
+      try {
+        if (gameMode === 'daily_compete') {
+          if (!stats.dailyProgress) stats.dailyProgress = {};
+          stats.dailyProgress[activeDailyDate] = data;
+        } else {
+          stats.challengeProgress = data;
+        }
+        saveGlobalUserStats(username, stats);
+      } catch (err) {
+        console.error("Failed to update global user stats with active challenge:", err);
       }
-      saveGlobalUserStats(username, stats);
+    }).catch(err => {
+      console.error("Failed to fetch global user stats:", err);
     });
   }
 }
@@ -6942,8 +7188,10 @@ function pauseGameOnFocusLoss() {
     quickContinueInterval = null;
   }
   
-  // Show pause overlay, but suppress it if a menu overlay (settings/scorecard) is already visible
-  const isMenuOverlayOpen = isSettingsOpen || (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100'));
+  // Show pause overlay, but suppress it if a menu overlay (settings/scorecard/player modal) is already visible
+  const isMenuOverlayOpen = isSettingsOpen || 
+                            (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100')) ||
+                            (playerCardModalOverlay && playerCardModalOverlay.classList.contains('opacity-100'));
   if (pauseScreen) {
     if (isMenuOverlayOpen) {
       pauseScreen.classList.add('opacity-0', 'pointer-events-none');
@@ -7127,7 +7375,7 @@ function updateProfileStatsUI() {
       hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech";
     }
     if (hudTeamLogo) {
-      hudTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      hudTeamLogo.src = "/generic.svg";
       hudTeamLogo.classList.add('animate-pulse');
     }
     if (hudXpText) hudXpText.textContent = "0 XP (Log in to earn Crew XP)";
@@ -7159,7 +7407,7 @@ function updateProfileStatsUI() {
       hudTeamLogo.src = getTeamLogoUrl(activeFavoriteTeam);
       hudTeamLogo.classList.remove('animate-pulse');
     } else {
-      hudTeamLogo.src = "https://www.mlbstatic.com/team-logos/generic.svg";
+      hudTeamLogo.src = "/generic.svg";
       hudTeamLogo.classList.add('animate-pulse');
     }
   }
@@ -7627,10 +7875,16 @@ async function startWeeklyChallenge() {
     summaryTimeout = null;
   }
   if (abSummaryOverlay) {
-    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-    abSummaryOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    const summaryPanel = abSummaryOverlay.querySelector('.ab-summary-panel');
+    if (summaryPanel) {
+      summaryPanel.classList.add('scale-95');
+      summaryPanel.classList.remove('scale-100');
+    }
   }
   isGamePaused = false;
+  isSessionOver = false;
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
@@ -7822,6 +8076,14 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   
   if (isResume) {
     transitionToState(STATES.IDLE);
+    showAtBatStartScreen(() => {
+      // After user confirms or timer expires, start auto-play
+      if (currentState === STATES.IDLE && !isGamePaused) {
+        autoPlayTimeout = setTimeout(() => {
+          triggerPitchRelease();
+        }, 600);
+      }
+    }, true);
   } else {
     // Show At-Bat Start Preview with matchup, then transition to IDLE
     transitionToState(STATES.IDLE);
@@ -7832,7 +8094,7 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
           triggerPitchRelease();
         }, 600);
       }
-    });
+    }, false);
   }
 }
 
@@ -8015,13 +8277,13 @@ async function updateDailyStreakStatusUI() {
     const todayAttempt = (userStats.history || []).find(h => h.gameName === "Daily Streak" && h.date === today);
     if (todayAttempt) {
       outcomeEl.textContent = `ENDED (Streak: ${todayAttempt.correctCalls})`;
-      outcomeEl.className = "text-red-400 font-bold";
+      outcomeEl.className = "font-mono-tech text-xs font-black uppercase tracking-wider text-red-500";
     } else if (lastPlayed === today) {
       outcomeEl.textContent = "ATTEMPT FORFEITED";
-      outcomeEl.className = "text-red-400 font-bold";
+      outcomeEl.className = "font-mono-tech text-xs font-black uppercase tracking-wider text-red-500";
     } else {
       outcomeEl.textContent = "NOT STARTED";
-      outcomeEl.className = "text-gray-400 font-bold";
+      outcomeEl.className = "font-mono-tech text-xs font-black uppercase tracking-wider text-amber-500";
     }
   }
 
@@ -8031,7 +8293,7 @@ async function updateDailyStreakStatusUI() {
   }
   if (btn) {
     btn.removeAttribute('disabled');
-    btn.className = "px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer text-white shadow-lg shadow-amber-500/20";
+    btn.className = "ump-btn bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border-amber-500/50 text-white ump-btn--sm pointer-events-auto";
     try {
       const session = await getActiveSession(username);
       if (session && session.gameMode === 'daily_streak' && session.pitchesList && session.pitchesList.length > 0) {
@@ -8065,7 +8327,9 @@ function cancelAutoPlayPitch() {
 }
 
 function resumeAutoPlayPitch() {
-  const isOverlayOpen = isSettingsOpen || (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100'));
+  const isOverlayOpen = isSettingsOpen || 
+                        (umpcardOverlay && umpcardOverlay.classList.contains('opacity-100')) ||
+                        (playerCardModalOverlay && playerCardModalOverlay.classList.contains('opacity-100'));
   const summaryVisible = abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100');
   if (!isOverlayOpen && !summaryVisible && !activeAbEnded && !isGamePaused && currentState === STATES.IDLE && !autoPlayTimeout) {
     autoPlayTimeout = setTimeout(() => {
@@ -8500,7 +8764,7 @@ function getTeamLogoUrl(teamName) {
       return `https://www.mlbstatic.com/team-logos/${value}.svg`;
     }
   }
-  return 'https://www.mlbstatic.com/team-logos/generic.svg';
+  return '/generic.svg';
 }
 
 async function updateMatchupCardImagesAndStats(pitch) {
@@ -9629,13 +9893,21 @@ function renderAtBatsForInning(inning, allAtBats, game) {
     abDiv.className = 'flex justify-between items-center p-2.5 bg-slate-900/60 hover:bg-slate-900 border border-white/5 hover:border-blue-500/50 rounded-xl transition-all gap-2';
     
     const sideText = firstPitch.is_top ? 'TOP' : 'BOT';
-    const matchupText = `${firstPitch.pitcher} vs ${firstPitch.batter}`;
     const pitchCountText = `${ab.length} Pitch${ab.length > 1 ? 'es' : ''}`;
+    
+    const pitcherName = firstPitch.pitcher || "Pitcher";
+    const batterName = firstPitch.batter || "Batter";
+    const pHand = firstPitch.pitcher_hand || "RHP";
+    const bHand = firstPitch.batter_hand || "LHB";
     
     abDiv.innerHTML = `
       <div class="flex flex-col text-left">
         <span class="text-[8px] font-mono-tech text-blue-400 font-extrabold uppercase tracking-wider">${sideText} ${inning} • ${pitchCountText}</span>
-        <span class="text-[10px] font-bold text-white uppercase">${matchupText}</span>
+        <span class="text-[10px] font-bold text-white uppercase">
+          <span class="hover:underline cursor-pointer player-stats-link text-purple-400" data-name="${pitcherName}" data-role="PITCHER" data-hand="${pHand}">${pitcherName}</span>
+          <span class="text-gray-500 mx-0.5 font-normal">vs</span>
+          <span class="hover:underline cursor-pointer player-stats-link text-cyan-400" data-name="${batterName}" data-role="BATTER" data-hand="${bHand}">${batterName}</span>
+        </span>
       </div>
       <button class="btn-play-ab px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[8px] font-bold uppercase transition-all cursor-pointer pointer-events-auto">Play AB</button>
     `;
@@ -9643,6 +9915,16 @@ function renderAtBatsForInning(inning, allAtBats, game) {
     abDiv.querySelector('.btn-play-ab').addEventListener('click', () => {
       hideGamePreviewModal();
       launchGame([ab], game.awayTeam, new Date().toISOString().split('T')[0]);
+    });
+    
+    abDiv.querySelectorAll('.player-stats-link').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = link.getAttribute('data-name');
+        const role = link.getAttribute('data-role');
+        const hand = link.getAttribute('data-hand');
+        showPlayerStatsPopout(link, name, role, hand);
+      });
     });
     
     detailModalAbGrid.appendChild(abDiv);
@@ -9906,6 +10188,28 @@ async function saveGameProgress() {
   const username = localStorage.getItem('ump_username');
   if (!username) return;
 
+  const sanitizePitch = (pitch) => {
+    if (!pitch) return pitch;
+    const clean = { ...pitch };
+    delete clean.pitchTrajectory;
+    delete clean.trajectory;
+    return clean;
+  };
+
+  const sanitizeWeeklyPlaylist = (playlist) => {
+    if (!playlist) return playlist;
+    return playlist.map(ab => {
+      const cleanAb = { ...ab };
+      if (cleanAb.pitches) {
+        cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
+      }
+      return cleanAb;
+    });
+  };
+
+  const sanitizedPlaylist = sanitizeWeeklyPlaylist(weeklyPlaylistABs);
+  const sanitizedPitchesList = pitchesList ? pitchesList.map(sanitizePitch) : [];
+
   const sessionData = {
     gameMode,
     activeWeeklyAbIndex,
@@ -9925,10 +10229,10 @@ async function saveGameProgress() {
       swingOutcome: h.swingOutcome,
       swingHitType: h.swingHitType
     })),
-    weeklyPlaylistABs,
+    weeklyPlaylistABs: sanitizedPlaylist,
     activeDailyDate,
     activeDailyTeam,
-    pitchesList,
+    pitchesList: sanitizedPitchesList,
     totalPitchesCount,
     totalBattersFaced,
     totalSessionK,
@@ -9937,8 +10241,12 @@ async function saveGameProgress() {
     totalSessionOuts
   };
   
-  await saveActiveSession(username, sessionData);
-  console.log("Game progress saved to IndexedDB session storage.");
+  try {
+    await saveActiveSession(username, sessionData);
+    console.log("Game progress saved to IndexedDB session storage.");
+  } catch (err) {
+    console.error("Failed to save game progress to IndexedDB:", err);
+  }
 }
 
 async function startDailyCompeteGame(dateString) {
@@ -10435,5 +10743,270 @@ async function runAutomatedIntegrationTest() {
   }
 
   console.log("TEST: SUCCESS - All automated integration tests passed!");
+}
+
+/* ==========================================================================
+   UNIFIED NAVBAR & INTERACTIVE PLAYER STATS MODAL IMPLEMENTATION
+   ========================================================================== */
+
+function updateUnifiedTopNav(state) {
+  const unifiedNav = document.getElementById('main-top-nav');
+  if (!unifiedNav) return;
+
+  // Clear previous morphing capsule classes
+  unifiedNav.classList.remove(
+    'capsule-welcome',
+    'capsule-team-select',
+    'capsule-dashboard',
+    'capsule-gameplay',
+    'capsule-scoreboard'
+  );
+
+  const showWelcome = state === STATES.WELCOME || !localStorage.getItem('ump_username');
+  if (showWelcome) {
+    unifiedNav.classList.add('capsule-welcome');
+    setOverlayVisible(unifiedNav, false);
+    return;
+  }
+
+  setOverlayVisible(unifiedNav, true);
+
+  const dashboardTabs = document.getElementById('dashboard-nav-tabs');
+  const gameplayTelemetry = document.getElementById('gameplay-nav-telemetry');
+  const contextRow = document.getElementById('nav-context-row');
+
+  const isDashboard = state === STATES.START;
+  const isGameplay = [STATES.IDLE, STATES.WINDUP, STATES.PITCHING, STATES.DECISION_PENDING, STATES.ABS_REVIEW].includes(state);
+  const isTeamSelect = state === STATES.TEAM_SELECT;
+  const isScoreboard = state === STATES.SCOREBOARD;
+
+  if (isTeamSelect) {
+    unifiedNav.classList.add('capsule-team-select');
+  } else if (isDashboard) {
+    unifiedNav.classList.add('capsule-dashboard');
+  } else if (isGameplay) {
+    unifiedNav.classList.add('capsule-gameplay');
+  } else if (isScoreboard) {
+    unifiedNav.classList.add('capsule-scoreboard');
+  }
+
+  // Check if the at-bat start overlay is currently visible — if so, suppress telemetry row
+  const abStartVisible = abStartOverlay && abStartOverlay.classList.contains('opacity-100');
+
+  if (contextRow) {
+    if (isDashboard) {
+      setOverlayVisible(contextRow, true);
+      if (dashboardTabs) setOverlayVisible(dashboardTabs, true);
+      if (gameplayTelemetry) setOverlayVisible(gameplayTelemetry, false);
+    } else if (isGameplay) {
+      setOverlayVisible(contextRow, true);
+      if (dashboardTabs) setOverlayVisible(dashboardTabs, false);
+      // Hide the matchup/scorebug row while the Next At-Bat overlay is showing
+      if (gameplayTelemetry) setOverlayVisible(gameplayTelemetry, !abStartVisible);
+    } else {
+      setOverlayVisible(contextRow, false);
+    }
+  }
+}
+
+const PLAYER_STATS_DB = {
+  "Corbin Burnes": {
+    role: "PITCHER",
+    hand: "RHP",
+    team: "Baltimore Orioles",
+    height: "6' 3\"",
+    weight: "224 lbs",
+    stats: { "ERA": "2.94", "WHIP": "1.07", "SO": "200", "IP": "194.1", "W-L": "15-9", "WAR": "4.8" }
+  },
+  "Tarik Skubal": {
+    role: "PITCHER",
+    hand: "LHP",
+    team: "Detroit Tigers",
+    height: "6' 3\"",
+    weight: "240 lbs",
+    stats: { "ERA": "2.58", "WHIP": "0.95", "SO": "228", "IP": "192.0", "W-L": "18-4", "WAR": "6.3" }
+  },
+  "Gerrit Cole": {
+    role: "PITCHER",
+    hand: "RHP",
+    team: "New York Yankees",
+    height: "6' 4\"",
+    weight: "220 lbs",
+    stats: { "ERA": "3.12", "WHIP": "1.10", "SO": "180", "IP": "178.2", "W-L": "14-8", "WAR": "3.9" }
+  },
+  "Zack Wheeler": {
+    role: "PITCHER",
+    hand: "RHP",
+    team: "Philadelphia Phillies",
+    height: "6' 4\"",
+    weight: "195 lbs",
+    stats: { "ERA": "2.70", "WHIP": "0.96", "SO": "224", "IP": "200.0", "W-L": "16-7", "WAR": "6.1" }
+  },
+  "Aaron Judge": {
+    role: "BATTER",
+    hand: "R / R",
+    team: "New York Yankees",
+    height: "6' 7\"",
+    weight: "282 lbs",
+    stats: { "AVG": ".322", "HR": "58", "RBI": "144", "OPS": "1.159", "OBP": ".458", "SLG": ".701" }
+  },
+  "Juan Soto": {
+    role: "BATTER",
+    hand: "L / R",
+    team: "New York Yankees",
+    height: "6' 2\"",
+    weight: "224 lbs",
+    stats: { "AVG": ".288", "HR": "41", "RBI": "109", "OPS": ".989", "OBP": ".419", "SLG": ".569" }
+  },
+  "Gunnar Henderson": {
+    role: "BATTER",
+    hand: "L / R",
+    team: "Baltimore Orioles",
+    height: "6' 3\"",
+    weight: "220 lbs",
+    stats: { "AVG": ".281", "HR": "37", "RBI": "92", "OPS": ".893", "OBP": ".365", "SLG": ".529" }
+  },
+  "Shohei Ohtani": {
+    role: "BATTER",
+    hand: "L / R",
+    team: "Los Angeles Dodgers",
+    height: "6' 4\"",
+    weight: "210 lbs",
+    stats: { "AVG": ".310", "HR": "54", "RBI": "130", "OPS": "1.036", "OBP": ".390", "SLG": ".646" }
+  },
+  "Francisco Lindor": {
+    role: "BATTER",
+    hand: "S / R",
+    team: "New York Mets",
+    height: "5' 11\"",
+    weight: "190 lbs",
+    stats: { "AVG": ".273", "HR": "33", "RBI": "91", "OPS": ".844", "OBP": ".344", "SLG": ".500" }
+  }
+};
+
+function getPlayerDetails(name, role, hand = 'R') {
+  if (PLAYER_STATS_DB[name]) {
+    return PLAYER_STATS_DB[name];
+  }
+  
+  const isPitcher = role.toUpperCase() === 'PITCHER';
+  const displayHand = isPitcher ? `${hand}HP` : `${hand} / R`;
+  const team = getPlayerTeam(name) || "Generic Team";
+  
+  if (isPitcher) {
+    const era = (3.0 + Math.random() * 1.5).toFixed(2);
+    const whip = (1.0 + Math.random() * 0.3).toFixed(2);
+    const so = Math.round(140 + Math.random() * 80).toString();
+    const ip = Math.round(150 + Math.random() * 40).toString() + ".0";
+    const wins = Math.round(10 + Math.random() * 6);
+    const losses = Math.round(5 + Math.random() * 6);
+    
+    return {
+      role: "PITCHER",
+      hand: displayHand,
+      team: team,
+      height: "6' 2\"",
+      weight: "205 lbs",
+      stats: { "ERA": era, "WHIP": whip, "SO": so, "IP": ip, "W-L": `${wins}-${losses}`, "WAR": (2.5 + Math.random() * 3).toFixed(1) }
+    };
+  } else {
+    const avg = "." + Math.round(240 + Math.random() * 60).toString();
+    const hr = Math.round(10 + Math.random() * 30).toString();
+    const rbi = Math.round(40 + Math.random() * 60).toString();
+    const obp = "." + Math.round(310 + Math.random() * 60).toString();
+    const slg = "." + Math.round(380 + Math.random() * 150).toString();
+    const ops = (parseFloat(obp) + parseFloat(slg)).toFixed(3);
+    
+    return {
+      role: "BATTER",
+      hand: displayHand,
+      team: team,
+      height: "6' 1\"",
+      weight: "195 lbs",
+      stats: { "AVG": avg, "HR": hr, "RBI": rbi, "OPS": ops, "OBP": obp, "SLG": slg }
+    };
+  }
+}
+
+function showPlayerStatsPopout(element, name, role, hand) {
+  if (!element || !name || name === '--') return;
+
+  // If there's already an active popout in this card, toggle it off
+  const existing = element.querySelector('.player-card-popout');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  // Remove any other active player card popouts on the page
+  document.querySelectorAll('.player-card-popout').forEach(p => p.remove());
+
+  // Ensure parent has relative positioning
+  element.classList.add('relative');
+
+  const details = getPlayerDetails(name, role, hand);
+  const popout = document.createElement('div');
+  popout.className = 'player-card-popout absolute top-0 left-0 w-full min-h-full h-fit bg-[#0f172a] border border-slate-700/60 rounded-xl p-2 z-[99] flex flex-col shadow-2xl transition-all duration-200 pointer-events-auto text-left select-none';
+
+  const colorClass = details.role === 'PITCHER' ? 'text-purple-400' : 'text-cyan-400';
+  
+  let statsHtml = `
+    <div class="flex justify-between items-center mb-1 text-[8px] font-mono-tech border-b border-white/10 pb-0.5">
+      <span class="text-white uppercase font-bold truncate pr-1">${name}</span>
+      <span class="btn-close-popout text-slate-400 hover:text-white cursor-pointer select-none font-bold text-[10px] px-1 font-mono">✕</span>
+    </div>
+    <div class="flex flex-col gap-0.5 font-mono-tech text-[9px]">
+      <div class="flex justify-between items-center py-0.5 border-b border-white/5">
+        <span class="text-slate-400 uppercase font-bold">Role</span>
+        <span class="font-bold uppercase ${colorClass}">${details.role}</span>
+      </div>
+      <div class="flex justify-between items-center py-0.5 border-b border-white/5">
+        <span class="text-slate-400 uppercase font-bold">Thr/Bat</span>
+        <span class="font-bold text-white uppercase">${details.hand}</span>
+      </div>
+      <div class="flex justify-between items-center py-0.5 border-b border-white/5">
+        <span class="text-slate-400 uppercase font-bold">Ht/Wt</span>
+        <span class="font-bold text-white uppercase">${details.height} / ${details.weight}</span>
+      </div>
+  `;
+
+  for (const [key, val] of Object.entries(details.stats)) {
+    statsHtml += `
+      <div class="flex justify-between items-center py-0.5 border-b border-white/5 last:border-b-0">
+        <span class="text-slate-400 uppercase font-bold">${key}</span>
+        <span class="font-bold text-amber-400">${val}</span>
+      </div>
+    `;
+  }
+  statsHtml += `</div>`;
+
+  popout.innerHTML = statsHtml;
+  element.appendChild(popout);
+
+  // Setup click listener for the close button
+  const closeBtn = popout.querySelector('.btn-close-popout');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      popout.remove();
+    });
+  }
+
+  // Prevent parent click event from re-triggering when clicking inside the popout
+  popout.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
+  // Setup document-wide click listener to hide popout when clicking off
+  const onDocumentClick = (e) => {
+    if (!popout.contains(e.target) && !element.contains(e.target)) {
+      popout.remove();
+      document.removeEventListener('click', onDocumentClick);
+    }
+  };
+  // Wait a tick to prevent the current click event from firing the document handler instantly
+  setTimeout(() => {
+    document.addEventListener('click', onDocumentClick);
+  }, 10);
 }
 

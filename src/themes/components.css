@@ -553,3 +553,21 @@
   letter-spacing: 0.05em;
   text-align: center;
 }
+
+/* ---- Responsive Top Navigation Bars ---- */
+#main-top-nav,
+#gameplay-top-nav {
+  background: var(--ump-panel-bg) !important;
+  border: 2px solid var(--ump-color-border) !important;
+  box-shadow: var(--ump-panel-shadow) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+#main-top-nav {
+  border-radius: var(--ump-radius-2);
+}
+
+#gameplay-top-nav {
+  border-radius: var(--ump-radius-2);
+}
