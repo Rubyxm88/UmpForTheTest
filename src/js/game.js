@@ -8689,6 +8689,8 @@ async function loadSavedSessionFromLocal() {
       abStrikes = session.abStrikes;
       pitchHistory = session.pitchHistory || [];
       weeklyPlaylistABs = session.weeklyPlaylistABs || [];
+      if (session.streakPlaylistABs?.length) streakPlaylistABs = session.streakPlaylistABs;
+      if (session.activeStreakAbIndex !== undefined) activeStreakAbIndex = session.activeStreakAbIndex;
       activeDailyDate = session.activeDailyDate;
       activeDailyTeam = session.activeDailyTeam;
       
@@ -12731,6 +12733,46 @@ function showTemporaryLoadingScreen(label, minDurationMs = 850, callback = null)
       hideAppLaunchLoader();
     }
   }, maxVisibleMs);
+}
+
+async function saveGameProgress() {
+  const username = localStorage.getItem('ump_username');
+  if (!username) return;
+
+  const sessionData = {
+    gameMode,
+    activeWeeklyAbIndex,
+    activeStreakAbIndex,
+    currentPitchIndex,
+    abBalls,
+    abStrikes,
+    pitchHistory: pitchHistory.map((h) => ({
+      pitchNum: h.pitchNum,
+      pitchType: h.pitchType,
+      speedMph: h.speedMph,
+      userCall: h.userCall,
+      absCall: h.absCall,
+      realCall: h.realCall,
+      userCorrect: h.userCorrect,
+      realCorrect: h.realCorrect,
+      isSwingPlay: h.isSwingPlay,
+      swingOutcome: h.swingOutcome,
+      swingHitType: h.swingHitType,
+    })),
+    weeklyPlaylistABs,
+    streakPlaylistABs,
+    activeDailyDate,
+    activeDailyTeam,
+    pitchesList,
+    totalPitchesCount,
+    totalBattersFaced,
+    totalSessionK,
+    totalSessionBB,
+    totalSessionH,
+    totalSessionOuts,
+  };
+
+  await saveActiveSession(username, sessionData);
 }
 
 function generateDailyStreakPitches() {
