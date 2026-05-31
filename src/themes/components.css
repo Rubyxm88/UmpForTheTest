@@ -793,17 +793,6 @@
   text-underline-offset: 3px;
 }
 
-.standings-list--mock::before {
-  content: 'Sample data — connect API for live standings';
-  display: block;
-  padding: 0.35rem 0.65rem;
-  font-family: var(--ump-font-body);
-  font-size: 0.68rem;
-  color: var(--retro-grass);
-  border-bottom: 1px solid rgba(45, 107, 66, 0.25);
-  background: rgba(45, 107, 66, 0.08);
-}
-
 .standings-xp-popover {
   position: fixed;
   z-index: 120;

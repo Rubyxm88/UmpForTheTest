@@ -4,13 +4,6 @@ import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
 import { WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META } from '../data/weekly_challenge.js';
 import { STANDINGS_BOARDS } from '../data/challenge_registry.js';
 import {
-  getMockWeeklyRows,
-  getMockWeeklyPeriods,
-  getMockDailyRows,
-  getMockAlltimeRows,
-  getMockCrewRows,
-} from '../data/leaderboard_mock.js';
-import {
   resolveWeeklyChallengeMeta,
   getPreviousIsoWeekKey,
   formatWeekLabel,
@@ -11145,58 +11138,6 @@ async function getCrewLeaderboardRows(metric, username) {
   return apiFetchCrewLeaderboard(metric, username);
 }
 
-async function fetchLeaderboardWithMock(board, username, period) {
-  const handle = username || localStorage.getItem('ump_username') || 'YOU';
-  try {
-    const result = await getLeaderboardRows(board, handle, period);
-    if (result.rows.length > 0) {
-      return { ...result, isMock: false };
-    }
-  } catch (err) {
-    console.warn(`Leaderboard ${board} unavailable, using sample data:`, err);
-  }
-
-  const rows =
-    board === 'weekly'
-      ? getMockWeeklyRows(handle, period)
-      : board === 'daily'
-        ? getMockDailyRows(handle)
-        : getMockAlltimeRows(handle);
-
-  return { rows, source: 'mock', isMock: true, periodKey: period };
-}
-
-async function fetchCrewWithMock(metric, username) {
-  const handle = username || localStorage.getItem('ump_username') || 'YOU';
-  try {
-    const result = await getCrewLeaderboardRows(metric, handle);
-    if (result.rows.length > 0) {
-      return { ...result, isMock: false };
-    }
-  } catch (err) {
-    console.warn(`Crew leaderboard unavailable, using sample data:`, err);
-  }
-
-  return { rows: getMockCrewRows(metric, handle), source: 'mock', isMock: true, metric };
-}
-
-async function fetchWeeklyPeriodsWithMock() {
-  try {
-    const result = await getLeaderboardPeriods('weekly');
-    if (result.periods?.length > 0) {
-      return { ...result, isMock: false };
-    }
-  } catch (err) {
-    console.warn('Weekly history unavailable, using sample data:', err);
-  }
-
-  return {
-    periods: getMockWeeklyPeriods(getCurrentChallengeWeekId()),
-    source: 'mock',
-    isMock: true,
-  };
-}
-
 async function getLeaderboardPeriods(board) {
   return apiFetchLeaderboardPeriods(board);
 }
@@ -11430,11 +11371,10 @@ function getStandingsScoreClass(type) {
   return '';
 }
 
-function renderStandingsList(rows, type, columns, isMock = false) {
+function renderStandingsList(rows, type, columns) {
   if (!leaderboardList) return;
 
   hideStandingsXpPopover();
-  leaderboardList.classList.toggle('standings-list--mock', isMock);
   leaderboardList.classList.remove('standings-list--history');
   const isCrewRank = type === 'crew' && activeCrewMetric === 'rank';
   leaderboardList.classList.toggle('standings-list--crew-rank', isCrewRank);
@@ -11481,11 +11421,10 @@ function renderStandingsList(rows, type, columns, isMock = false) {
   bindStandingsLevelButtons();
 }
 
-function renderWeeklyHistoryList(periods, isMock = false) {
+function renderWeeklyHistoryList(periods) {
   if (!leaderboardList) return;
 
   hideStandingsXpPopover();
-  leaderboardList.classList.toggle('standings-list--mock', isMock);
   leaderboardList.classList.add('standings-list--history');
   leaderboardList.classList.remove('standings-list--crew-rank');
 
@@ -11537,7 +11476,6 @@ function renderStandingsEmpty(source, message) {
       ? 'Could not load standings — use npm run dev:api locally'
       : 'No scores for this period yet');
   if (leaderboardList) {
-    leaderboardList.classList.remove('standings-list--mock');
     leaderboardList.innerHTML = `<div class="standings-empty">${msg}</div>`;
   }
 }
@@ -11545,7 +11483,7 @@ function renderStandingsEmpty(source, message) {
 function renderStandingsLoading() {
   if (leaderboardList) {
     hideStandingsXpPopover();
-    leaderboardList.classList.remove('standings-list--mock', 'standings-list--crew-rank', 'standings-list--history');
+    leaderboardList.classList.remove('standings-list--crew-rank', 'standings-list--history');
     leaderboardList.innerHTML = '<div class="standings-loading">Loading…</div>';
   }
 }
@@ -11560,12 +11498,12 @@ async function renderLeaderboard(type) {
 
   if (type === 'weekly' && standingsViewMode === 'history') {
     try {
-      const result = await fetchWeeklyPeriodsWithMock();
+      const result = await getLeaderboardPeriods('weekly');
       cachedWeeklyPeriods = result.periods || [];
-      renderWeeklyHistoryList(cachedWeeklyPeriods, result.isMock);
+      renderWeeklyHistoryList(cachedWeeklyPeriods);
     } catch (err) {
       console.warn('Error loading weekly history:', err);
-      renderWeeklyHistoryList(getMockWeeklyPeriods(getCurrentChallengeWeekId()), true);
+      renderStandingsEmpty('offline', 'Could not load weekly history');
     }
     return;
   }
@@ -11583,26 +11521,26 @@ async function renderLeaderboard(type) {
 
   const activeHandle = localStorage.getItem('ump_username') || 'YOU';
   let rows = [];
-  let isMock = false;
+  let source = 'empty';
 
   try {
     if (type === 'crew') {
-      const result = await fetchCrewWithMock(activeCrewMetric, activeHandle);
+      const result = await getCrewLeaderboardRows(activeCrewMetric, activeHandle);
       rows = result.rows;
-      isMock = result.isMock;
+      source = result.source;
     } else if (type === 'weekly') {
       const period = getActiveWeeklyPeriodKey();
-      const result = await fetchLeaderboardWithMock('weekly', activeHandle, period);
+      const result = await getLeaderboardRows('weekly', activeHandle, period);
       rows = result.rows;
-      isMock = result.isMock;
+      source = result.source;
     } else if (standingsViewMode === 'alltime') {
-      const result = await fetchLeaderboardWithMock('alltime', activeHandle);
+      const result = await getLeaderboardRows('alltime', activeHandle);
       rows = result.rows;
-      isMock = result.isMock;
+      source = result.source;
     } else {
-      const result = await fetchLeaderboardWithMock('daily', activeHandle);
+      const result = await getLeaderboardRows('daily', activeHandle);
       rows = result.rows;
-      isMock = result.isMock;
+      source = result.source;
     }
   } catch (err) {
     console.warn('Error loading leaderboard:', err);
@@ -11611,11 +11549,11 @@ async function renderLeaderboard(type) {
   }
 
   if (rows.length === 0) {
-    renderStandingsEmpty('empty');
+    renderStandingsEmpty(source);
     return;
   }
 
-  renderStandingsList(rows, type, columns, isMock);
+  renderStandingsList(rows, type, columns);
 }
 
 async function updateWeeklyChallengeRankSnippet() {
