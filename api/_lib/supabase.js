@@ -2,6 +2,22 @@ import { createClient } from '@supabase/supabase-js';
 
 let adminClient = null;
 
+export const SUPABASE_SETUP_HINT =
+  'Copy .env.example to .env.local, set SUPABASE_SERVICE_ROLE_KEY from Supabase → Project Settings → API (service_role), then restart npm run dev:api or dev:full. See docs/SUPABASE_SETUP.md.';
+
+export function isSupabaseConfigured() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return false;
+  if (/your_service_role|placeholder|changeme/i.test(key)) return false;
+  return true;
+}
+
+export function tryGetSupabaseAdmin() {
+  if (!isSupabaseConfigured()) return null;
+  return getSupabaseAdmin();
+}
+
 export function getSupabaseAdmin() {
   if (adminClient) return adminClient;
 
@@ -51,6 +67,9 @@ export function clientStatsToRow(handle, stats) {
       dailyHistory: safe.dailyHistory ?? {},
       teamStats: safe.teamStats ?? {},
       favoriteTeam: safe.favoriteTeam ?? 'none',
+      recentPitches: safe.recentPitches ?? [],
+      totalPitchesCalled: safe.totalPitchesCalled ?? 0,
+      bestWeeklyRecord: safe.bestWeeklyRecord ?? null,
     },
   };
 }

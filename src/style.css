@@ -131,10 +131,6 @@ body {
   box-shadow: inset 0 0 0 2px rgba(26, 48, 80, 0.45), 0 16px 36px rgba(0,0,0,0.55) !important;
 }
 
-#abs-challenge-team-pill {
-  display: none !important;
-}
-
 /* Broadcast overlay white cards -> dark retro */
 #abs-broadcast-overlay .bg-white,
 #abs-broadcast-overlay .bg-slate-950\/60,
@@ -195,6 +191,249 @@ body {
 }
 #close-call-pill #close-call-dist-text {
   color: var(--retro-chalk) !important;
+}
+
+/* Close-call pill lives inside #quick-preview-controls — inherits center alignment */
+#close-call-pill:not(.close-call-pill--active) {
+  display: none !important;
+}
+
+#close-call-pill.close-call-pill--active {
+  display: flex !important;
+  z-index: 1;
+  text-align: center;
+  justify-content: center;
+}
+
+/* Fixed bottom-center dock — translate + scale composed so centering never breaks */
+.quick-preview-dock {
+  position: fixed !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px)) !important;
+  width: min(92vw, 340px) !important;
+  max-width: 340px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 0.65rem !important;
+  transform: translateX(-50%) scale(0.9) !important;
+  transform-origin: bottom center !important;
+  transition: opacity 0.3s ease, transform 0.3s ease !important;
+  margin: 0 !important;
+}
+
+.quick-preview-dock.scale-100 {
+  transform: translateX(-50%) scale(1) !important;
+}
+
+.quick-preview-dock.scale-90 {
+  transform: translateX(-50%) scale(0.9) !important;
+}
+
+.quick-preview-dock #pitch-detail-bug,
+.quick-preview-dock .quick-preview-actions {
+  width: 100% !important;
+}
+
+body.broadcast-review-active #close-call-pill,
+body.game-paused #close-call-pill {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+body.broadcast-review-active #quick-preview-controls {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* ==========================================================================
+   ABS BROADCAST REVIEW SHELL — fixed viewport layout (no parent transform)
+   ========================================================================== */
+.abs-broadcast-shell {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  /* Never use transform here — it breaks fixed children centering */
+}
+
+.abs-broadcast-shell.active-broadcast-overlay {
+  opacity: 1 !important;
+  pointer-events: none;
+}
+
+.abs-broadcast-top {
+  position: fixed;
+  top: calc(5rem + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 340px);
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 26;
+  pointer-events: none;
+}
+
+.abs-broadcast-team-pill {
+  display: none;
+}
+
+.abs-broadcast-emblem {
+  display: none;
+}
+
+.abs-broadcast-ruling {
+  width: 100%;
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid rgba(232, 197, 71, 0.28) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+
+.abs-broadcast-ruling .text-slate-800,
+#abs-ruling-text {
+  color: var(--retro-chalk) !important;
+}
+
+.abs-review-dock {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(92vw, 340px);
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
+  z-index: 26;
+}
+
+#abs-call-result-pill {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: center;
+  text-align: center;
+}
+
+#abs-telemetry-ticker {
+  position: static !important;
+  left: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+.abs-telemetry-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.65rem;
+}
+
+.abs-stat-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.abs-stat-label {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--retro-gold);
+  font-family: var(--font-mono-tech);
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.abs-stat-value {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--retro-chalk);
+  font-family: var(--font-mono-tech);
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+#abs-stat-blurb {
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+}
+
+.abs-review-continue,
+#btn-broadcast-continue {
+  width: 100% !important;
+  min-height: 2.75rem;
+  justify-content: center !important;
+  margin: 0 !important;
+}
+
+@media (min-width: 769px) {
+  .abs-broadcast-top {
+    top: calc(6.5rem + env(safe-area-inset-top, 0px));
+    width: min(92vw, 420px);
+    max-width: 420px;
+  }
+
+  .abs-broadcast-team-pill {
+    display: flex !important;
+  }
+
+  .abs-broadcast-emblem {
+    display: flex !important;
+  }
+
+  .abs-broadcast-top {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .abs-broadcast-ruling {
+    flex: 1 1 160px;
+    max-width: 220px;
+  }
+
+  .abs-review-dock {
+    width: min(92vw, 420px);
+    max-width: 420px;
+    gap: 0.65rem;
+  }
+
+  .abs-telemetry-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .abs-stat-label {
+    font-size: 10px;
+  }
+
+  .abs-stat-value {
+    font-size: 13px;
+  }
+
+  #abs-stat-blurb {
+    font-size: 12px !important;
+  }
 }
 
 /* Form accent colors (checkbox/range) away from purple */
@@ -392,10 +631,9 @@ input[type="range"] {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Active Broadcast Overlay transition */
+/* Active Broadcast Overlay transition — opacity only, no scale transform */
 .active-broadcast-overlay {
   opacity: 1 !important;
-  transform: scale(1) !important;
 }
 
 /* Visibility toggles to prevent overlay click hijacking */
@@ -613,12 +851,14 @@ input[type="range"] {
   }
 
   /* 6. Quick preview controls / review buttons */
-  #quick-preview-controls {
+  #quick-preview-controls,
+  .quick-preview-dock {
     bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
-    width: 90% !important;
+    width: min(92vw, 340px) !important;
     max-width: 340px !important;
   }
-  #quick-preview-controls #pitch-detail-bug {
+  #quick-preview-controls #pitch-detail-bug,
+  .quick-preview-dock #pitch-detail-bug {
     width: 100% !important;
     max-width: 320px !important;
     padding: 0.35rem 0.5rem !important;
@@ -663,15 +903,17 @@ input[type="range"] {
   #quick-preview-controls #pitch-detail-loc {
     font-size: 10px !important;
   }
-  #quick-preview-controls .flex.flex-col {
+  #quick-preview-controls .quick-preview-actions,
+  .quick-preview-dock .quick-preview-actions {
     flex-direction: row !important;
     align-items: center !important;
     width: 100% !important;
-    max-width: 320px !important;
+    max-width: 340px !important;
     margin: 0 auto !important;
     gap: 0.4rem !important;
   }
-  #quick-preview-controls button {
+  #quick-preview-controls button,
+  .quick-preview-dock button {
     flex: 1 !important;
     width: 50% !important;
     height: 2.25rem !important;
@@ -684,105 +926,52 @@ input[type="range"] {
     margin-top: 0 !important;
   }
 
-  /* ABS Review Broadcast Overlay Mobile Layout */
-  #abs-challenge-team-pill {
-    display: none !important; /* Hide placeholder Orioles vs Tigers challenge pill */
+  /* ABS Review Broadcast Overlay — layout handled by .abs-broadcast-shell / .abs-review-dock */
+  .abs-broadcast-top {
+    top: calc(4.5rem + env(safe-area-inset-top, 0px)) !important;
+    width: min(92vw, 340px) !important;
   }
 
-  #abs-card-emblem {
-    display: none !important; /* Hide large logo shield to clear visual space */
-  }
-
-  #abs-ruling-container {
-    top: 6.5rem !important;
-    right: auto !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 90% !important;
-    max-width: 320px !important;
-    justify-content: center !important;
-    gap: 0.5rem !important;
-    flex-direction: row !important;
-  }
-
-  #abs-ruling-pill {
-    padding: 0.35rem 0.75rem !important;
-    border-radius: 8px !important;
-    border: 1px solid rgba(232, 197, 71, 0.22) !important;
-    background: rgba(10, 22, 40, 0.95) !important;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
-    box-sizing: border-box !important;
-    width: auto !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+  .abs-review-dock {
+    width: min(92vw, 340px) !important;
+    gap: 0.45rem !important;
   }
 
   #abs-call-result-pill {
-    position: absolute !important;
-    top: 9.2rem !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 90% !important;
-    max-width: 320px !important;
-    margin: 0 !important;
-    justify-content: center !important;
-    height: 2.25rem !important;
-    padding: 0 0.75rem !important;
-    border-radius: 8px !important;
+    min-height: 2.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  #abs-result-title {
+    font-size: 9px !important;
+  }
+
+  #abs-result-value {
+    font-size: 11px !important;
+    padding: 0.2rem 0.5rem !important;
   }
 
   #abs-telemetry-ticker {
-    bottom: 4.5rem !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 90% !important;
-    max-width: 320px !important;
-    padding: 0.4rem 0.6rem !important;
-    gap: 0.3rem !important;
-    border-radius: 10px !important;
+    padding: 0.55rem 0.65rem !important;
   }
 
-  #abs-telemetry-ticker .flex.items-center.justify-center.gap-5 {
-    gap: 0.4rem !important;
+  .abs-stat-label {
+    font-size: 7px !important;
   }
 
-  #abs-telemetry-ticker span.text-\[10px\] {
-    font-size: 8px !important;
-  }
-
-  #abs-telemetry-ticker span.text-sm {
-    font-size: 11px !important;
-  }
-
-  #abs-telemetry-ticker .w-px.h-7 {
-    height: 1.25rem !important;
+  .abs-stat-value {
+    font-size: 10px !important;
   }
 
   #abs-stat-blurb {
     font-size: 9px !important;
     line-height: 1.3 !important;
-    padding: 0 !important;
-  }
-
-  #abs-action-row {
-    bottom: 1rem !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
-    width: 90% !important;
-    max-width: 320px !important;
-    justify-content: center !important;
-    margin: 0 !important;
-    padding: 0 !important;
   }
 
   #btn-broadcast-continue {
-    width: 100% !important;
-    margin: 0 !important;
-    height: 2.5rem !important;
+    height: 2.75rem !important;
     font-size: 11px !important;
     border-radius: 8px !important;
-    justify-content: center !important;
   }
 
   /* Mobile Click Responsiveness & Target Sizing Overrides */
@@ -855,16 +1044,18 @@ input[type="range"] {
   display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
+  justify-content: center !important;
   overflow-y: auto !important;
   padding: 1.5rem 1rem !important;
 }
 
 #welcome-screen .ump-panel {
-  margin: auto !important;
+  margin: 0 auto !important;
+  flex-shrink: 0;
 }
 
-/* Scroll and layout scaling for overlays on small heights or mobile viewports */
-@media (max-height: 580px), (max-width: 640px) {
+/* Scroll from top only when the login card would not fit vertically */
+@media (max-height: 580px) {
   #welcome-screen {
     justify-content: flex-start !important;
     padding-top: 2.5rem !important;
@@ -896,6 +1087,18 @@ input[type="range"] {
     padding: 0.75rem 0.5rem !important;
     padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Scroll and layout scaling for menu screens on narrow viewports */
+@media (max-width: 640px) {
+  #start-screen,
+  #team-select-screen,
+  #scoreboard-screen {
+    justify-content: flex-start !important;
+    overflow-y: auto !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.75rem !important;
   }
 }
 
@@ -994,6 +1197,83 @@ input[type="range"] {
 
 .welcome-logo-container {
   animation: logoFloat 5s ease-in-out infinite;
+}
+
+/* Logged-in welcome: tighter vertical rhythm, room before Play */
+#welcome-screen:has(#welcome-resume-container.flex) .welcome-logo-container {
+  width: 5.5rem;
+  height: 5.5rem;
+  margin-bottom: 0.25rem;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .ump-subtitle {
+  margin-bottom: 0.5rem;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .ump-marquee {
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 480px) {
+  #welcome-screen:has(#welcome-resume-container.flex) .welcome-logo-container {
+    width: 6.5rem;
+    height: 6.5rem;
+  }
+}
+
+.welcome-resume-greeting {
+  font-size: clamp(0.95rem, 3.2vw, 1.45rem);
+  line-height: 1.25;
+  margin-bottom: 0.125rem;
+}
+
+.welcome-resume-footer {
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .welcome-resume-footer {
+  display: flex;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .welcome-actions {
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) #welcome-body-stack {
+  gap: 0.5rem;
+  margin-bottom: 0;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) #welcome-resume-footer .ump-link {
+  margin: 0;
+  line-height: 1.2;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .welcome-start-btn {
+  margin-top: 0;
+}
+
+#welcome-screen:has(#welcome-resume-container.flex) .ump-panel {
+  padding-top: 1rem;
+  padding-bottom: 0.75rem;
+}
+
+@media (min-width: 480px) {
+  #welcome-screen:has(#welcome-resume-container.flex) .ump-panel {
+    padding-top: 1.25rem;
+    padding-bottom: 0.875rem;
+  }
 }
 
 @keyframes logoFloat {
@@ -2611,6 +2891,278 @@ body.ab-start-active #nav-context-row {
   color: #f4ecd8;
 }
 
+/* ---- Pause menu cabinet (matches ab-start retro arcade chrome) ---- */
+.pause-cabinet {
+  position: relative;
+  max-width: 24rem;
+  width: 100%;
+  max-height: min(92dvh, calc(100vh - 2rem));
+  overflow: hidden;
+  padding: 0;
+  border-radius: 4px;
+  border: 4px solid var(--retro-gold-dark, #9a7a1e);
+  background: linear-gradient(180deg, #122238 0%, #0a1628 55%, #060e18 100%);
+  box-shadow:
+    inset 0 0 0 2px #1a3050,
+    0 8px 0 #030810,
+    0 16px 32px rgba(0, 0, 0, 0.55);
+  font-family: var(--ump-font-body);
+  color: #f4ecd8;
+}
+
+#pause-screen.opacity-100 .pause-cabinet {
+  transform: scale(1);
+}
+
+.pause-marquee {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(90deg, #c41e3a, #8b1428, #c41e3a);
+  border-bottom: 2px solid #9a7a1e;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.45rem;
+  line-height: 1.5;
+  color: #f4ecd8;
+  letter-spacing: 0.08em;
+}
+
+.pause-marquee-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--retro-gold);
+  box-shadow: 0 0 8px rgba(232, 197, 71, 0.65);
+  animation: pause-dot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pause-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+.pause-body {
+  padding: 0.85rem 0.9rem 0.65rem;
+  text-align: center;
+}
+
+.pause-mode-badge {
+  display: inline-block;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.38rem;
+  padding: 0.15rem 0.45rem;
+  margin-bottom: 0.65rem;
+  background: #2d6b42;
+  border: 2px solid #9a7a1e;
+  color: #f4ecd8;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pause-stats-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(45, 107, 66, 0.45);
+  border-radius: 4px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.pause-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pause-stat-row:last-child {
+  border-bottom: none;
+}
+
+.pause-stat-row--accent {
+  background: rgba(232, 197, 71, 0.06);
+}
+
+.pause-stat-label {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.36rem;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.pause-stat-value {
+  font-family: var(--ump-font-body);
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f4ecd8;
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+
+.pause-stat-value--gold {
+  color: var(--retro-gold);
+}
+
+.pause-saved-note {
+  margin: 0.55rem 0 0;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.34rem;
+  color: #5cdb95;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+.pause-timer-note {
+  margin: 0.45rem 0 0;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.34rem;
+  color: var(--retro-gold);
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+}
+
+.pause-footer {
+  padding: 0.65rem 0.9rem 0.85rem;
+  border-top: 2px solid rgba(154, 122, 30, 0.35);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pause-challenge-dock {
+  margin-bottom: 0.5rem;
+  text-align: left;
+  padding: 0.35rem 0.5rem !important;
+  gap: 0.3rem !important;
+}
+
+.pause-challenge-dock .ab-challenge-dock__heading {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.34rem;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.05rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__main {
+  gap: 0.35rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__progress-block {
+  gap: 0.28rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__count-label {
+  font-size: 0.58rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__count-value {
+  font-size: 0.82rem;
+  line-height: 1.1;
+}
+
+.pause-challenge-dock .ab-challenge-dock__pct {
+  font-size: 0.62rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__stats {
+  gap: 0.25rem 0.45rem;
+  padding-top: 0.25rem;
+}
+
+.pause-challenge-dock .ab-summary-challenge-stat-label {
+  font-size: 0.52rem;
+}
+
+.pause-challenge-dock .ab-challenge-dock__stat-value {
+  font-size: 0.72rem;
+}
+
+.pause-challenge-current-ab {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.2rem 0.15rem 0;
+  border-top: 1px solid rgba(45, 107, 66, 0.35);
+  margin-top: 0.1rem;
+}
+
+.pause-challenge-current-ab__label {
+  font-family: var(--ump-font-pixel);
+  font-size: 0.32rem;
+  color: var(--retro-chalk-dim);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pause-challenge-current-ab__value {
+  font-family: var(--ump-font-body);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--retro-gold);
+  letter-spacing: 0.02em;
+}
+
+.pause-challenge-dock--streak .pause-challenge-current-ab {
+  border-top-color: rgba(245, 158, 11, 0.35);
+}
+
+.pause-challenge-dock--streak {
+  background: linear-gradient(135deg, rgba(180, 120, 20, 0.22), rgba(10, 22, 40, 0.95)) !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+}
+
+.pause-challenge-dock--streak .ab-challenge-dock__heading {
+  color: var(--retro-gold);
+}
+
+.pause-challenge-dock .ab-challenge-dock__count-value #pause-challenge-total {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--retro-chalk-dim);
+}
+
+#pause-screen .pause-challenge-dock .ab-summary-weekly-bar-bg {
+  height: 0.32rem;
+}
+
+.pause-kbd {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.25rem;
+  font-family: var(--ump-font-pixel);
+  font-size: 0.32rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(232, 197, 71, 0.35);
+  border-radius: 2px;
+  vertical-align: middle;
+  opacity: 0.85;
+}
+
+#pause-screen .ump-btn--ghost {
+  background: rgba(0, 0, 0, 0.45);
+  border-color: rgba(45, 107, 66, 0.55);
+}
+
+#pause-screen .ump-btn--primary {
+  min-height: 48px;
+}
+
+@media (max-width: 380px) {
+  .pause-stat-value {
+    font-size: 0.9rem;
+  }
+}
+
 /* Scanline CRT overlay for retro arcade look */
 .ab-start-scanlines {
   position: absolute;
@@ -4225,7 +4777,92 @@ body.ab-start-active #nav-context-row {
   pointer-events: auto !important;
 }
 
+/* MLB games browse — calendar popover stacks above grid on small screens */
+@media (max-width: 480px) {
+  .game-finder-calendar-popover {
+    left: 0;
+    right: auto;
+    width: min(17.5rem, 100%);
+    max-width: 100%;
+    transform: none;
+    max-height: none;
+    overflow: visible;
+  }
+}
 
+
+/* MLB game build overlay */
+.game-build-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(2, 6, 23, 0.92);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.game-build-overlay.hidden {
+  display: none !important;
+  pointer-events: none;
+}
+
+.game-build-overlay__panel {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.75rem 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  background: linear-gradient(180deg, rgba(18, 34, 56, 0.95), rgba(10, 22, 40, 0.9));
+  text-align: center;
+}
+
+.game-build-overlay__spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0 auto 1rem;
+  border: 3px solid rgba(168, 85, 247, 0.25);
+  border-top-color: #a855f7;
+  border-radius: 50%;
+  animation: game-build-spin 0.9s linear infinite;
+}
+
+@keyframes game-build-spin {
+  to { transform: rotate(360deg); }
+}
+
+.game-build-overlay__status {
+  font-family: var(--font-mono-tech);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #e9d5ff;
+  margin: 0 0 0.35rem;
+}
+
+.game-build-overlay__hint {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  margin: 0 0 1rem;
+}
+
+.game-build-overlay__track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.game-build-overlay__bar {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7c3aed, #6366f1);
+  transition: width 0.35s ease;
+}
 
 
 

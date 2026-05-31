@@ -6,7 +6,58 @@ export const PLATE_WIDTH = 1.4167;
 export const PLATE_HALF_WIDTH = PLATE_WIDTH / 2;
 // Midpoint/breakpoint of home plate in feet from apex (8.5 inches -> 0.7083 feet)
 // In MLB ABS systems, the strike zone is evaluated at the midpoint/breakpoint of the plate.
-export const PLATE_MIDPOINT_Z = 0.7083; 
+export const PLATE_MIDPOINT_Z = 0.7083;
+// ABS evaluates whether any part of the ball grazes the zone (center ± ball radius).
+export const ABS_HALF_WIDTH = PLATE_HALF_WIDTH + BALL_RADIUS;
+export const BORDERLINE_FT = 0.15;
+
+/**
+ * Returns the extended ABS strike-zone bounds at the plate midpoint.
+ */
+export function getABSZoneBounds(sz_bot, sz_top) {
+  return {
+    xMin: -ABS_HALF_WIDTH,
+    xMax: ABS_HALF_WIDTH,
+    yMin: sz_bot - BALL_RADIUS,
+    yMax: sz_top + BALL_RADIUS,
+  };
+}
+
+/**
+ * Signed distance from ball center to the ABS zone boundary (feet).
+ * Negative = inside (strike), positive = outside (ball).
+ */
+export function getDistanceToABSZone(x, y, sz_bot, sz_top) {
+  const { xMin, xMax, yMin, yMax } = getABSZoneBounds(sz_bot, sz_top);
+  const dx = Math.max(0, xMin - x, x - xMax);
+  const dy = Math.max(0, yMin - y, y - yMax);
+
+  if (dx === 0 && dy === 0) {
+    const distToLeft = x - xMin;
+    const distToRight = xMax - x;
+    const distToBottom = y - yMin;
+    const distToTop = yMax - y;
+    return -Math.min(distToLeft, distToRight, distToBottom, distToTop);
+  }
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Consistent inches + IN/OUT label used across all ABS readouts. */
+export function formatAbsZoneDistance(distFt) {
+  const absDist = Math.abs(distFt);
+  const inches = absDist * 12;
+  const inchStr = inches < 0.1 ? '<0.1' : inches.toFixed(1);
+  return `${inchStr}″ ${distFt < 0 ? 'IN' : 'OUT'}`;
+}
+
+/** Short zone status for compact UI fields. */
+export function formatAbsZoneLocation(distFt) {
+  const absDist = Math.abs(distFt);
+  if (absDist <= BORDERLINE_FT) {
+    return distFt < 0 ? 'BORDERLINE IN' : 'BORDERLINE OUT';
+  }
+  return distFt < 0 ? 'IN ZONE' : 'OUT OF ZONE';
+}
 
 /**
  * Calculates the ball's position (x, y, z) at a given time t (seconds)
@@ -74,14 +125,9 @@ export function getCrossingTime(pitch) {
  * @returns {boolean} True if strike, False if ball
  */
 export function isStrikeABS(pitch, crossPos) {
-  // Horizontal check: center of ball X must be within (plate half-width + ball radius)
-  const isWithinHorizontal = Math.abs(crossPos.x) <= (PLATE_HALF_WIDTH + BALL_RADIUS);
-  
-  // Vertical check: center of ball Y must be within (sz_bot - ball radius) and (sz_top + ball radius)
-  const isWithinVertical = crossPos.y >= (pitch.sz_bot - BALL_RADIUS) && 
-                           crossPos.y <= (pitch.sz_top + BALL_RADIUS);
-
-  return isWithinHorizontal && isWithinVertical;
+  const szTop = pitch.sz_top ?? 3.4;
+  const szBot = pitch.sz_bot ?? 1.6;
+  return getDistanceToABSZone(crossPos.x, crossPos.y, szBot, szTop) < 0;
 }
 
 /**
@@ -115,4 +161,21 @@ export function calculateTrajectoryPoints(pitch, step = 0.01) {
     t_end,
     crossPoint
   };
+}
+
+/**
+ * Resolves a pitch crossing trajectory from stored history or raw Statcast fields.
+ */
+export function resolvePitchTrajectory(pitch, trajectory) {
+  if (trajectory?.crossPoint) return trajectory;
+  if (pitch?.pitchTrajectory?.crossPoint) return pitch.pitchTrajectory;
+  if (pitch?.release_pos_x != null && pitch?.vy0 != null) {
+    return calculateTrajectoryPoints(pitch);
+  }
+  return null;
+}
+
+/** Plate-crossing {x, y, z} for chart markers and ABS distance readouts. */
+export function getPitchCrossPoint(pitch, trajectory) {
+  return resolvePitchTrajectory(pitch, trajectory)?.crossPoint ?? null;
 }

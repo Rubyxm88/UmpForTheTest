@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:api": "vercel dev",
+    "dev:api": "node scripts/dev-api-server.mjs",
+    "dev:vercel": "vercel dev --listen 3000",
+    "dev:full": "concurrently -k -n api,vite -c magenta,blue \"npm run dev:api\" \"vite\"",
+    "setup:env": "node -e \"const fs=require('fs');const p='.env.local';if(fs.existsSync(p)){console.log(p+' already exists');process.exit(0)}fs.copyFileSync('.env.example',p);console.log('Created '+p+' — add SUPABASE_SERVICE_ROLE_KEY and restart dev:full');\"",
     "build": "vite build",
     "preview": "vite preview",
     "weekly-curator": "node scripts/weekly-curator.js",
     "test": "node scratch/run_headless.js"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "vite": "^6.4.2"
   },
   "dependencies": {

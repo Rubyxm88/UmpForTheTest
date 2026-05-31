@@ -450,12 +450,6 @@
           <!-- Text dynamically inserted -->
         </div>
 
-        <!-- Close Call Telemetry Pill (Floating center) -->
-        <div id="close-call-pill" class="absolute top-16 left-1/2 -translate-x-1/2 px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 border border-amber-400/30 rounded-full font-black text-[10px] text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 scale-95 opacity-0 transition-all duration-300 z-40 pointer-events-none flex items-center gap-1.5 whitespace-nowrap">
-          <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-          <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
-        </div>
-
       <div id="welcome-screen" class="ump-screen absolute inset-0 w-full h-full backdrop-blur-md bg-grid-pattern flex flex-col z-[55] pointer-events-auto opacity-100 transition-opacity duration-300">
         <div class="absolute inset-0 bg-scanlines pointer-events-none opacity-15"></div>
         
@@ -508,7 +502,7 @@
           
           <div class="ump-marquee mb-2.5 xs:mb-4 select-none animate-flash-text">[ Log In to Play ]</div>
           
-          <div class="flex flex-col gap-2.5 xs:gap-4 w-full mb-3 xs:mb-4 text-left">
+          <div id="welcome-body-stack" class="flex flex-col gap-2.5 xs:gap-4 w-full mb-3 xs:mb-4 text-left">
             <div id="welcome-login-fields" class="flex flex-col gap-4 w-full">
               <div class="flex flex-col gap-1.5">
                 <label for="login-handle" class="ump-label">Umpire Crew Handle</label>
@@ -531,12 +525,12 @@
               </div>
             </div>
             
-            <div id="welcome-resume-container" class="hidden flex-col items-center gap-3 w-full text-center">
-              <h3 class="ump-title ump-title--sm">
+            <div id="welcome-resume-container" class="hidden flex-col items-center gap-1.5 w-full text-center">
+              <h3 class="ump-title ump-title--sm welcome-resume-greeting">
                 WELCOME BACK, <span class="ump-title-accent" id="welcome-resume-handle">--</span>
               </h3>
               
-              <div class="ump-panel--subtle w-full p-3 flex flex-col gap-1.5 text-left mt-1 select-none">
+              <div class="ump-panel--subtle w-full p-2.5 xs:p-3 flex flex-col gap-1.5 text-left select-none">
                 <div class="flex justify-between items-center gap-2">
                   <span id="welcome-resume-level" class="ump-level-badge ump-level-badge--rookie">LVL 1</span>
                   <span id="welcome-resume-xp-text" class="ump-label">0 / 1,000 XP</span>
@@ -546,7 +540,7 @@
                 </div>
               </div>
 
-              <div class="grid grid-cols-2 gap-2.5 w-full mt-1">
+              <div class="grid grid-cols-2 gap-2 w-full">
                 <div class="ump-stat-card">
                   <span class="ump-stat-card__label">Overall Accuracy</span>
                   <span id="welcome-resume-accuracy" class="ump-stat-card__value">--</span>
@@ -557,26 +551,26 @@
                 </div>
               </div>
 
-              <div id="welcome-login-bonus-container" class="ump-panel--subtle w-full p-2 md:p-2.5 flex items-center justify-between mt-1 select-none">
-                <div class="flex items-center gap-1.5 md:gap-2 text-left min-w-0">
-                  <span class="text-base shrink-0" aria-hidden="true">🎁</span>
-                  <div class="min-w-0">
-                    <span class="ump-kicker block mb-0.5 text-[9px] md:text-[10px]">Daily Login Bonus</span>
-                    <span id="welcome-login-bonus-status" class="ump-subtitle text-[10px] xs:text-xs sm:text-[13px] block truncate">CLAIMED (+100 XP)</span>
-                  </div>
+              <div id="welcome-login-bonus-container" class="ump-panel--subtle w-full p-2 flex items-center gap-2 select-none welcome-login-bonus">
+                <span class="text-sm shrink-0 leading-none" aria-hidden="true">🎁</span>
+                <div class="flex-1 min-w-0 text-left">
+                  <span class="ump-kicker block mb-0.5 text-[9px] md:text-[10px]">Daily Login Bonus</span>
+                  <span id="welcome-login-bonus-status" class="ump-subtitle text-[10px] xs:text-[11px] block leading-tight">+100 XP</span>
                 </div>
-                <button id="welcome-login-bonus-check" type="button" class="px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bg-slate-900 border-white/5 text-gray-400 pointer-events-none">CLAIM NOW</button>
+                <button id="welcome-login-bonus-check" type="button" class="px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bg-slate-900 border-white/5 text-gray-400 pointer-events-none">CLAIM NOW</button>
               </div>
 
-              <button id="btn-welcome-logout" type="button" class="ump-link mt-2">
-                [ Switch Umpire Profile / Logout ]
-              </button>
             </div>
           </div>
-          
-          <button id="btn-welcome-start" type="button" class="ump-btn ump-btn--primary ump-btn--block pointer-events-auto">
-            Insert Coin & Play
-          </button>
+
+          <div id="welcome-actions" class="welcome-actions w-full flex flex-col items-center">
+            <div id="welcome-resume-footer" class="welcome-resume-footer w-full">
+              <button id="btn-welcome-logout" type="button" class="ump-link">Log Out</button>
+            </div>
+            <button id="btn-welcome-start" type="button" class="ump-btn ump-btn--primary ump-btn--block pointer-events-auto welcome-start-btn">
+              Insert Coin & Play
+            </button>
+          </div>
         </div>
       </div>
 
@@ -705,31 +699,41 @@
                 </div>
               </div>
 
-              <!-- Recent Games Section -->
-              <div class="flex flex-col gap-2">
-                <div class="flex justify-between items-center">
-                  <span class="ump-kicker">Recent MLB Games</span>
+              <!-- Browse MLB games by date -->
+              <div class="mlb-games-browse flex flex-col gap-2">
+                <div class="flex justify-between items-center gap-2 flex-wrap">
+                  <span class="ump-kicker">MLB Games</span>
                   <span id="recent-games-date" class="ump-label">LOADING...</span>
                 </div>
-                <div id="recent-games-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div class="mlb-games-browse__controls ump-panel--subtle pointer-events-auto">
+                  <div class="mlb-games-browse__quick-row game-finder-quick">
+                    <button type="button" data-game-finder-offset="0" class="mlb-games-quick-chip" aria-pressed="true">Today</button>
+                    <button type="button" data-game-finder-offset="-1" class="mlb-games-quick-chip" aria-pressed="false">Yday</button>
+                    <button type="button" data-game-finder-offset="-2" class="mlb-games-quick-chip" aria-pressed="false">−2d</button>
+                  </div>
+                  <div class="mlb-date-picker">
+                    <button type="button" id="btn-game-finder-calendar" class="mlb-date-picker__trigger pointer-events-auto" aria-haspopup="dialog" aria-expanded="false" aria-controls="game-finder-calendar-popover">
+                      <span class="mlb-date-picker__icon" aria-hidden="true"></span>
+                      <span id="game-finder-date-label" class="mlb-date-picker__label">Pick date</span>
+                      <span class="mlb-date-picker__caret" aria-hidden="true">▾</span>
+                    </button>
+                    <div id="game-finder-calendar-popover" class="game-finder-calendar-popover hidden" role="dialog" aria-label="Pick a date" aria-hidden="true" data-cal-step="day">
+                      <div class="game-finder-calendar__head">
+                        <button type="button" class="game-finder-calendar__nav" data-cal-prev aria-label="Previous month">‹</button>
+                        <button type="button" id="game-finder-cal-title" class="game-finder-calendar__title game-finder-calendar__title-btn">May 2026</button>
+                        <button type="button" class="game-finder-calendar__nav" data-cal-next aria-label="Next month">›</button>
+                      </div>
+                      <div class="game-finder-calendar__weekdays" aria-hidden="true">
+                        <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                      </div>
+                      <div id="game-finder-cal-grid" class="game-finder-calendar__grid"></div>
+                    </div>
+                  </div>
+                  <input type="hidden" id="game-finder-date" value="" />
+                  <p id="game-finder-load-status" class="mlb-games-browse__status" aria-live="polite" hidden></p>
+                </div>
+                <div id="recent-games-grid" class="mlb-games-grid mlb-games-grid--recent grid max-h-[min(55vh,420px)] overflow-y-auto">
                   <!-- Dynamically filled with game cards -->
-                </div>
-              </div>
-
-              <!-- Game Finder (Search/Calendar Tool) -->
-              <div class="ump-panel--subtle p-4 flex flex-col gap-3">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                  <div class="flex flex-col">
-                    <span class="ump-kicker">MLB Game Finder</span>
-                    <span class="ump-subtitle text-base">Select any date back to 2026 to browse matches</span>
-                  </div>
-                  <div class="flex items-center gap-2 pointer-events-auto w-full sm:w-auto">
-                    <input type="date" id="game-finder-date" class="ump-input flex-1 min-h-[40px] py-2 text-base" min="2026-01-01" max="2026-12-31" />
-                    <button id="btn-find-games" type="button" class="ump-btn ump-btn--primary ump-btn--sm shrink-0">Search</button>
-                  </div>
-                </div>
-                <div id="game-finder-results" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-h-[180px] overflow-y-auto hidden">
-                  <!-- Finder results filled dynamically -->
                 </div>
               </div>
 
@@ -802,9 +806,16 @@
                       <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Lifetime XP</span>
                       <span id="profile-total-xp" class="text-xs font-bold text-[var(--ump-color-accent)] font-mono-tech mt-0.5">0 XP</span>
                     </div>
-                    <div class="flex flex-col justify-center py-1 border-l border-white/5">
-                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Fav Team</span>
-                      <span id="profile-fav-team-display" class="text-xs font-bold text-white font-mono-tech mt-0.5 truncate px-1">NONE</span>
+                    <div class="flex flex-col justify-center py-1 border-l border-white/5 pointer-events-auto min-w-0">
+                      <label for="profile-fav-team-select" class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Fav Team</label>
+                      <div class="flex items-center gap-1.5 mt-1 min-w-0">
+                        <div class="w-8 h-8 shrink-0 bg-black/40 rounded border border-white/10 overflow-hidden flex items-center justify-center p-0.5">
+                          <img id="profile-fav-team-logo" class="w-full h-full object-contain" src="/generic.svg" alt="Favorite Team Logo" />
+                        </div>
+                        <select id="profile-fav-team-select" class="bg-slate-900/60 border border-white/10 rounded px-1.5 py-1 text-[10px] sm:text-xs font-mono-tech text-white focus:outline-none flex-1 min-w-0 cursor-pointer min-h-[36px]">
+                          <option value="none">Select Team</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -834,7 +845,7 @@
                   <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">Peak Streak</span>
                   <span id="stats-max-streak" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
                 </div>
-                <!-- Active Week Progress -->
+                <!-- Best Weekly Challenge Run -->
                 <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
                   <div class="w-7 h-7 mb-1 flex items-center justify-center">
                     <svg class="w-6 h-6 text-[var(--retro-grass)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
@@ -842,19 +853,19 @@
                       <circle cx="12" cy="12" r="2" fill="currentColor" />
                     </svg>
                   </div>
-                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">This Week</span>
-                  <span id="stats-completed-weekly" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">Best Weekly Record</span>
+                  <span id="stats-best-weekly-record" class="text-lg font-black text-white font-mono-tech mt-1 text-center leading-tight">--</span>
                 </div>
-                <!-- Lifetime Completed -->
+                <!-- Lifetime Pitches Called -->
                 <div class="ump-panel--subtle p-3.5 flex flex-col items-center justify-between min-h-[100px] hover:border-[var(--ump-color-border-strong)] transition-colors duration-200">
                   <div class="w-7 h-7 mb-1 flex items-center justify-center">
-                    <svg class="w-6 h-6 text-[var(--retro-gold)]" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M5 3v18M5 3l14 5-14 5"/>
-                      <path d="M5 3l14 5-14 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <svg class="w-6 h-6 text-[var(--retro-gold)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <circle cx="12" cy="12" r="9"/>
+                      <path d="M12 7v5l3 2"/>
                     </svg>
                   </div>
-                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">All-Time Games</span>
-                  <span id="stats-lifetime-challenges" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
+                  <span class="text-[8px] uppercase text-gray-400 font-mono-tech font-bold text-center leading-tight">Pitches Called</span>
+                  <span id="stats-total-pitches-called" class="text-xl font-black text-white font-mono-tech mt-1">--</span>
                 </div>
               </div>
 
@@ -992,20 +1003,7 @@
                 <h3 class="text-[12px] font-mono-tech uppercase tracking-widest text-[var(--ump-color-accent)] font-bold border-b border-white/10 pb-1.5 select-none">
                   Crew settings & account management
                 </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <!-- Edit Favorite Team -->
-                  <div class="flex flex-col gap-2">
-                    <label class="text-[11.5px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Favorite Team</label>
-                    <div class="flex items-center gap-3">
-                      <div class="w-11 h-11 bg-black/40 rounded border border-white/10 overflow-hidden flex items-center justify-center p-1 shrink-0">
-                        <img id="profile-fav-team-logo" class="w-full h-full object-contain" src="/generic.svg" alt="Favorite Team Logo" />
-                      </div>
-                      <select id="profile-fav-team-select" class="bg-slate-900/60 border border-white/10 rounded p-2 text-xs font-mono-tech text-white focus:outline-none pointer-events-auto flex-1 cursor-pointer min-h-[44px]">
-                        <option value="none">Select Favorite Team</option>
-                      </select>
-                    </div>
-                  </div>
-                  
+                <div class="max-w-xl">
                   <!-- Change PIN -->
                   <div class="flex flex-col gap-3">
                     <label class="text-[11.5px] font-mono-tech text-gray-400 uppercase tracking-widest font-bold select-none">Security credentials</label>
@@ -1159,10 +1157,15 @@
         
 
 
-        <!-- Quick Preview Controls (floating at bottom of viewport) -->
-        <div id="quick-preview-controls" class="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-0 pointer-events-none scale-90 transition-all duration-300 z-30">
+        <!-- Quick Preview Controls (fixed bottom-center dock) -->
+        <div id="quick-preview-controls" class="quick-preview-dock opacity-0 pointer-events-none scale-90 z-30">
+          <!-- Close Call pill (stacked above pitch bug — single bottom readout) -->
+          <div id="close-call-pill" class="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 border border-amber-400/30 rounded-full font-black text-[10px] text-white uppercase tracking-widest shadow-lg shadow-orange-500/20 pointer-events-none flex items-center justify-center gap-1.5 whitespace-nowrap w-full max-w-[340px]">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+            <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
+          </div>
           <!-- Pitch Detail Bug -->
-          <div id="pitch-detail-bug" class="glass-panel backdrop-blur-md border border-white/10 px-5 py-3.5 rounded-xl flex flex-col gap-2.5 pointer-events-none w-72 md:w-80 text-left shadow-lg">
+          <div id="pitch-detail-bug" class="glass-panel backdrop-blur-md border border-white/10 px-5 py-3.5 rounded-xl flex flex-col gap-2.5 pointer-events-none w-full max-w-[340px] text-left shadow-lg">
             <div class="flex justify-between items-center border-b border-white/10 pb-1.5">
               <span id="pitch-detail-type" class="font-extrabold text-sm md:text-base text-white tracking-wide">FASTBALL</span>
               <span id="pitch-detail-speed" class="text-sm md:text-base text-purple-400 font-mono-tech font-extrabold">95.4 MPH</span>
@@ -1173,14 +1176,14 @@
                 <span id="pitch-detail-break" class="text-white font-bold">H: +4.2"  V: -12.1"</span>
               </div>
               <div class="flex flex-col gap-0.5 items-end">
-                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">Zone Location</span>
-                <span id="pitch-detail-loc" class="text-white font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase">Inside Low</span>
+                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">ABS Zone</span>
+                <span id="pitch-detail-loc" class="text-white font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase">IN ZONE</span>
               </div>
             </div>
           </div>
 
           <!-- Quick Actions Button Group -->
-          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-72 sm:w-auto pointer-events-auto">
+          <div id="quick-preview-actions" class="quick-preview-actions flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full max-w-[340px] pointer-events-auto">
             <button id="btn-view-details" class="px-4 py-2 sm:px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer text-center w-full">
               <span class="hidden sm:inline">View ABS Review Details [V]</span>
               <span class="inline sm:hidden">ABS Review [V]</span>
@@ -1224,18 +1227,17 @@
       <!-- GAME HUD: FOOTER (BOTTOM SHEET / DETAILS SIDEBAR) -->
       <div id="hud-footer" class="w-full pointer-events-none flex flex-col items-center">
         
-        <!-- ABS BROADCAST OVERLAY: Detailed review panel sidebar (shown on 'V' click) -->
-        <div id="abs-broadcast-overlay" class="absolute inset-0 w-full h-full pointer-events-none z-20 opacity-0 transition-all duration-500 scale-95">
+        <!-- ABS BROADCAST OVERLAY: Full review panel (shown on 'V' or full review mode) -->
+        <div id="abs-broadcast-overlay" class="abs-broadcast-shell pointer-events-none opacity-0 z-[25]">
           
-          <!-- Top Left: Team Challenge Pill -->
-          <div id="abs-challenge-team-pill" class="absolute top-24 left-4 md:left-6 flex items-center bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1.5 gap-2 select-none z-10">
-            <div id="abs-team-logo" class="w-5 h-5 rounded flex items-center justify-center text-[10px] font-black text-white font-mono-tech shadow-inner">S</div>
-            <div id="abs-team-name-text" class="text-[11px] font-black tracking-wider text-slate-800 uppercase font-sans">MARINERS CHALLENGE</div>
-          </div>
+          <!-- Top: Team pill (desktop only) + ABS ruling -->
+          <div id="abs-ruling-container" class="abs-broadcast-top">
+            <div id="abs-challenge-team-pill" class="abs-broadcast-team-pill flex items-center bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1.5 gap-2 select-none">
+              <div id="abs-team-logo" class="w-5 h-5 rounded flex items-center justify-center text-[10px] font-black text-white font-mono-tech shadow-inner">S</div>
+              <div id="abs-team-name-text" class="text-[11px] font-black tracking-wider text-slate-800 uppercase font-sans">MARINERS CHALLENGE</div>
+            </div>
 
-          <!-- Center Right: ABS Card and Ruling Pill -->
-          <div id="abs-ruling-container" class="absolute top-[22%] right-6 flex flex-col items-center gap-2 select-none">
-            <div id="abs-card-emblem" class="w-24 h-24 bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col items-center justify-center p-2">
+            <div id="abs-card-emblem" class="abs-broadcast-emblem w-24 h-24 bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col items-center justify-center p-2">
               <div class="flex items-center gap-0.5 bg-blue-900 px-1 py-0.5 rounded text-[8px] font-bold text-white mb-1 uppercase tracking-widest leading-none">
                 <span class="text-red-500 text-[6px]">?</span> ABS
               </div>
@@ -1243,50 +1245,47 @@
               <span class="text-[7px] text-gray-400 font-bold uppercase mt-1 tracking-wider text-center">Automated Zone</span>
             </div>
             
-            <div id="abs-ruling-pill" class="flex items-center justify-center bg-white border border-slate-200 rounded-lg px-4 py-1.5 shadow-md w-full">
+            <div id="abs-ruling-pill" class="abs-broadcast-ruling flex items-center justify-center bg-white border border-slate-200 rounded-lg px-4 py-1.5 shadow-md w-full">
               <span id="abs-ruling-dot" class="w-2.5 h-2.5 rounded-full bg-red-500 mr-2"></span>
               <span id="abs-ruling-text" class="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">STRIKE</span>
             </div>
           </div>
 
-          <!-- Bottom Center Row: Call Result Pill + Continue Button side-by-side -->
-          <div id="abs-action-row" class="absolute bottom-40 left-1/2 -translate-x-1/2 flex items-center justify-center gap-4 select-none pointer-events-auto">
-            <div id="abs-call-result-pill" class="glass-panel rounded-xl px-5 py-2.5 shadow-2xl flex items-center gap-3 border border-white/10 h-12">
+          <!-- Bottom dock: call result + telemetry + continue (fixed center stack) -->
+          <div id="abs-review-dock" class="abs-review-dock pointer-events-auto">
+            <div id="abs-call-result-pill" class="glass-panel rounded-xl px-4 py-2.5 shadow-2xl flex items-center justify-center gap-3 border border-white/10 min-h-[2.75rem] w-full">
               <span id="abs-result-title" class="text-xs font-bold text-gray-400 uppercase tracking-wider font-mono-tech">CALL CONFIRMED</span>
               <span id="abs-result-value" class="text-sm font-black px-2.5 py-1 rounded-md uppercase text-green-400 bg-green-950/50 border border-green-500/30 shadow-sm">STRIKE</span>
             </div>
-            <button id="btn-broadcast-continue" class="px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-2">
-              Continue [Space]
-              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
-            </button>
-          </div>
 
-          <!-- Bottom Center: Two-Row Telemetry Ticker Overlay -->
-          <div id="abs-telemetry-ticker" class="absolute bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-2xl glass-panel p-4 rounded-xl border border-white/10 flex flex-col gap-2.5 select-none">
-            <div class="flex items-center justify-center gap-5 md:gap-8">
-              <div class="flex flex-col items-center">
-                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Pitch Type</span>
-                <span id="abs-stat-type" class="font-bold text-white font-mono-tech text-sm">--</span>
+            <div id="abs-telemetry-ticker" class="glass-panel p-3 md:p-4 rounded-xl border border-white/10 flex flex-col gap-2 w-full select-none">
+              <div class="abs-telemetry-stats">
+                <div class="abs-stat-cell">
+                  <span class="abs-stat-label">Pitch Type</span>
+                  <span id="abs-stat-type" class="abs-stat-value">--</span>
+                </div>
+                <div class="abs-stat-cell">
+                  <span class="abs-stat-label">Velocity</span>
+                  <span id="abs-stat-speed" class="abs-stat-value">--</span>
+                </div>
+                <div class="abs-stat-cell">
+                  <span class="abs-stat-label">Break</span>
+                  <span id="abs-stat-break" class="abs-stat-value">--</span>
+                </div>
+                <div class="abs-stat-cell">
+                  <span class="abs-stat-label">ABS Edge</span>
+                  <span id="abs-stat-height" class="abs-stat-value">--</span>
+                </div>
               </div>
-              <div class="w-px h-7 bg-white/15"></div>
-              <div class="flex flex-col items-center">
-                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Velocity</span>
-                <span id="abs-stat-speed" class="font-bold text-white font-mono-tech text-sm">--</span>
-              </div>
-              <div class="w-px h-7 bg-white/15"></div>
-              <div class="flex flex-col items-center">
-                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Break</span>
-                <span id="abs-stat-break" class="font-bold text-white font-mono-tech text-sm">--</span>
-              </div>
-              <div class="w-px h-7 bg-white/15"></div>
-              <div class="flex flex-col items-center">
-                <span class="text-[10px] text-gray-400 uppercase font-mono-tech tracking-wider">Zone Dist</span>
-                <span id="abs-stat-height" class="font-bold text-white font-mono-tech text-sm">--</span>
+              <div class="border-t border-white/10 pt-2">
+                <p id="abs-stat-blurb" class="text-[11px] md:text-xs text-gray-300 italic leading-relaxed text-center px-1"></p>
               </div>
             </div>
-            <div class="border-t border-white/10 pt-2">
-              <p id="abs-stat-blurb" class="text-[12px] text-gray-300 italic leading-relaxed text-center px-2"></p>
-            </div>
+
+            <button id="btn-broadcast-continue" class="abs-review-continue px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 w-full">
+              Continue <span class="hidden sm:inline">[Space]</span>
+              <svg class="w-4 h-4 fill-current hidden sm:block" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+            </button>
           </div>
         </div>
 
@@ -1887,54 +1886,70 @@
       </div>
 
       <!-- SCREEN P: GAME PAUSED SCREEN -->
-      <div id="pause-screen" class="absolute inset-0 w-full h-full bg-slate-950/80 backdrop-blur-md flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 transition-opacity duration-300">
-        <div class="max-w-sm w-full glass-panel p-6 md:p-8 rounded-2xl border border-white/10 flex flex-col gap-5 text-center relative overflow-hidden">
-          <div class="absolute -top-24 -left-24 w-48 h-48 rounded-full bg-yellow-500/5 blur-3xl"></div>
-          
-          <h2 class="text-xl font-black text-white uppercase tracking-widest font-mono-tech flex items-center justify-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-yellow-500 animate-ping"></span>
+      <div id="pause-screen" class="absolute inset-0 w-full h-full flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 transition-opacity duration-300">
+        <div class="pause-cabinet w-full max-w-sm flex flex-col relative overflow-hidden transform scale-95 transition-all duration-300 pointer-events-auto select-none">
+          <div class="pause-marquee" aria-hidden="true">
+            <span class="pause-marquee-dot"></span>
             GAME PAUSED
-          </h2>
-          
-          <!-- Progress / Stats details in Pause Screen -->
-          <div class="flex flex-col gap-2.5 bg-white/5 border border-white/10 rounded-xl p-4 text-left font-mono-tech text-xs select-none">
-            <div class="flex justify-between border-b border-white/5 pb-1.5">
-              <span class="text-gray-400">Game Mode:</span>
-              <span id="pause-mode-text" class="text-white font-bold uppercase text-[10px]">Weekly Challenge</span>
-            </div>
-            <div class="flex justify-between border-b border-white/5 pb-1.5">
-              <span class="text-gray-400">Inning / Outs:</span>
-              <span id="pause-inning-outs-text" class="text-white font-bold">Top 1st | 0 Outs</span>
-            </div>
-            <div class="flex justify-between border-b border-white/5 pb-1.5">
-              <span class="text-gray-400">Current Score:</span>
-              <span id="pause-score-text" class="text-white font-bold">Away 0 - 0 Home</span>
-            </div>
-            <div id="pause-progress-row" class="flex justify-between border-b border-white/5 pb-1.5 hidden">
-              <span class="text-gray-400">Challenge AB:</span>
-              <span id="pause-progress-text" class="text-white font-bold">At-Bat 1 of 15</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-gray-400">Accuracy (Takes):</span>
-              <span id="pause-acc-text" class="text-white font-bold text-yellow-400">100%</span>
-            </div>
           </div>
-          
-          <p id="pause-timers" class="text-[10px] text-gray-400 font-mono-tech bg-white/5 border border-white/5 p-2 rounded hidden"></p>
-          
-          <div class="flex flex-col gap-2 w-full">
-            <button id="btn-resume-game" class="w-full py-3.5 bg-gradient-to-r from-yellow-600 to-amber-600 border border-yellow-500/30 rounded-xl font-extrabold uppercase tracking-wider text-xs text-white shadow-lg hover:scale-[1.02] active:scale-95 transition-all cursor-pointer pointer-events-auto">
-              Resume
+
+          <div class="pause-body">
+            <span id="pause-mode-badge" class="pause-mode-badge">Weekly Challenge</span>
+
+            <!-- Challenge mini progress tracker (weekly / streak / mlb) -->
+            <div id="pause-challenge-dock" class="ab-summary-challenge-dock--unified ab-challenge-dock pause-challenge-dock hidden">
+              <span id="pause-challenge-dock-heading" class="ab-challenge-dock__heading">Weekly Challenge</span>
+              <div class="ab-challenge-dock__main">
+                <div id="pause-challenge-progress-block" class="ab-challenge-dock__progress-block">
+                  <div class="ab-challenge-dock__count-row">
+                    <span id="pause-challenge-count-label" class="ab-challenge-dock__count-label">Completed</span>
+                    <span class="ab-challenge-dock__count-value">
+                      <span id="pause-challenge-count">0</span><span id="pause-challenge-total"> / 200</span>
+                    </span>
+                    <span id="pause-challenge-pct" class="ab-challenge-dock__pct">0% Complete</span>
+                  </div>
+                  <div id="pause-challenge-bar-wrap" class="ab-summary-weekly-bar-bg">
+                    <div id="pause-challenge-progress-bar" class="ab-summary-weekly-bar-fill" style="width: 0%"></div>
+                  </div>
+                  <div class="pause-challenge-current-ab">
+                    <span class="pause-challenge-current-ab__label">Current At-Bat</span>
+                    <span id="pause-challenge-current-ab" class="pause-challenge-current-ab__value">1 of 200</span>
+                  </div>
+                </div>
+                <div class="ab-challenge-dock__stats" aria-label="Challenge standings">
+                  <div class="ab-challenge-dock__stat">
+                    <span id="pause-challenge-stat-a-label" class="ab-summary-challenge-stat-label">Accuracy</span>
+                    <span id="pause-challenge-accuracy" class="ab-challenge-dock__stat-value">--</span>
+                  </div>
+                  <div class="ab-challenge-dock__stat">
+                    <span id="pause-challenge-stat-b-label" class="ab-summary-challenge-stat-label">Rank</span>
+                    <span id="pause-challenge-rank" class="ab-challenge-dock__stat-value">--</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pause-stats-panel">
+              <div class="pause-stat-row">
+                <span class="pause-stat-label">This Pitch</span>
+                <span id="pause-ab-progress" class="pause-stat-value">Pitch 1 of 6 · 0-0</span>
+              </div>
+              <div class="pause-stat-row pause-stat-row--accent">
+                <span class="pause-stat-label">Session Accuracy</span>
+                <span id="pause-acc-text" class="pause-stat-value pause-stat-value--gold">--</span>
+              </div>
+            </div>
+
+            <p id="pause-saved-note" class="pause-saved-note hidden">Progress saved — resume anytime from the menu</p>
+            <p id="pause-timers" class="pause-timer-note hidden" aria-live="polite"></p>
+          </div>
+
+          <footer class="pause-footer">
+            <button id="btn-resume-game" type="button" class="ump-btn ump-btn--primary ump-btn--block pointer-events-auto">
+              Resume <kbd class="pause-kbd">ESC</kbd>
             </button>
-            <div class="grid grid-cols-2 gap-2">
-              <button id="btn-pause-restart" class="py-3 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white transition-colors cursor-pointer pointer-events-auto">
-                Restart Game
-              </button>
-              <button id="btn-pause-home" class="py-3 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] text-white transition-colors cursor-pointer pointer-events-auto">
-                Exit to Home
-              </button>
-            </div>
-          </div>
+            <button id="btn-pause-home" type="button" class="ump-btn ump-btn--ghost ump-btn--block pointer-events-auto">Exit to Home</button>
+          </footer>
         </div>
       </div>
 
@@ -1969,86 +1984,73 @@
       </div>
 
       <!-- SCREEN: GAME PREVIEW & AB SELECTOR MODAL -->
-      <div id="game-preview-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/95 backdrop-blur-md flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300 overflow-y-auto p-4 md:p-6">
-        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-3xl border-2 border-purple-500/35 flex flex-col shadow-neon-box-glow relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/5 blur-3xl"></div>
-          
-          <!-- Modal Header -->
-          <div class="flex justify-between items-center border-b border-white/10 pb-4 mb-4 select-none">
-            <div class="flex flex-col text-left">
-              <h3 id="preview-modal-title" class="text-lg font-black text-purple-400 font-mono-tech uppercase tracking-widest leading-none">Game Detail Hub</h3>
-              <span id="preview-modal-date" class="text-xs text-gray-500 font-mono-tech mt-1">MAY 26, 2026</span>
-            </div>
-            <button id="btn-preview-modal-close" class="text-gray-400 hover:text-white cursor-pointer transition-colors p-2 text-sm font-mono-tech uppercase font-bold">✕ Close</button>
-          </div>
-
-          <!-- Mid Section: Matchup Summary Banner -->
-          <div class="flex flex-col md:flex-row items-center justify-around bg-slate-950/40 border border-white/5 rounded-2xl p-4 mb-6 gap-4 select-none">
-            <!-- Away Team -->
-            <div class="flex items-center gap-3 flex-1 justify-end">
-              <span id="preview-away-name" class="text-sm font-black text-white uppercase tracking-wider">Away Team</span>
-              <img id="preview-away-logo" src="/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
-            </div>
-            
-            <!-- VS / Score -->
-            <div class="flex flex-col items-center px-4 py-1.5 bg-purple-950/20 border border-purple-500/10 rounded-xl min-w-[120px]">
-              <div class="flex items-center gap-3">
-                <span id="preview-away-score" class="text-xl font-black text-white font-mono-tech">0</span>
-                <span class="text-xs font-bold text-gray-500 font-mono-tech">VS</span>
-                <span id="preview-home-score" class="text-xl font-black text-white font-mono-tech">0</span>
-              </div>
-              <span id="preview-modal-outcome" class="text-[8px] font-mono-tech font-extrabold text-emerald-400 uppercase tracking-widest mt-1">FINAL</span>
-            </div>
-            
-            <!-- Home Team -->
-            <div class="flex items-center gap-3 flex-1 justify-start">
-              <img id="preview-home-logo" src="/generic.svg" class="w-10 h-10 object-contain bg-slate-900/60 rounded-full p-1 border border-white/10" />
-              <span id="preview-home-name" class="text-sm font-black text-white uppercase tracking-wider">Home Team</span>
-            </div>
-          </div>
-
-          <!-- Split Mode Selector Workspace -->
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[300px]">
-            <!-- Left Side: Condensed Mode Options -->
-            <div class="md:col-span-5 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/10 pb-6 md:pb-0 md:pr-6 gap-4 select-none">
-              <div>
-                <span class="text-[9px] font-mono-tech text-purple-400 font-extrabold uppercase tracking-widest">Option A</span>
-                <h4 class="text-sm font-black text-white uppercase mt-1">Condensed Mode</h4>
-                <p class="text-[11px] text-gray-400 leading-relaxed mt-2">
-                  Jump right into the action! We generate a challenge sequence of the **most critical and borderline called pitches** using our leverage index formula. Perfect for a quick ~10 At-Bat session.
-                </p>
-                <div class="mt-4 p-3 bg-slate-900/60 rounded-xl border border-white/5 text-left text-[9px] font-mono-tech text-gray-400 flex flex-col gap-1.5">
-                  <div class="flex justify-between"><span>Venue:</span><span id="preview-modal-venue" class="text-white font-bold">Comerica Park</span></div>
-                  <div class="flex justify-between"><span>Total Ingested ABs:</span><span id="preview-modal-abs" class="text-white font-bold">12 At-Bats</span></div>
+      <div id="game-preview-modal-overlay" class="game-preview-overlay fixed inset-0 w-full h-full flex justify-center items-end sm:items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300 overflow-y-auto p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="preview-modal-title">
+        <div id="game-preview-modal-panel" class="game-preview-panel ump-panel w-full max-w-3xl flex flex-col relative overflow-hidden pointer-events-auto">
+          <div class="game-preview-panel__toolbar">
+            <div class="game-preview-panel__scoreblock">
+              <div class="game-preview-panel__scoreline">
+                <img id="preview-away-logo" src="/generic.svg" alt="" class="game-preview-panel__logo" width="32" height="32" />
+                <div class="game-preview-panel__scores">
+                  <span id="preview-away-score" class="game-preview-panel__runs">0</span>
+                  <span class="game-preview-panel__sep" aria-hidden="true">–</span>
+                  <span id="preview-home-score" class="game-preview-panel__runs">0</span>
                 </div>
+                <img id="preview-home-logo" src="/generic.svg" alt="" class="game-preview-panel__logo" width="32" height="32" />
               </div>
-              
-              <div id="preview-loading-indicator" class="text-center text-xs text-purple-400 py-1.5 font-bold uppercase animate-pulse hidden">
-                ⚡ PARSING PLAY-BY-PLAY DATA FROM MLB STATS...
-              </div>
-
-              <button id="btn-preview-modal-start" class="w-full py-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 border border-purple-500/30 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg hover:scale-[1.02] pointer-events-auto">
-                Play Condensed Game
+              <button
+                type="button"
+                id="preview-game-header-toggle"
+                class="game-preview-panel__game-head pointer-events-auto"
+                aria-expanded="false"
+                aria-controls="preview-game-details"
+              >
+                <div class="game-preview-panel__titleblock min-w-0">
+                  <div class="game-preview-panel__title-row">
+                    <h3 id="preview-modal-title" class="game-preview-panel__title">Away @ Home</h3>
+                    <span id="preview-modal-live-dot" class="mlb-live-dot hidden" title="Live" aria-label="Live game"></span>
+                  </div>
+                  <p id="preview-modal-status-line" class="game-preview-panel__status-line"></p>
+                  <p id="preview-modal-meta" class="game-preview-panel__meta">Venue · 0 at-bats</p>
+                </div>
+                <span class="game-preview-panel__head-chevron" aria-hidden="true">▾</span>
               </button>
+              <div id="preview-game-details" class="game-preview-panel__game-details hidden" aria-hidden="true"></div>
             </div>
-
-            <!-- Right Side: Full Game Browser (Inning & AB Selector Grid) -->
-            <div class="md:col-span-7 flex flex-col select-none">
-              <span class="text-[9px] font-mono-tech text-blue-400 font-extrabold uppercase tracking-widest">Option B</span>
-              <h4 class="text-sm font-black text-white uppercase mt-1 mb-2">Interactive Full Game Browser</h4>
-              
-              <!-- Inning Tabs -->
-              <div class="flex gap-1 overflow-x-auto pb-2 border-b border-white/5" id="detail-modal-innings-row">
-                <!-- Dynamically generated Inning Buttons (Inning 1, Inning 2...) -->
-              </div>
-
-              <!-- At-Bat List Grid -->
-              <div class="flex-1 overflow-y-auto max-h-[220px] mt-3 p-2 bg-slate-950/40 border border-white/5 rounded-xl flex flex-col gap-2" id="detail-modal-ab-grid">
-                <span class="text-xs text-gray-500 font-mono-tech text-center py-8">Select an inning to browse matchups</span>
-              </div>
-            </div>
+            <button id="btn-preview-modal-close" type="button" class="game-preview-panel__close-x ump-icon-btn pointer-events-auto" aria-label="Close game preview">✕</button>
           </div>
-          
+          <span id="preview-modal-date" class="game-preview-panel__date ump-label hidden">May 26</span>
+
+          <div id="preview-loading-indicator" class="game-preview-panel__loading hidden">Loading play-by-play…</div>
+
+          <div id="preview-mode-tabs" class="game-preview-mode-tabs" role="tablist" aria-label="Preview mode">
+            <button type="button" class="game-preview-mode-tab game-preview-mode-tab--active" data-preview-mode="quick" role="tab" aria-selected="true">Quick</button>
+            <button type="button" class="game-preview-mode-tab" data-preview-mode="browse" role="tab" aria-selected="false">At-bats</button>
+          </div>
+
+          <div class="game-preview-panel__modes" data-active-mode="quick">
+            <section class="game-preview-panel__condensed ump-panel--subtle" data-preview-panel="quick">
+              <p id="preview-condensed-desc" class="game-preview-panel__desc">
+                ~15 evenly spaced at-bats from the full game—fast ump session without all nine innings.
+              </p>
+              <p id="preview-modal-abs" class="game-preview-panel__stat ump-label">—</p>
+              <button id="btn-preview-modal-start" type="button" class="ump-btn ump-btn--primary w-full game-preview-panel__primary-cta pointer-events-auto" disabled>
+                Play condensed
+              </button>
+            </section>
+
+            <section class="game-preview-panel__browse ump-panel--subtle" data-preview-panel="browse">
+              <input id="preview-ab-search" type="search" class="ump-input w-full pointer-events-auto" placeholder="Search batter or pitcher…" autocomplete="off" />
+              <div class="game-preview-innings-wrap">
+                <div id="detail-modal-innings-row" class="game-preview-innings" role="tablist" aria-label="Inning"></div>
+                <div id="detail-modal-inning-halves-row" class="game-preview-inning-halves hidden" role="tablist" aria-label="Half inning"></div>
+              </div>
+              <div id="detail-modal-ab-grid" class="game-preview-ab-grid" role="list"></div>
+              <div class="game-preview-panel__browse-actions">
+                <button id="btn-preview-play-ab" type="button" class="ump-btn ump-btn--primary flex-1 pointer-events-auto" disabled>Play AB</button>
+                <button id="btn-preview-play-inning" type="button" class="ump-btn ump-btn--ghost flex-1 pointer-events-auto" disabled>Half-inning</button>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
 

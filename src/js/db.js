@@ -6,6 +6,9 @@
 const DB_NAME = 'UmpSimDatabase';
 const DB_VERSION = 1;
 
+/** Keep cached MLB game feeds for 7 days (matches weekly play window). */
+export const GAME_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 let dbInstance = null;
 
 /**
@@ -194,7 +197,7 @@ export function getCachedGame(gamePk) {
 /**
  * Save game cache
  */
-export function saveCachedGame(gamePk, gameData) {
+export function saveCachedGame(gamePk, gameData, meta = {}) {
   return new Promise(async (resolve, reject) => {
     try {
       const db = await initDB();
@@ -204,12 +207,58 @@ export function saveCachedGame(gamePk, gameData) {
       const payload = {
         gamePk: Number(gamePk),
         data: gameData,
+        meta,
         timestamp: Date.now()
       };
       
       const request = store.put(payload);
 
       request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+/**
+ * Remove game_cache entries older than maxAgeMs (default: one week).
+ */
+export function pruneGameCache(maxAgeMs = GAME_CACHE_MAX_AGE_MS) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction('game_cache', 'readwrite');
+      const store = transaction.objectStore('game_cache');
+      const request = store.getAll();
+      const cutoff = Date.now() - maxAgeMs;
+
+      request.onsuccess = () => {
+        const rows = request.result || [];
+        let removed = 0;
+        rows.forEach((row) => {
+          if (row.timestamp < cutoff) {
+            store.delete(row.gamePk);
+            removed += 1;
+          }
+        });
+        resolve(removed);
+      };
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+export function listCachedGames() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await initDB();
+      const transaction = db.transaction('game_cache', 'readonly');
+      const store = transaction.objectStore('game_cache');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
     } catch (e) {
       reject(e);

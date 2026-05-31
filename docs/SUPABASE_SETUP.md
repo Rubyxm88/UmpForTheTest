@@ -24,6 +24,19 @@ Apply to **Production** and **Preview**.
 
 Redeploy after saving.
 
+### Admin panel (`/admin`)
+
+Apply the `admin_accounts` migration (`supabase/migrations/20260531000000_admin_accounts.sql`).
+
+Default login until you change it: **admin** / **admin** (you will be prompted to set a new password).
+
+Optional env overrides:
+
+- `ADMIN_USERNAME` — default `admin`
+- `ADMIN_PASSWORD` or `ADMIN_PASSWORD_HASH` — override bootstrap credentials
+
+Admin routes use the `ump_admin_session` cookie (separate from player `ump_session`).
+
 ## 2. Local development
 
 **Option A — full stack (recommended)**
@@ -38,13 +51,21 @@ npx vercel dev
 
 `vercel dev` serves the Vite app and `/api` routes together.
 
-**Option B — Vite only (no API)**
+**Option B — Vite + local API (recommended for `/admin`)**
+
+```bash
+npm run dev:full
+```
+
+Runs a small Node API on port 3000 and Vite on 5173. Open admin at `http://localhost:5173/admin`.
+
+**Option C — Vite only (no API)**
 
 ```bash
 npm run dev
 ```
 
-Auth and leaderboards will not sync until you use `vercel dev` or deploy to Vercel.
+Auth, leaderboards, and `/admin` login will fail until you use `dev:full`, `dev:api`, or deploy to Vercel.
 
 ## 3. API routes
 

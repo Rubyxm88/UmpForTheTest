@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en" data-theme="retro-baseball">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Outfit:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+    <title>UmpSim Admin</title>
+    <style>html,body{background:var(--retro-dugout,#06090e);margin:0;min-height:100%;}</style>
+  </head>
+  <body>
+    <div id="admin-app" class="admin-app ump-screen bg-grid-pattern">
+      <section id="admin-login-screen" class="admin-screen">
+        <div class="admin-card ump-panel">
+          <p class="ump-kicker">Operations console</p>
+          <h1 class="ump-title ump-title--sm admin-brand">
+            <span class="ump-title-accent">Ump</span>Sim Admin
+          </h1>
+          <p class="ump-subtitle admin-lead">
+            Default login is <code>admin</code> / <code>admin</code> until you change it.
+          </p>
+          <form id="admin-login-form" class="admin-form">
+            <label class="admin-field">
+              <span class="ump-label">Username</span>
+              <input id="admin-login-user" class="ump-input" type="text" autocomplete="username" value="admin" required />
+            </label>
+            <label class="admin-field">
+              <span class="ump-label">Password</span>
+              <input id="admin-login-pass" class="ump-input" type="password" autocomplete="current-password" required />
+            </label>
+            <p id="admin-login-error" class="admin-error hidden"></p>
+            <button type="submit" class="ump-btn ump-btn--primary ump-btn--block">Sign in</button>
+          </form>
+          <p class="admin-footer-link"><a href="/" class="ump-link">← Back to game</a></p>
+        </div>
+      </section>
+
+      <section id="admin-password-screen" class="admin-screen hidden">
+        <div class="admin-card ump-panel">
+          <p class="ump-kicker">Security</p>
+          <h2 class="ump-title ump-title--sm">Update password</h2>
+          <p class="ump-subtitle admin-lead">Set a new admin password before continuing.</p>
+          <form id="admin-password-form" class="admin-form">
+            <label class="admin-field">
+              <span class="ump-label">Current password</span>
+              <input id="admin-pass-current" class="ump-input" type="password" autocomplete="current-password" required />
+            </label>
+            <label class="admin-field">
+              <span class="ump-label">New password (6+ characters)</span>
+              <input id="admin-pass-new" class="ump-input" type="password" autocomplete="new-password" minlength="6" required />
+            </label>
+            <p id="admin-password-error" class="admin-error hidden"></p>
+            <button type="submit" class="ump-btn ump-btn--primary ump-btn--block">Save password</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="admin-panel-screen" class="admin-screen hidden">
+        <header class="admin-header ump-panel admin-header-panel">
+          <div>
+            <p class="ump-kicker">Operations console</p>
+            <h1 class="ump-title ump-title--sm admin-brand">
+              <span class="ump-title-accent">Ump</span>Sim Admin
+            </h1>
+            <p id="admin-signed-in-as" class="ump-subtitle admin-signed-in">Signed in</p>
+          </div>
+          <div class="admin-header__actions">
+            <a href="/" class="ump-link admin-back-link">← Game</a>
+            <button type="button" id="admin-btn-logout" class="ump-btn ump-btn--ghost ump-btn--sm">Log out</button>
+          </div>
+        </header>
+
+        <nav class="admin-nav" role="tablist" aria-label="Admin sections">
+          <button type="button" class="admin-nav__btn admin-nav__btn--active" data-admin-tab="users">Users</button>
+          <button type="button" class="admin-nav__btn" data-admin-tab="challenges">Challenges</button>
+        </nav>
+
+        <div id="admin-tab-users" class="admin-tab-panel ump-panel">
+          <div class="admin-toolbar">
+            <input id="admin-user-search" type="search" placeholder="Filter by handle…" class="ump-input admin-input--search" />
+            <button type="button" id="admin-refresh-users" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
+          </div>
+          <div id="admin-users-list" class="admin-list">Loading users…</div>
+          <div id="admin-user-detail" class="admin-detail ump-panel--subtle hidden">
+            <div class="admin-detail__head">
+              <h2 id="admin-detail-handle" class="ump-title ump-title--sm">—</h2>
+              <button type="button" id="admin-detail-close" class="ump-btn ump-btn--ghost ump-btn--sm">Close</button>
+            </div>
+            <pre id="admin-detail-json" class="admin-pre"></pre>
+            <div class="admin-danger-zone">
+              <p class="ump-label">Delete removes profile, stats, and leaderboard rows (cascade).</p>
+              <button type="button" id="admin-delete-user" class="ump-btn admin-btn--danger ump-btn--sm">Delete account</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="admin-tab-challenges" class="admin-tab-panel ump-panel hidden">
+          <button type="button" id="admin-refresh-challenges" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh bundle</button>
+          <div id="admin-challenges-report" class="admin-report">Loading…</div>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/js/admin.js"></script>
+  </body>
+</html>

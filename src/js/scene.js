@@ -1,4 +1,12 @@
 import * as THREE from 'three';
+import {
+  PLATE_MIDPOINT_Z,
+  getABSZoneBounds,
+  getDistanceToABSZone as calcDistanceToABSZone,
+  formatAbsZoneDistance,
+  getPitchCrossPoint,
+  resolvePitchTrajectory,
+} from './physics.js';
 
 let scene, renderer;
 let mainCamera, umpireCamera, sideCamera, topCamera, summaryReviewCamera;
@@ -1260,11 +1268,31 @@ function makeGlowingHolographic(group, isTorsoScanline = false) {
 /**
  * Creates and updates the holographic batter scaled to realistic 6.0 ft adult height
  */
+function isLeftHandCode(hand) {
+  const h = String(hand || '').toUpperCase().trim();
+  if (!h) return false;
+  if (h === 'L' || h === 'LHB' || h === 'LHP' || h === 'LEFT') return true;
+  if (h.startsWith('L ') || h.startsWith('L/') || h.startsWith('L-')) return true;
+  if (h.includes('LEFT')) return true;
+  return false;
+}
+
+function resolveBatterSide(handedness) {
+  return isLeftHandCode(handedness) ? 'LHB' : 'RHB';
+}
+
+function resolvePitcherSide(handedness) {
+  return isLeftHandCode(handedness) ? 'LHP' : 'RHP';
+}
+
 export function updateHolographicBatter(handedness, sz_bot, sz_top) {
-  currentBatterHandedness = (handedness || 'RHB').includes('L') ? 'LHB' : 'RHB';
+  currentBatterHandedness = resolveBatterSide(handedness);
+  const isLHB = currentBatterHandedness === 'LHB';
+  /** Mirror local X for left-handed stance (mesh defaults to RHB open stance). */
+  const bx = (x) => (isLHB ? -x : x);
   
   // Set camera positions based on batter handedness (LHB vs RHB slots)
-  if (currentBatterHandedness === 'LHB') {
+  if (isLHB) {
     umpireXOffset = 0.35;
     umpireYOffset = 3.95;
     if (topCamera) topCamera.position.set(-5.8, 2.5, 0.7083);
@@ -1350,27 +1378,27 @@ export function updateHolographicBatter(handedness, sz_bot, sz_top) {
   
   // Left leg (back/bent)
   const leftLeg = new THREE.Mesh(legGeo, holoMat);
-  leftLeg.position.set(-0.35, legLength / 2 + 0.1, -0.1);
+  leftLeg.position.set(bx(-0.35), legLength / 2 + 0.1, -0.1);
   leftLeg.rotation.x = 0.3; // bent knee stance
   batterGroup.add(leftLeg);
 
   // Right leg (front/bent)
   const rightLeg = new THREE.Mesh(legGeo, holoMat);
-  rightLeg.position.set(0.35, legLength / 2 + 0.1, 0.1);
+  rightLeg.position.set(bx(0.35), legLength / 2 + 0.1, 0.1);
   rightLeg.rotation.x = -0.1;
   batterGroup.add(rightLeg);
 
   // Humanesque Joint-Based Arms (Shoulder -> Elbow -> Hand)
-  const shoulderLeft = new THREE.Vector3(0.42, shoulderHeight, 0.0);
-  const shoulderRight = new THREE.Vector3(-0.42, shoulderHeight, 0.0);
+  const shoulderLeft = new THREE.Vector3(bx(0.42), shoulderHeight, 0.0);
+  const shoulderRight = new THREE.Vector3(bx(-0.42), shoulderHeight, 0.0);
   
   // Hands clustered together at the bat handle
-  const handLeft = new THREE.Vector3(-0.38, sz_top + 1.05, -0.3);
-  const handRight = new THREE.Vector3(-0.42, sz_top + 1.13, -0.34);
+  const handLeft = new THREE.Vector3(bx(-0.38), sz_top + 1.05, -0.3);
+  const handRight = new THREE.Vector3(bx(-0.42), sz_top + 1.13, -0.34);
   
   // Elbow positions for a natural batting load posture
-  const elbowLeft = new THREE.Vector3(0.08, sz_top + 0.35, 0.18);
-  const elbowRight = new THREE.Vector3(-0.58, sz_top + 0.65, -0.15);
+  const elbowLeft = new THREE.Vector3(bx(0.08), sz_top + 0.35, 0.18);
+  const elbowRight = new THREE.Vector3(bx(-0.58), sz_top + 0.65, -0.15);
   
   const armRadius = 0.08;
 
@@ -1411,19 +1439,19 @@ export function updateHolographicBatter(handedness, sz_bot, sz_top) {
   });
   const bat = new THREE.Mesh(batGeo, batMat);
   bat.rotation.x = -Math.PI / 4.5;
-  bat.rotation.y = -Math.PI / 6;
+  bat.rotation.y = isLHB ? Math.PI / 6 : -Math.PI / 6;
   bat.rotation.z = Math.PI / 3.2;
-  bat.position.set(-0.4, sz_top + 1.1, -0.32); // Position at hands
+  bat.position.set(bx(-0.4), sz_top + 1.1, -0.32); // Position at hands
   batterGroup.add(bat);
 
   // Position batter in the box relative to plate midpoint (z = 0.7083)
-  if (handedness === 'RHB') {
-    batterGroup.position.set(-2.2, 0, 0.7083);
-    batterGroup.rotation.y = Math.PI / 2; // face plate
-  } else {
+  // -x = 3rd-base box (RHB), +x = 1st-base box (LHB) — matches chalk outlines
+  if (isLHB) {
     batterGroup.position.set(2.2, 0, 0.7083);
-    batterGroup.rotation.y = -Math.PI / 2; // face plate
-    bat.rotation.y = Math.PI / 6;
+    batterGroup.rotation.y = -Math.PI / 2; // face plate from 1B side
+  } else {
+    batterGroup.position.set(-2.2, 0, 0.7083);
+    batterGroup.rotation.y = Math.PI / 2; // face plate from 3B side
   }
 
   makeGlowingHolographic(batterGroup, true);
@@ -1451,7 +1479,8 @@ export function animateBatterSwing(progress, handedness) {
     }
   });
 
-  const baseGroupRotation = handedness === 'RHB' ? Math.PI / 2 : -Math.PI / 2;
+  const batterSide = resolveBatterSide(handedness);
+  const baseGroupRotation = batterSide === 'RHB' ? Math.PI / 2 : -Math.PI / 2;
 
   if (progress < 0) {
     // Reset to normal batting stance
@@ -1461,15 +1490,17 @@ export function animateBatterSwing(progress, handedness) {
       torso.rotation.z = 0;
     }
     if (bat) {
-      bat.rotation.set(-Math.PI / 4.5, handedness === 'RHB' ? Math.PI / 6 : -Math.PI / 6, Math.PI / 3.2);
-      bat.position.set(-0.4, currentSzTop + 1.1, -0.32);
+      const batY = batterSide === 'RHB' ? Math.PI / 6 : -Math.PI / 6;
+      bat.rotation.set(-Math.PI / 4.5, batY, Math.PI / 3.2);
+      const batX = batterSide === 'LHB' ? 0.4 : -0.4;
+      bat.position.set(batX, currentSzTop + 1.1, -0.32);
     }
     return;
   }
 
   // Swing progress: 0.0 to 1.0
   if (bat) {
-    const isRHB = handedness === 'RHB';
+    const isRHB = batterSide === 'RHB';
     
     // Smooth interpolation curves for realistic 3-axis swing plane
     let rx, ry, rz;
@@ -1493,21 +1524,23 @@ export function animateBatterSwing(progress, handedness) {
     
     // Whip bat forward and outward through contact zone
     const handOffset = isRHB ? -1 : 1;
-    bat.position.x = -0.4 + progress * 0.45 * handOffset;
+    const batRestX = isRHB ? -0.4 : 0.4;
+    bat.position.x = batRestX + progress * 0.45 * handOffset;
     bat.position.z = -0.32 + progress * 0.35;
   }
   
   if (torso) {
-    torso.rotation.y = progress * (handedness === 'RHB' ? -0.6 : 0.6);
+    torso.rotation.y = progress * (batterSide === 'RHB' ? -0.6 : 0.6);
   }
   
-  batterGroup.rotation.y = baseGroupRotation + progress * (handedness === 'RHB' ? -0.55 : 0.55);
+  batterGroup.rotation.y = baseGroupRotation + progress * (batterSide === 'RHB' ? -0.55 : 0.55);
 }
 
 /**
  * Creates the holographic pitcher mannequin scaled to 6.3 ft adult height
  */
 export function updateHolographicPitcher(handedness) {
+  const pitcherSide = resolvePitcherSide(handedness);
   if (pitcherGroup) {
     scene.remove(pitcherGroup);
     pitcherGroup.traverse(child => {
@@ -1575,7 +1608,7 @@ export function updateHolographicPitcher(handedness) {
   
   pitcherThrowingArm = new THREE.Mesh(armGeo, holoMat);
   pitcherThrowingArm.position.y = shoulderHeight;
-  if (handedness === 'RHP') {
+  if (pitcherSide === 'RHP') {
     pitcherThrowingArm.position.x = 0.55;
   } else {
     pitcherThrowingArm.position.x = -0.55;
@@ -1584,7 +1617,7 @@ export function updateHolographicPitcher(handedness) {
 
   pitcherGloveArm = new THREE.Mesh(armGeo, holoMat);
   pitcherGloveArm.position.y = shoulderHeight;
-  if (handedness === 'RHP') {
+  if (pitcherSide === 'RHP') {
     pitcherGloveArm.position.x = -0.55;
   } else {
     pitcherGloveArm.position.x = 0.55;
@@ -1606,6 +1639,7 @@ export function updateHolographicPitcher(handedness) {
  */
 export function animatePitcherWindup(progress, handedness) {
   if (!pitcherGroup) return;
+  const pitcherSide = resolvePitcherSide(handedness);
 
   // Dynamically stride the pitcher forward from the rubber (60.5 ft) to release (54.0 ft)
   let groupZ = 60.5;
@@ -1630,12 +1664,12 @@ export function animatePitcherWindup(progress, handedness) {
   
   pitcherThrowingArm.rotation.set(0, 0, 0);
   pitcherThrowingArm.position.y = shoulderHeight;
-  pitcherThrowingArm.position.x = (handedness === 'RHP' ? 0.55 : -0.55);
+  pitcherThrowingArm.position.x = (pitcherSide === 'RHP' ? 0.55 : -0.55);
   pitcherThrowingArm.position.z = 0;
   
   pitcherGloveArm.rotation.set(0, 0, 0);
   pitcherGloveArm.position.y = shoulderHeight;
-  pitcherGloveArm.position.x = (handedness === 'RHP' ? -0.55 : 0.55);
+  pitcherGloveArm.position.x = (pitcherSide === 'RHP' ? -0.55 : 0.55);
   pitcherGloveArm.position.z = 0;
   
   pitcherTorso.rotation.set(0, 0, 0);
@@ -1644,9 +1678,9 @@ export function animatePitcherWindup(progress, handedness) {
     // Phase 1: Winding Up
     const p = progress / 0.4;
     
-    pitcherTorso.rotation.y = (handedness === 'RHP' ? 0.45 : -0.45) * p;
+    pitcherTorso.rotation.y = (pitcherSide === 'RHP' ? 0.45 : -0.45) * p;
     
-    if (handedness === 'RHP') {
+    if (pitcherSide === 'RHP') {
       pitcherLeftLeg.rotation.x = -Math.PI / 2.6 * p;
       pitcherLeftLeg.position.y = (legLength / 2 + 0.1) + 0.3 * p;
       pitcherLeftLeg.position.z = -0.2 * p;
@@ -1657,7 +1691,7 @@ export function animatePitcherWindup(progress, handedness) {
     }
 
     const armRotX = -0.6 * p;
-    const armRotZ = (handedness === 'RHP' ? -0.45 : 0.45) * p;
+    const armRotZ = (pitcherSide === 'RHP' ? -0.45 : 0.45) * p;
     pitcherThrowingArm.rotation.set(armRotX, 0, armRotZ);
     pitcherGloveArm.rotation.set(armRotX, 0, -armRotZ);
 
@@ -1665,10 +1699,10 @@ export function animatePitcherWindup(progress, handedness) {
     // Phase 2: Drive & Arm Whip
     const p = (progress - 0.4) / 0.4;
     
-    pitcherTorso.rotation.y = (handedness === 'RHP' ? 0.45 : -0.45) * (1 - p) + (handedness === 'RHP' ? -0.75 : 0.75) * p;
+    pitcherTorso.rotation.y = (pitcherSide === 'RHP' ? 0.45 : -0.45) * (1 - p) + (pitcherSide === 'RHP' ? -0.75 : 0.75) * p;
     pitcherTorso.rotation.x = 0.3 * p; // lean
 
-    if (handedness === 'RHP') {
+    if (pitcherSide === 'RHP') {
       pitcherLeftLeg.rotation.x = -Math.PI / 2.6 * (1 - p) + (Math.PI / 3.8 * p);
       pitcherLeftLeg.position.y = ((legLength / 2 + 0.1) + 0.3) * (1 - p) + 0.1 * p;
       pitcherLeftLeg.position.z = -0.8 * p; // stride forward
@@ -1679,20 +1713,20 @@ export function animatePitcherWindup(progress, handedness) {
     }
 
     pitcherThrowingArm.rotation.x = -0.6 * (1 - p) + (Math.PI * 0.78 * p);
-    pitcherThrowingArm.rotation.z = (handedness === 'RHP' ? -0.95 : 0.95) * p;
+    pitcherThrowingArm.rotation.z = (pitcherSide === 'RHP' ? -0.95 : 0.95) * p;
     pitcherThrowingArm.position.z = -0.35 * p;
 
     pitcherGloveArm.rotation.x = -0.6 * (1 - p) + 0.35 * p;
-    pitcherGloveArm.rotation.z = (handedness === 'RHP' ? 0.45 : -0.45) * (1 - p);
+    pitcherGloveArm.rotation.z = (pitcherSide === 'RHP' ? 0.45 : -0.45) * (1 - p);
 
   } else {
     // Phase 3: Follow Through
     const p = (progress - 0.8) / 0.2;
     
-    pitcherTorso.rotation.y = (handedness === 'RHP' ? -0.75 : 0.75);
+    pitcherTorso.rotation.y = (pitcherSide === 'RHP' ? -0.75 : 0.75);
     pitcherTorso.rotation.x = 0.3 + 0.32 * p; // deep bow
 
-    if (handedness === 'RHP') {
+    if (pitcherSide === 'RHP') {
       pitcherLeftLeg.position.z = -0.8;
       pitcherLeftLeg.rotation.x = Math.PI / 3.8;
       
@@ -1709,7 +1743,7 @@ export function animatePitcherWindup(progress, handedness) {
     }
 
     pitcherThrowingArm.rotation.x = (Math.PI * 0.78) + 0.8 * p;
-    pitcherThrowingArm.rotation.z = (handedness === 'RHP' ? -0.95 : 0.95) + 0.4 * p;
+    pitcherThrowingArm.rotation.z = (pitcherSide === 'RHP' ? -0.95 : 0.95) + 0.4 * p;
   }
 }
 
@@ -1718,7 +1752,7 @@ export function animatePitcherWindup(progress, handedness) {
  */
 export function getPitcherHandWorldPosition(handedness) {
   if (!pitcherGroup || !pitcherThrowingArm) {
-    const offset = handedness === 'RHP' ? 1.8 : -1.8;
+    const offset = resolvePitcherSide(handedness) === 'RHP' ? 1.8 : -1.8;
     return new THREE.Vector3(offset, 5.8, 59.2);
   }
   
@@ -2276,58 +2310,19 @@ export function onResize(width, height) {
  * Ball is a ball if center is outside the zone (returns positive distance to zone boundary).
  */
 export function getDistanceToABSZone(x, y) {
-  // Extended ABS strike zone dimensions (plate width + ball radius)
-  const xMin = -0.8283;
-  const xMax = 0.8283;
-  const yMin = currentSzBot - 0.12;
-  const yMax = currentSzTop + 0.12;
-
-  // Distance on X and Y axes to the edge of the extended zone
-  const dx = Math.max(0, xMin - x, x - xMax);
-  const dy = Math.max(0, yMin - y, y - yMax);
-
-  if (dx === 0 && dy === 0) {
-    // Inside the extended zone (Strike). Calculate distance to closest edge inside.
-    const distToLeft = x - xMin;
-    const distToRight = xMax - x;
-    const distToBottom = y - yMin;
-    const distToTop = yMax - y;
-    const minEdgeDist = Math.min(distToLeft, distToRight, distToBottom, distToTop);
-    return -minEdgeDist; 
-  } else {
-    // Outside the extended zone (Ball). Return Euclidean distance to extended box.
-    return Math.sqrt(dx * dx + dy * dy);
-  }
+  return calcDistanceToABSZone(x, y, currentSzBot, currentSzTop);
 }
 
-export function drawDimensionLine(crossPos) {
+export function drawDimensionLine(crossPos, { showLabel = true } = {}) {
   clearDimensionLine();
   
-  // Visual ruler should match the visible strike-zone plane (rulebook),
-  // otherwise it looks like the line extends past the zone.
-  const xMin = -0.7083;
-  const xMax = 0.7083;
-  const yMin = currentSzBot;
-  const yMax = currentSzTop;
+  const { xMin, xMax, yMin, yMax } = getABSZoneBounds(currentSzBot, currentSzTop);
   
   const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
   
   let targetX, targetY;
   
-  // Compute distance relative to the visual (rulebook) zone for this ruler.
-  const dist = (() => {
-    const dx = Math.max(0, xMin - crossPos.x, crossPos.x - xMax);
-    const dy = Math.max(0, yMin - crossPos.y, crossPos.y - yMax);
-    if (dx === 0 && dy === 0) {
-      const distToLeft = crossPos.x - xMin;
-      const distToRight = xMax - crossPos.x;
-      const distToBottom = crossPos.y - yMin;
-      const distToTop = yMax - crossPos.y;
-      const minEdgeDist = Math.min(distToLeft, distToRight, distToBottom, distToTop);
-      return -minEdgeDist;
-    }
-    return Math.sqrt(dx * dx + dy * dy);
-  })();
+  const dist = calcDistanceToABSZone(crossPos.x, crossPos.y, currentSzBot, currentSzTop);
   if (dist < 0) {
     const distToLeft = crossPos.x - xMin;
     const distToRight = xMax - crossPos.x;
@@ -2349,7 +2344,7 @@ export function drawDimensionLine(crossPos) {
     targetY = clamp(crossPos.y, yMin, yMax);
   }
   
-  const zPlane = 0.7083;
+  const zPlane = PLATE_MIDPOINT_Z;
   const startPt = new THREE.Vector3(crossPos.x, crossPos.y, zPlane);
   const endPt = new THREE.Vector3(targetX, targetY, zPlane);
   
@@ -2409,6 +2404,10 @@ export function drawDimensionLine(crossPos) {
   
   scene.add(dimensionTickGroup);
   
+  if (!showLabel) {
+    return;
+  }
+
   // --- 3. 3D Label Sprite at Midpoint ---
   const midX = (startPt.x + endPt.x) / 2;
   const midY = (startPt.y + endPt.y) / 2;
@@ -2637,9 +2636,10 @@ export function updateStrikeZoneLabels() {
     }
   }
 
-  // 2. Ball Distance-to-Zone Label (only when reviewing)
+  // 2. Ball Distance-to-Zone Label (only when reviewing; skip if close-call pill handles it)
   if (absBallDistanceLabelEl) {
-    const showDistanceLabel = szVisible && isReviewing && crossingMarkerMesh;
+    const closeCallShowing = document.body.classList.contains('close-call-active');
+    const showDistanceLabel = szVisible && isReviewing && crossingMarkerMesh && !closeCallShowing;
     if (!showDistanceLabel) {
       absBallDistanceLabelEl.style.opacity = '0';
     } else {
@@ -2654,27 +2654,11 @@ export function updateStrikeZoneLabels() {
         absBallDistanceLabelEl.style.opacity = '1';
 
         const dist = getDistanceToABSZone(markerPos.x, markerPos.y);
-        const distInches = dist * 12.0;
-
-        if (distInches > 0) {
-          // Ball
-          if (distInches < 0.1) {
-            absBallDistanceLabelEl.textContent = '< 0.1"';
-          } else {
-            absBallDistanceLabelEl.textContent = `${distInches.toFixed(1)}"`;
-          }
-          absBallDistanceLabelEl.className = 'absolute pointer-events-none transition-opacity duration-200 px-2 py-0.5 text-[10px] font-extrabold font-mono-tech bg-white text-slate-900 border border-slate-300 rounded shadow-md z-30';
-        } else {
-          // Strike
-          const absDist = Math.abs(distInches);
-          if (absDist < 0.1) {
-            absBallDistanceLabelEl.textContent = '< 0.1"';
-          } else if (absDist < 1.0) {
-            absBallDistanceLabelEl.textContent = `${absDist.toFixed(1)}"`;
-          } else {
-            absBallDistanceLabelEl.textContent = 'IN ZONE';
-          }
+        absBallDistanceLabelEl.textContent = formatAbsZoneDistance(dist);
+        if (dist < 0) {
           absBallDistanceLabelEl.className = 'absolute pointer-events-none transition-opacity duration-200 px-2 py-0.5 text-[10px] font-extrabold font-mono-tech bg-white text-red-600 border border-red-200 rounded shadow-md z-30';
+        } else {
+          absBallDistanceLabelEl.className = 'absolute pointer-events-none transition-opacity duration-200 px-2 py-0.5 text-[10px] font-extrabold font-mono-tech bg-white text-slate-900 border border-slate-300 rounded shadow-md z-30';
         }
       }
     }
@@ -2880,9 +2864,9 @@ export function showSummaryPitchReview(pitches) {
 
   // Draw each pitch
   pitches.forEach((item, index) => {
-    if (!item.trajectory || !item.trajectory.crossPoint) return;
-    
-    const cross = item.trajectory.crossPoint;
+    const pitch = item.pitchData || item;
+    const cross = getPitchCrossPoint(pitch, item.trajectory);
+    if (!cross) return;
     const isCorrect = item.userCorrect;
     
     // Choose color: green for correct, red for incorrect
@@ -2982,13 +2966,16 @@ export function highlightSummaryPitch(index) {
   });
 
   // Handle trajectory line and 3D dimension line
-  if (selectedPitch && selectedPitch.trajectory && selectedPitch.trajectory.points) {
+  const resolvedTrajectory = selectedPitch
+    ? resolvePitchTrajectory(selectedPitch.pitchData || selectedPitch, selectedPitch.trajectory)
+    : null;
+  if (selectedPitch && resolvedTrajectory?.points) {
     // Draw the full trajectory line (limitZ set to -10.0 to show the whole path)
-    drawTrajectoryTrace(selectedPitch.trajectory.points, -10.0);
+    drawTrajectoryTrace(resolvedTrajectory.points, -10.0);
     
     // Dynamically draw dimension line and 3D distance label for the selected pitch
-    if (selectedPitch.trajectory.crossPoint) {
-      drawDimensionLine(selectedPitch.trajectory.crossPoint);
+    if (resolvedTrajectory.crossPoint) {
+      drawDimensionLine(resolvedTrajectory.crossPoint);
     }
   } else {
     clearTrajectoryTrace();

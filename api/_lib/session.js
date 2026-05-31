@@ -5,10 +5,13 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getSecret() {
   const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    throw new Error('SESSION_SECRET is not configured');
+  if (secret) return secret;
+  const isProd =
+    process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+  if (!isProd) {
+    return 'dev-only-session-secret-not-for-production';
   }
-  return secret;
+  throw new Error('SESSION_SECRET is not configured');
 }
 
 export function createSessionToken(handle) {

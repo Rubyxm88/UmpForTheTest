@@ -10,7 +10,21 @@ import {
 } from './challenge-utils.js';
 import { DAILY_CHALLENGE_DATA } from '../data/daily_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
-import { fetchGamePitches, fetchAllGamesForDate } from './mlb-api.js';
+import {
+  initMlbGamesModule,
+  loadPlayTabRecentGames,
+  rememberMlbPlayContext,
+  returnToMlbGamePicker,
+} from './mlb-games.js';
+import { clearPreviewState, collapsePreviewGameDetails } from './mlb-games-preview.js';
+import { formatMlbAbOutcomeText, MLB_GAME_FEED_PARSE_VERSION, fetchMlbPlayerProfile } from './mlb-api.js';
+import { applyMlbPitchPlaybackState } from './mlb-playback.js';
+import {
+  normalizeRoleHand,
+  formatHandForPopout,
+  handPopoutLabel,
+} from './hand-utils.js';
+import { getTeamLogoUrl } from './team-logos.js';
 import { 
   hashPIN, 
   getProfile, 
@@ -34,7 +48,7 @@ import {
   apiSubmitLeaderboard,
   apiUpdatePin,
 } from './api-client.js';
-import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime } from './physics.js';
+import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime, getDistanceToABSZone as calcDistanceToABSZone, getABSZoneBounds, formatAbsZoneDistance, formatAbsZoneLocation, getPitchCrossPoint, resolvePitchTrajectory, BORDERLINE_FT } from './physics.js';
 import { 
   initScene, 
   updateStrikeZone, 
@@ -61,7 +75,6 @@ import {
   setReviewingState,
   setCrossingMarkerVisible,
   updateNameplates,
-  getDistanceToABSZone,
   render, 
   onResize,
   setMannequinOpacity,
@@ -69,7 +82,6 @@ import {
   setZoomedIn,
   drawDimensionLine,
   clearDimensionLine,
-  pickZoneDistanceLabelScreenPos,
   showSummaryPitchReview,
   highlightSummaryPitch,
   clearSummaryPitchReview,
@@ -236,8 +248,8 @@ let previewModalVenue, previewModalAbs, previewLoadingIndicator;
 let btnPreviewModalStart, btnPreviewModalCancel;
 let selectRateOfPlay;
 let rateOfPlay = 'standard';
-let recentGamesGrid, recentGamesDate, gameFinderDate, btnFindGames, gameFinderResults;
-let detailModalInningsRow, detailModalAbGrid;
+let recentGamesGrid, recentGamesDate, gameFinderDate;
+let detailModalInningsRow, detailModalInningHalvesRow, detailModalAbGrid;
 
 
 // Settings values
@@ -404,7 +416,11 @@ let playerModalHand, playerModalHeightWeight;
 // UI Mode Switcher
 let btnUiClassic, btnUiAdaptive, btnUiCinematic;
 // Pause Screen Stats & Buttons
-let pauseModeText, pauseInningOutsText, pauseScoreText, pauseAccText, btnPauseRestart, btnPauseHome, pauseProgressRow, pauseProgressText;
+let pauseModeBadge, pauseAbProgress, pauseAccText, pauseSavedNote;
+let pauseChallengeDock, pauseChallengeDockHeading, pauseChallengeCountLabel, pauseChallengeCount;
+let pauseChallengeTotal, pauseChallengePct, pauseChallengeBarWrap, pauseChallengeProgressBar;
+let pauseChallengeCurrentAb, pauseChallengeAccuracy, pauseChallengeRank;
+let pauseChallengeStatALabel, pauseChallengeStatBLabel, btnPauseHome;
 // Matchup Card Image/Logos/Stats
 let cardPitcherImg, cardPitcherLogo, cardPitcherStats, cardBatterImg, cardBatterLogo, cardBatterStats, matchupGameTitle, matchupGameDate;
 // At-Bat Summary Matrix SVG & Pitch Details
@@ -657,8 +673,7 @@ function hideGameplayHudForSummary(hide) {
     setOverlayVisible(gameStatusBadge, !hide);
   }
   if (closeCallPill && hide) {
-    closeCallPill.classList.add('opacity-0', 'scale-95');
-    closeCallPill.classList.remove('opacity-100', 'scale-100');
+    hideCloseCallPill();
   }
   if (challengeTrackerHud) {
     setOverlayVisible(challengeTrackerHud, !hide);
@@ -1807,6 +1822,89 @@ function getStatsStorageKey(handle) {
   return `pitch_ump_stats_${normalizeHandle(handle)}`;
 }
 
+function isWeeklyChallengeHistoryEntry(entry) {
+  const name = (entry?.gameName || '').toLowerCase();
+  return name.includes('weekly');
+}
+
+function computeBestWeeklyFromHistory(history) {
+  const weeklyRuns = (history || []).filter(isWeeklyChallengeHistoryEntry);
+  if (weeklyRuns.length === 0) return null;
+
+  let best = null;
+  weeklyRuns.forEach((entry) => {
+    const points = (entry.correctCalls || 0) * 10;
+    const accuracy = Number(entry.accuracy) || 0;
+    if (
+      !best
+      || points > best.points
+      || (points === best.points && accuracy > best.accuracy)
+    ) {
+      best = {
+        points,
+        accuracy,
+        correctCalls: entry.correctCalls || 0,
+        totalCalls: entry.totalCalls || 0,
+        date: entry.date || '',
+        gameName: entry.gameName || 'Weekly Challenge',
+      };
+    }
+  });
+  return best;
+}
+
+function ensureProfileAggregateStats(userStats) {
+  if (!userStats || typeof userStats !== 'object') {
+    return { stats: userStats, changed: false };
+  }
+
+  let changed = false;
+
+  if (userStats.totalPitchesCalled === undefined) {
+    userStats.totalPitchesCalled = (userStats.history || []).reduce(
+      (sum, entry) => sum + (entry.totalCalls || 0),
+      0
+    );
+    changed = true;
+  }
+
+  if (!userStats.bestWeeklyRecord) {
+    const derived = computeBestWeeklyFromHistory(userStats.history);
+    if (derived) {
+      userStats.bestWeeklyRecord = derived;
+      changed = true;
+    }
+  }
+
+  return { stats: userStats, changed };
+}
+
+function updateBestWeeklyRecord(userStats, correctCalls, totalCalls, accuracy) {
+  const points = (correctCalls || 0) * 10;
+  const acc = Number(accuracy) || 0;
+  const current = userStats.bestWeeklyRecord;
+  if (
+    !current
+    || points > current.points
+    || (points === current.points && acc > current.accuracy)
+  ) {
+    userStats.bestWeeklyRecord = {
+      points,
+      accuracy: acc,
+      correctCalls: correctCalls || 0,
+      totalCalls: totalCalls || 0,
+      date: new Date().toLocaleDateString(),
+    };
+  }
+}
+
+function formatBestWeeklyRecordDisplay(record) {
+  if (!record) return '--';
+  const pts = Number(record.points) || 0;
+  const acc = Number(record.accuracy) || 0;
+  return `${pts.toLocaleString()} pts · ${acc}%`;
+}
+
 function requireLoggedInUser() {
   const username = normalizeHandle(localStorage.getItem('ump_username') || '');
   if (!username) {
@@ -1965,18 +2063,18 @@ function loginUserSession(handleVal) {
       const bonusCheck = document.getElementById('welcome-login-bonus-check');
       
       if (!isBonusClaimed) {
-        if (bonusStatus) bonusStatus.textContent = "READY TO CLAIM (+100 XP)";
+        if (bonusStatus) bonusStatus.textContent = "Ready · +100 XP";
         if (bonusCheck) {
           bonusCheck.textContent = "CLAIM NOW";
-          bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed";
+          bonusCheck.className = "px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-unclaimed";
           bonusCheck.removeAttribute('disabled');
           bonusCheck.style.pointerEvents = 'auto';
         }
       } else {
-        if (bonusStatus) bonusStatus.textContent = "CLAIMED (+100 XP)";
+        if (bonusStatus) bonusStatus.textContent = "+100 XP";
         if (bonusCheck) {
           bonusCheck.textContent = "CLAIMED";
-          bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+          bonusCheck.className = "px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-claimed";
           bonusCheck.setAttribute('disabled', 'true');
           bonusCheck.style.pointerEvents = 'none';
         }
@@ -2148,6 +2246,37 @@ export async function startGameSession() {
   }
   attachEvents();
   initUiModeSwitcher();
+
+  initMlbGamesModule({
+    recentGamesGrid,
+    recentGamesDate,
+    gameFinderDate,
+    previewModalOverlay,
+    previewModalPanel: document.getElementById('game-preview-modal-panel'),
+    previewModalTitle,
+    previewModalDate,
+    previewAwayLogo: document.getElementById('preview-away-logo'),
+    previewHomeLogo: document.getElementById('preview-home-logo'),
+    previewAwayScore,
+    previewHomeScore,
+    previewModalMeta: document.getElementById('preview-modal-meta'),
+    previewLiveDot: document.getElementById('preview-modal-live-dot'),
+    previewStatusLine: document.getElementById('preview-modal-status-line'),
+    previewGameHeadToggle: document.getElementById('preview-game-header-toggle'),
+    previewGameDetails: document.getElementById('preview-game-details'),
+    previewModalAbs,
+    previewLoadingIndicator,
+    previewAbSearch: document.getElementById('preview-ab-search'),
+    btnPreviewModalStart,
+    btnPreviewPlayAb: document.getElementById('btn-preview-play-ab'),
+    btnPreviewPlayInning: document.getElementById('btn-preview-play-inning'),
+    detailModalInningsRow,
+    detailModalInningHalvesRow,
+    detailModalAbGrid,
+    requireLoggedInUser,
+    launchGame,
+    hidePreviewModal: hideGamePreviewModal,
+  });
   
   await loadSavedSessionFromLocal();
   loadFavoriteTeam();
@@ -2453,9 +2582,8 @@ function cacheDOM() {
   recentGamesGrid = document.getElementById('recent-games-grid');
   recentGamesDate = document.getElementById('recent-games-date');
   gameFinderDate = document.getElementById('game-finder-date');
-  btnFindGames = document.getElementById('btn-find-games');
-  gameFinderResults = document.getElementById('game-finder-results');
   detailModalInningsRow = document.getElementById('detail-modal-innings-row');
+  detailModalInningHalvesRow = document.getElementById('detail-modal-inning-halves-row');
   detailModalAbGrid = document.getElementById('detail-modal-ab-grid');
 
 
@@ -2482,14 +2610,24 @@ function cacheDOM() {
   btnUiCinematic = document.getElementById('btn-ui-cinematic');
 
   // Pause Screen details & controls
-  pauseModeText = document.getElementById('pause-mode-text');
-  pauseInningOutsText = document.getElementById('pause-inning-outs-text');
-  pauseScoreText = document.getElementById('pause-score-text');
+  pauseModeBadge = document.getElementById('pause-mode-badge');
+  pauseAbProgress = document.getElementById('pause-ab-progress');
   pauseAccText = document.getElementById('pause-acc-text');
-  btnPauseRestart = document.getElementById('btn-pause-restart');
+  pauseSavedNote = document.getElementById('pause-saved-note');
+  pauseChallengeDock = document.getElementById('pause-challenge-dock');
+  pauseChallengeDockHeading = document.getElementById('pause-challenge-dock-heading');
+  pauseChallengeCountLabel = document.getElementById('pause-challenge-count-label');
+  pauseChallengeCount = document.getElementById('pause-challenge-count');
+  pauseChallengeTotal = document.getElementById('pause-challenge-total');
+  pauseChallengePct = document.getElementById('pause-challenge-pct');
+  pauseChallengeBarWrap = document.getElementById('pause-challenge-bar-wrap');
+  pauseChallengeProgressBar = document.getElementById('pause-challenge-progress-bar');
+  pauseChallengeCurrentAb = document.getElementById('pause-challenge-current-ab');
+  pauseChallengeAccuracy = document.getElementById('pause-challenge-accuracy');
+  pauseChallengeRank = document.getElementById('pause-challenge-rank');
+  pauseChallengeStatALabel = document.getElementById('pause-challenge-stat-a-label');
+  pauseChallengeStatBLabel = document.getElementById('pause-challenge-stat-b-label');
   btnPauseHome = document.getElementById('btn-pause-home');
-  pauseProgressRow = document.getElementById('pause-progress-row');
-  pauseProgressText = document.getElementById('pause-progress-text');
 
   // Matchup details
   cardPitcherImg = document.getElementById('card-pitcher-img');
@@ -2969,6 +3107,10 @@ function attachEvents() {
 
   if (btnAbSummaryAdvance) {
     btnAbSummaryAdvance.addEventListener('click', () => {
+      if (gameMode === 'mlb_game' && activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) {
+        exitMlbPlaySessionToPicker();
+        return;
+      }
       advanceNextAtBat();
     });
   }
@@ -2984,39 +3126,27 @@ function attachEvents() {
     // Explicit Resume button or ESC key must be used.
   }
 
-  if (btnPauseRestart) {
-    btnPauseRestart.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      isGamePaused = false;
-      if (pauseScreen) {
-        pauseScreen.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-        pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
-      }
-
-      if (gameMode === 'weekly_challenge') {
-        startWeeklyChallengeGame(activeGameIndex);
-      } else if (gameMode === 'daily_streak') {
-        startDailyStreakChallenge();
-      } else if (gameMode === 'orioles_full') {
-        gameMode = 'orioles_full';
-        resetGameSession();
-      } else {
-        gameMode = 'standard';
-        resetGameSession();
-      }
-    });
-  }
-
   if (btnPauseHome) {
     btnPauseHome.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (gameMode === 'mlb_game') {
+        initAudio();
+        isGamePaused = false;
+        document.body.classList.remove('game-paused');
+        if (pauseScreen) {
+          pauseScreen.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+          pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+        }
+        exitMlbPlaySessionToPicker();
+        return;
+      }
       if (gameMode === 'daily_streak' && !isSessionOver) {
         const confirmed = await showCustomConfirm("This will end your current streak run! Are you sure you want to exit?");
         if (!confirmed) return;
       }
       initAudio();
       isGamePaused = false;
+      document.body.classList.remove('game-paused');
       if (pauseScreen) {
         pauseScreen.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
         pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
@@ -3049,14 +3179,6 @@ function attachEvents() {
       e.stopPropagation();
       initAudio();
       await startWeeklyChallenge();
-    });
-  }
-
-  if (btnFindGames) {
-    btnFindGames.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      handleFindGames();
     });
   }
 
@@ -3128,6 +3250,10 @@ function attachEvents() {
 
   if (btnAbStartExit) {
     btnAbStartExit.addEventListener('click', async () => {
+      if (gameMode === 'mlb_game') {
+        exitMlbPlaySessionToPicker();
+        return;
+      }
       if (gameMode === 'daily_streak' && !isSessionOver) {
         const confirmed = await showCustomConfirm("This will end your current streak run! Are you sure you want to exit?");
         if (!confirmed) return;
@@ -3150,6 +3276,10 @@ function attachEvents() {
   // At-Bat Summary Home button
   if (btnAbSummaryHome) {
     btnAbSummaryHome.addEventListener('click', () => {
+      if (gameMode === 'mlb_game') {
+        exitMlbPlaySessionToPicker();
+        return;
+      }
       if (abSummaryOverlay) {
         abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
         abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
@@ -3502,7 +3632,11 @@ function attachEvents() {
       const isPlaying = currentState !== STATES.START && currentState !== STATES.WELCOME && currentState !== STATES.TEAM_SELECT;
       if (isPlaying) {
         initAudio();
-        returnToMainMenu();
+        if (gameMode === 'mlb_game') {
+          exitMlbPlaySessionToPicker();
+        } else {
+          returnToMainMenu();
+        }
       } else {
         performLogout(e);
       }
@@ -3684,7 +3818,7 @@ function attachEvents() {
       const nameEl = document.getElementById('card-pitcher-name');
       const handEl = document.getElementById('card-pitcher-hand');
       if (nameEl) {
-        showPlayerStatsPopout(gameplayPitcherCardTrigger, nameEl.textContent.trim(), 'PITCHER', handEl ? handEl.textContent.trim() : 'R');
+        showPlayerStatsPopout(gameplayPitcherCardTrigger, nameEl.textContent.trim(), 'PITCHER', getActivePitchRoleHand('pitcher'));
       }
     });
   }
@@ -3697,7 +3831,7 @@ function attachEvents() {
       const nameEl = document.getElementById('card-batter-name');
       const handEl = document.getElementById('card-batter-hand');
       if (nameEl) {
-        showPlayerStatsPopout(gameplayBatterCardTrigger, nameEl.textContent.trim(), 'BATTER', handEl ? handEl.textContent.trim() : 'R');
+        showPlayerStatsPopout(gameplayBatterCardTrigger, nameEl.textContent.trim(), 'BATTER', getActivePitchRoleHand('batter'));
       }
     });
   }
@@ -3939,9 +4073,48 @@ function showReviewPanel(visible) {
   if (!absBroadcastOverlay) return;
   if (visible) {
     absBroadcastOverlay.classList.add('active-broadcast-overlay');
+    document.body.classList.add('broadcast-review-active');
+    hideCloseCallPill();
   } else {
     absBroadcastOverlay.classList.remove('active-broadcast-overlay');
+    document.body.classList.remove('broadcast-review-active');
   }
+}
+
+function resetCloseCallPillPosition() {
+  if (!closeCallPill) return;
+  closeCallPill.style.left = '';
+  closeCallPill.style.top = '';
+  closeCallPill.style.bottom = '';
+  closeCallPill.style.right = '';
+  closeCallPill.style.transform = '';
+}
+
+function hideCloseCallPill() {
+  if (!closeCallPill) return;
+  closeCallPill.classList.remove('close-call-pill--active', 'animate-pulse');
+  document.body.classList.remove('close-call-active');
+  resetCloseCallPillPosition();
+}
+
+function showCloseCallPill(distFt, _cross) {
+  if (!closeCallPill || !closeCallDistText) return;
+  closeCallDistText.textContent = formatAbsZoneDistance(distFt);
+  resetCloseCallPillPosition();
+  closeCallPill.classList.add('close-call-pill--active', 'animate-pulse');
+  document.body.classList.add('close-call-active');
+}
+
+function showQuickPreviewDock() {
+  if (!quickPreviewControls) return;
+  quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
+  quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+}
+
+function hideQuickPreviewDock() {
+  if (!quickPreviewControls) return;
+  quickPreviewControls.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
+  quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
 }
 
 /**
@@ -3968,7 +4141,7 @@ async function performDailyClaimAndTransition(username) {
   if (bonusStatus) bonusStatus.textContent = 'CLAIMING...';
   if (bonusCheck) {
     bonusCheck.textContent = 'CLAIMING...';
-    bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claiming';
+    bonusCheck.className = 'px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-claiming';
     bonusCheck.setAttribute('disabled', 'true');
     bonusCheck.style.pointerEvents = 'none';
   }
@@ -3986,7 +4159,7 @@ async function performDailyClaimAndTransition(username) {
     if (bonusStatus) bonusStatus.textContent = 'CLAIM FAILED — TAP TO RETRY';
     if (bonusCheck) {
       bonusCheck.textContent = 'CLAIM NOW';
-      bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed';
+      bonusCheck.className = 'px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-unclaimed';
       bonusCheck.removeAttribute('disabled');
       bonusCheck.style.pointerEvents = 'auto';
     }
@@ -4006,10 +4179,10 @@ async function performDailyClaimAndTransition(username) {
   const newXp = newStats.xp || 0;
   const newProgress = getXpProgressInLevel(newXp);
 
-  if (bonusStatus) bonusStatus.textContent = 'CLAIMED (+100 XP)';
+  if (bonusStatus) bonusStatus.textContent = '+100 XP';
   if (bonusCheck) {
     bonusCheck.textContent = 'CLAIMED';
-    bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed';
+    bonusCheck.className = 'px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-claimed';
     bonusCheck.setAttribute('disabled', 'true');
     bonusCheck.style.pointerEvents = 'none';
   }
@@ -4133,18 +4306,18 @@ function updateWelcomeScreenState() {
     const bonusCheck = document.getElementById('welcome-login-bonus-check');
     
     if (!isBonusClaimed) {
-      if (bonusStatus) bonusStatus.textContent = "READY TO CLAIM (+100 XP)";
+      if (bonusStatus) bonusStatus.textContent = "Ready · +100 XP";
       if (bonusCheck) {
         bonusCheck.textContent = "CLAIM NOW";
-        bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed";
+        bonusCheck.className = "px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-unclaimed";
         bonusCheck.removeAttribute('disabled');
         bonusCheck.style.pointerEvents = 'auto';
       }
     } else {
-      if (bonusStatus) bonusStatus.textContent = "CLAIMED (+100 XP)";
+      if (bonusStatus) bonusStatus.textContent = "+100 XP";
       if (bonusCheck) {
         bonusCheck.textContent = "CLAIMED";
-        bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+        bonusCheck.className = "px-2 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 select-none min-h-[28px] flex items-center justify-center bonus-btn-claimed";
         bonusCheck.setAttribute('disabled', 'true');
         bonusCheck.style.pointerEvents = 'none';
       }
@@ -4216,10 +4389,7 @@ function transitionToState(newState, options = {}) {
   if (newState !== STATES.ABS_REVIEW) {
     setZoomedIn(false);
     clearDimensionLine();
-    if (closeCallPill) {
-      closeCallPill.classList.add('opacity-0', 'scale-95');
-      closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
-    }
+    hideCloseCallPill();
   }
 
   // Disable auto-collapsing. Keep the matchup card expanded for all game states.
@@ -4348,13 +4518,10 @@ function transitionToState(newState, options = {}) {
       updateStrikeZone(currentPitch.sz_bot, currentPitch.sz_top);
       flashStrikeZonePreview();
       
-      updateHolographicBatter(currentPitch.batter_hand, currentPitch.sz_bot, currentPitch.sz_top);
-      updateHolographicPitcher(currentPitch.pitcher_hand);
+      syncMatchupFromPitch(currentPitch);
       updateHolographicCatcher();
       showMannequins(true);
       setReviewingState(false);
-      animatePitcherWindup(0.0, currentPitch.pitcher_hand);
-      animateBatterSwing(-1, currentPitch.batter_hand);
       
       pitchTrajectory = calculateTrajectoryPoints(currentPitch);
       setCatcherMittPosition(pitchTrajectory.points[pitchTrajectory.points.length - 1]);
@@ -4371,45 +4538,10 @@ function transitionToState(newState, options = {}) {
         pitchCounterText.textContent = `WEEKLY CHALLENGE | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
       } else if (gameMode === 'daily_streak') {
         pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
+      } else if (gameMode === 'mlb_game') {
+        pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF ${pitchesList.length}`;
       } else {
         pitchCounterText.textContent = `PITCH ${totalPitchesCount + 1} | OUTS ${inningOuts}`;
-      }
-      
-      // Update matchup data and 3D player nameplates
-      if (currentPitch) {
-        const matchup = getMatchupNames(currentPitch);
-        const pH = currentPitch.pitcher_hand || "RHP";
-        const bH = currentPitch.batter_hand || "RHB";
-        
-        if (cardPitcherName) {
-          const pParts = matchup.pitcher.trim().split(/\s+/);
-          const pLastName = pParts[pParts.length - 1];
-          setMarqueePlayerName(cardPitcherName, '.card-pitcher-name-dup', matchup.pitcher, { uppercase: true });
-          cardPitcherName.setAttribute('data-lastname', pLastName.toUpperCase());
-        }
-        if (cardPitcherHand) {
-          const formattedPh = pH.includes("L") ? "LHP" : "RHP";
-          cardPitcherHand.textContent = formattedPh;
-          cardPitcherHand.className = formattedPh === "RHP"
-            ? "ab-summary-hand-badge ab-summary-hand-badge--rhp"
-            : "ab-summary-hand-badge ab-summary-hand-badge--lhp";
-        }
-        if (cardBatterName) {
-          const bParts = matchup.batter.trim().split(/\s+/);
-          const bLastName = bParts[bParts.length - 1];
-          setMarqueePlayerName(cardBatterName, '.card-batter-name-dup', matchup.batter, { uppercase: true });
-          cardBatterName.setAttribute('data-lastname', bLastName.toUpperCase());
-        }
-        if (cardBatterHand) {
-          const formattedBh = bH.includes("L") ? "LHB" : "RHB";
-          cardBatterHand.textContent = formattedBh;
-          cardBatterHand.className = formattedBh === "LHB"
-            ? "ab-summary-hand-badge ab-summary-hand-badge--lhb"
-            : "ab-summary-hand-badge ab-summary-hand-badge--rhb";
-        }
-        
-        updateNameplates(matchup.pitcher, pH, matchup.batter, bH);
-        updateMatchupCardImagesAndStats(currentPitch);
       }
       
       updateLiveScoreboard();
@@ -4450,7 +4582,15 @@ function transitionToState(newState, options = {}) {
       
       // Set batter swing flags from dataset
       isBatterSwinging = false;
-      if (currentPitch.is_swing !== undefined) {
+      if (gameMode === 'mlb_game' && currentPitch?.mlb_call_code != null) {
+        const mlbState = applyMlbPitchPlaybackState(currentPitch);
+        isBatterSwinging = mlbState.isBatterSwinging;
+        swingOutcome = mlbState.swingOutcome;
+        swingHitType = mlbState.swingHitType;
+        abBalls = mlbState.abBalls;
+        abStrikes = mlbState.abStrikes;
+        inningOuts = mlbState.inningOuts;
+      } else if (currentPitch.is_swing !== undefined) {
         isBatterSwinging = currentPitch.is_swing;
         swingOutcome = currentPitch.swing_outcome || 'WHIFF';
         swingHitType = currentPitch.swing_hit_type || '';
@@ -4458,13 +4598,10 @@ function transitionToState(newState, options = {}) {
         // Fallback for standard random mode
         const isStrike = isStrikeABS(currentPitch, pitchTrajectory.crossPoint);
         const crossPos = pitchTrajectory.crossPoint;
-        const xMin = -0.8283;
-        const xMax = 0.8283;
-        const yMin = currentPitch.sz_bot - 0.12;
-        const yMax = currentPitch.sz_top + 0.12;
-        const dx = Math.max(0, xMin - crossPos.x, crossPos.x - xMax);
-        const dy = Math.max(0, yMin - crossPos.y, crossPos.y - yMax);
-        const distanceToZoneInches = Math.sqrt(dx * dx + dy * dy) * 12.0;
+        const szBot = currentPitch.sz_bot ?? 1.6;
+        const szTop = currentPitch.sz_top ?? 3.4;
+        const distFt = calcDistanceToABSZone(crossPos.x, crossPos.y, szBot, szTop);
+        const distanceToZoneInches = Math.abs(distFt) * 12.0;
 
         let swingChance = 0.0;
         const isTwoStrikes = abStrikes === 2;
@@ -4603,32 +4740,25 @@ function transitionToState(newState, options = {}) {
       // Close call check for taken pitch
       if (userHistoryItem && !userHistoryItem.isSwingPlay && pitchTrajectory && pitchTrajectory.crossPoint) {
         const cross = pitchTrajectory.crossPoint;
-        const distFt = getDistanceToABSZone(cross.x, cross.y);
-        const absDist = Math.abs(distFt);
-        const isCloseCall = absDist <= 0.15;
+        const szBot = currentPitch.sz_bot ?? 1.6;
+        const szTop = currentPitch.sz_top ?? 3.4;
+        const distFt = calcDistanceToABSZone(cross.x, cross.y, szBot, szTop);
+        const isCloseCall = Math.abs(distFt) <= BORDERLINE_FT;
         
         if (isCloseCall) {
           playCloseCallSound();
           setZoomedIn(true);
-          drawDimensionLine(cross);
-          if (closeCallPill && closeCallDistText) {
-            const distInches = absDist * 12.0;
-            closeCallDistText.textContent = `${distInches.toFixed(1)}″ ${distFt < 0 ? 'IN' : 'OUT'}`;
-            positionCloseCallPill(cross);
-            closeCallPill.classList.remove('opacity-0', 'scale-95');
-            closeCallPill.classList.add('opacity-100', 'scale-100', 'animate-pulse');
+          drawDimensionLine(cross, { showLabel: false });
+          // Pill only for quick preview — broadcast overlay shows ABS Edge instead
+          const useFullReview = reviewStyle !== 'quick' && loggedIn;
+          if (!useFullReview) {
+            showCloseCallPill(distFt, cross);
           }
         } else {
-          if (closeCallPill) {
-            closeCallPill.classList.add('opacity-0', 'scale-95');
-            closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
-          }
+          hideCloseCallPill();
         }
       } else {
-        if (closeCallPill) {
-          closeCallPill.classList.add('opacity-0', 'scale-95');
-          closeCallPill.classList.remove('opacity-100', 'scale-100', 'animate-pulse');
-        }
+        hideCloseCallPill();
       }
       
       // Update count and check if AB ended
@@ -4688,8 +4818,7 @@ function transitionToState(newState, options = {}) {
         } else {
           // If the at-bat did NOT end, show the quick preview controls panel floating at bottom
           if (quickPreviewControls) {
-            quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
-            quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+            showQuickPreviewDock();
           }
           if (btnViewDetails) btnViewDetails.classList.add('hidden');
           
@@ -4716,7 +4845,8 @@ function transitionToState(newState, options = {}) {
           if (rateOfPlay === 'updated' && !isCorrect) {
             // Draw 3D offset challenge visual immediately on missed calls
             if (pitchTrajectory && pitchTrajectory.crossPoint) {
-              drawDimensionLine(pitchTrajectory.crossPoint);
+              const showDimLabel = !document.body.classList.contains('close-call-active');
+              drawDimensionLine(pitchTrajectory.crossPoint, { showLabel: showDimLabel });
             }
           }
           
@@ -4760,15 +4890,13 @@ function transitionToState(newState, options = {}) {
                 // Delayed popups on incorrect calls
                 playErrorBuzz();
                 if (quickPreviewControls) {
-                  quickPreviewControls.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
-                  quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+                  hideQuickPreviewDock();
                 }
                 setTimeout(() => {
                   if (currentState !== STATES.ABS_REVIEW) return;
                   showDecisionToast(isCorrect, userHistoryItem.absCall);
                   if (quickPreviewControls && !abEnded) {
-                    quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
-                    quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
+                    showQuickPreviewDock();
                   }
                 }, 1000);
               }
@@ -4815,10 +4943,7 @@ function transitionToState(newState, options = {}) {
             }, summaryRevealMs);
           } else {
             if (rateOfPlay !== 'updated' || isCorrect) {
-              if (quickPreviewControls) {
-                quickPreviewControls.classList.remove('opacity-0', 'pointer-events-none', 'scale-90');
-                quickPreviewControls.classList.add('opacity-100', 'pointer-events-auto', 'scale-100');
-              }
+              showQuickPreviewDock();
             }
             startQuickReviewAutoAdvance(effectiveMinPreviewMs);
           }
@@ -5123,8 +5248,8 @@ function tick() {
     const durationToRelease = WINDUP_DURATION * 0.75;
     const progress = Math.min((elapsed / durationToRelease) * 0.75, 0.75);
     
-    animatePitcherWindup(progress, currentPitch.pitcher_hand);
-    animateBatterSwing(-1, currentPitch.batter_hand);
+    animatePitcherWindup(progress, normalizeRoleHand(currentPitch.pitcher_hand, 'pitcher'));
+    animateBatterSwing(-1, normalizeRoleHand(currentPitch.batter_hand, 'batter'));
     
     const handWorld = getPitcherHandWorldPosition(currentPitch.pitcher_hand);
     animateBallTo(handWorld);
@@ -5137,16 +5262,16 @@ function tick() {
     
     const followThroughDuration = WINDUP_DURATION * 0.25;
     const followThroughProgress = Math.min(0.75 + (elapsed / followThroughDuration) * 0.25, 1.0);
-    animatePitcherWindup(followThroughProgress, currentPitch.pitcher_hand);
+    animatePitcherWindup(followThroughProgress, normalizeRoleHand(currentPitch.pitcher_hand, 'pitcher'));
     
     if (isBatterSwinging) {
       const swingDuration = 0.25;
       const swingStart = pitchTrajectory.t_cross - (swingDuration * 0.5); // Center contact at progress 0.5
       const swingElapsed = elapsed - swingStart;
       const swingProgress = Math.min(Math.max(swingElapsed / swingDuration, 0.0), 1.0);
-      animateBatterSwing(swingProgress, currentPitch.batter_hand);
+      animateBatterSwing(swingProgress, normalizeRoleHand(currentPitch.batter_hand, 'batter'));
     } else {
-      animateBatterSwing(-1, currentPitch.batter_hand);
+      animateBatterSwing(-1, normalizeRoleHand(currentPitch.batter_hand, 'batter'));
     }
     
     if (isBatterSwinging && wasSwingContact && elapsed >= pitchTrajectory.t_cross) {
@@ -5198,16 +5323,16 @@ function tick() {
     
     const followThroughDuration = WINDUP_DURATION * 0.25;
     const followThroughProgress = Math.min(0.75 + (elapsed / followThroughDuration) * 0.25, 1.0);
-    animatePitcherWindup(followThroughProgress, currentPitch.pitcher_hand);
+    animatePitcherWindup(followThroughProgress, normalizeRoleHand(currentPitch.pitcher_hand, 'pitcher'));
     
     if (isBatterSwinging) {
       const swingDuration = 0.25;
       const swingStart = pitchTrajectory.t_cross - (swingDuration * 0.5); // Center contact at progress 0.5
       const swingElapsed = elapsed - swingStart;
       const swingProgress = Math.min(Math.max(swingElapsed / swingDuration, 0.0), 1.0);
-      animateBatterSwing(swingProgress, currentPitch.batter_hand);
+      animateBatterSwing(swingProgress, normalizeRoleHand(currentPitch.batter_hand, 'batter'));
     } else {
-      animateBatterSwing(-1, currentPitch.batter_hand);
+      animateBatterSwing(-1, normalizeRoleHand(currentPitch.batter_hand, 'batter'));
     }
 
     if (isBatterSwinging && wasSwingContact && elapsed >= pitchTrajectory.t_cross) {
@@ -5387,8 +5512,10 @@ function submitUserDecision(userCall) {
       pitchClass = 'Offspeed';
     }
     
-    const distFt = getDistanceToABSZone(pitchTrajectory.crossPoint.x, pitchTrajectory.crossPoint.y);
-    const isBorderline = Math.abs(distFt) <= 0.15;
+    const szBot = currentPitch.sz_bot ?? 1.6;
+    const szTop = currentPitch.sz_top ?? 3.4;
+    const distFt = calcDistanceToABSZone(pitchTrajectory.crossPoint.x, pitchTrajectory.crossPoint.y, szBot, szTop);
+    const isBorderline = Math.abs(distFt) <= BORDERLINE_FT;
     
     let isSqueeze = (absCall === 'S' && userCall === 'B');
     let isExpansion = (absCall === 'B' && userCall === 'S');
@@ -5410,6 +5537,9 @@ function submitUserDecision(userCall) {
     if (userStats.recentPitches.length > 100) {
       userStats.recentPitches = userStats.recentPitches.slice(-100);
     }
+
+    userStats.totalPitchesCalled = (userStats.totalPitchesCalled || 0) + 1;
+    ensureProfileAggregateStats(userStats).stats;
     
     // Calculate live accuracy combining history, completed weekly ABs, & current active session
     let totalCallsSum = 0;
@@ -5469,6 +5599,21 @@ function submitUserDecision(userCall) {
  * Handles click navigation from review panel
  */
 function updateCountAndCheckABEnd(historyItem) {
+  if (gameMode === 'mlb_game') {
+    const lastPitch = pitchesList[pitchesList.length - 1];
+    const abEnded = currentPitchIndex >= pitchesList.length - 1;
+    activeAbEnded = abEnded;
+    if (abEnded && lastPitch) {
+      const completedMatchup = getMatchupNames(lastPitch);
+      lastAbOutcomeText = formatMlbAbOutcomeText(lastPitch);
+      lastAbPitcher = completedMatchup.pitcher;
+      lastAbBatter = completedMatchup.batter;
+      lastAbBlurb = lastPitch.ab_description || lastPitch.historical_blurb || '';
+      lastCompletedPitch = lastPitch;
+    }
+    return abEnded;
+  }
+
   // Advance balls and strikes count based on play outcome
   if (historyItem.isSwingPlay) {
     if (historyItem.swingOutcome === 'WHIFF') {
@@ -5756,10 +5901,9 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     setMarqueePlayerName(abStartPitcher, '.ab-start-pitcher-dup', matchup.pitcher);
     setMarqueePlayerName(abStartBatter, '.ab-start-batter-dup', matchup.batter);
 
-    const pH = pitch.pitcher_hand || 'RHP';
-    const bH = pitch.batter_hand || 'RHB';
-    applyHandBadge(abStartPitcherHand, pH, 'pitcher');
-    applyHandBadge(abStartBatterHand, bH, 'batter');
+    const { pitcherHand, batterHand } = getPitchMatchupHands(pitch);
+    applyHandBadge(abStartPitcherHand, pitcherHand, 'pitcher');
+    applyHandBadge(abStartBatterHand, batterHand, 'batter');
 
     // Dynamic headshot lookup
     fetchPlayerMlbId(matchup.pitcher).then(pitcherId => {
@@ -5798,7 +5942,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
 
     // Dynamic stats
     if (abStartPitcherStats) {
-      const { label: pitcherHandLabel } = formatHandBadge(pH, 'pitcher');
+      const { label: pitcherHandLabel } = formatHandBadge(pitcherHand, 'pitcher');
       const isLHP = pitcherHandLabel === 'LHP';
       if (matchup.pitcher === "Corbin Burnes") abStartPitcherStats.textContent = "ERA: 2.94 | SO: 200 | WHIP: 1.07";
       else if (matchup.pitcher === "Tarik Skubal") abStartPitcherStats.textContent = "ERA: 2.58 | SO: 228 | WHIP: 0.95";
@@ -5812,7 +5956,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
       else if (matchup.batter === "Gunnar Henderson") abStartBatterStats.textContent = "AVG: .281 | HR: 37 | OPS: .893";
       else if (matchup.batter === "Shohei Ohtani") abStartBatterStats.textContent = "AVG: .310 | HR: 54 | OPS: 1.036";
       else if (matchup.batter === "Francisco Lindor") abStartBatterStats.textContent = "AVG: .273 | HR: 33 | OPS: .844";
-      else abStartBatterStats.textContent = `AVG: .268 | HR: 18 | OPS: .795 (${bH})`;
+      else abStartBatterStats.textContent = `AVG: .268 | HR: 18 | OPS: .795 (${batterHand})`;
     }
 
     // Populate live game context
@@ -6091,13 +6235,64 @@ function returnToMainMenu() {
 
   saveChallengeSessionToLocal();
   updateChallengeProgressUI();
+  if (gameMode === 'mlb_game') {
+    exitMlbPlaySessionToPicker();
+    return;
+  }
   transitionToState(STATES.START);
+}
+
+async function exitMlbPlaySessionToPicker() {
+  if (autoPlayTimeout) {
+    clearTimeout(autoPlayTimeout);
+    autoPlayTimeout = null;
+  }
+  if (overviewTimerInterval) {
+    clearInterval(overviewTimerInterval);
+    overviewTimerInterval = null;
+  }
+  if (summaryTimeout) {
+    clearTimeout(summaryTimeout);
+    summaryTimeout = null;
+  }
+  isGamePaused = false;
+  isTransitioningToSummary = false;
+  activeAbEnded = false;
+  hideGameplayHudForSummary(false);
+  setAbSummaryReviewExpanded(false);
+  clearSummaryPitchReview();
+  if (pauseScreen) {
+    pauseScreen.classList.add('opacity-0', 'pointer-events-none');
+    pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  if (abStartOverlay) {
+    setAbStartOverlayActive(false);
+    abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  if (abSummaryOverlay) {
+    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  setOverlayVisible(hudHeader, false);
+  setOverlayVisible(matchupCard, false);
+  pitchesList = [];
+  currentPitchIndex = 0;
+  pitchHistory = [];
+  saveChallengeSessionToLocal();
+  transitionToState(STATES.START);
+  await returnToMlbGamePicker();
 }
 
 /**
  * Dynamically updates counters on the active header HUD
  */
 function updateLiveScoreboard() {
+  if (gameMode === 'mlb_game' && currentPitch) {
+    if (currentPitch.balls != null) abBalls = currentPitch.balls;
+    if (currentPitch.strikes != null) abStrikes = currentPitch.strikes;
+    if (currentPitch.outs != null) inningOuts = currentPitch.outs;
+  }
   const ballsCount = abBalls;
   const strikesCount = abStrikes;
   const outsCount = inningOuts;
@@ -6295,12 +6490,10 @@ function populateBroadcastReviewData(historyItem) {
   const vBreakInches = Math.round((p.az + 32.2) * 1.5);
   absStatBreak.textContent = `H: ${hBreakInches > 0 ? '+' : ''}${hBreakInches}in | V: ${vBreakInches > 0 ? '+' : ''}${vBreakInches}in`;
   
-  // Calculate distance in inches to show in "Zone Dist" column
-  const distFt = getDistanceToABSZone(cross.x, cross.y);
-  const distInches = Math.abs(distFt) * 12.0;
-  absStatHeight.textContent = distFt < 0 
-    ? `${distInches.toFixed(1)} in (Strike)` 
-    : `${distInches.toFixed(1)} in (Ball)`;
+  const szBot = p.sz_bot ?? 1.6;
+  const szTop = p.sz_top ?? 3.4;
+  const distFt = calcDistanceToABSZone(cross.x, cross.y, szBot, szTop);
+  absStatHeight.textContent = formatAbsZoneDistance(distFt);
     
   absStatBlurb.textContent = p.historical_blurb;
 }
@@ -6460,6 +6653,16 @@ function renderScoreboardDashboard() {
       accuracy: usesPlaylistTotals ? displayAcc : userAcc,
       date: new Date().toLocaleDateString()
     });
+
+    ensureProfileAggregateStats(userStats).stats;
+    if (gameMode === 'weekly_challenge') {
+      updateBestWeeklyRecord(
+        userStats,
+        usesPlaylistTotals ? displayCorrectCount : userCorrectCount,
+        usesPlaylistTotals ? displayPitchesCount : calledPitches.length,
+        usesPlaylistTotals ? displayAcc : userAcc
+      );
+    }
 
     localStorage.setItem(statsKey, JSON.stringify(userStats));
     saveGlobalUserStats(username, userStats);
@@ -6786,8 +6989,8 @@ async function goToMainMenu() {
     
     // Hide active gameplay overlays
     if (quickPreviewControls) {
-      quickPreviewControls.classList.add('opacity-0', 'pointer-events-none');
-      quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto');
+      hideQuickPreviewDock();
+      quickPreviewControls.classList.remove('pointer-events-auto');
     }
     if (decisionPrompt) {
       setElementVisibility(decisionPrompt, false);
@@ -7041,8 +7244,12 @@ function groupPitchesIntoAtBats(pitches) {
   let currentKey = null;
 
   pitches.forEach(pitch => {
+    const atBatIdx = pitch.at_bat_index;
     const isTopVal = pitch.is_top !== undefined ? pitch.is_top : (pitch.isTop !== undefined ? pitch.isTop : true);
-    const key = `${pitch.pitcher}_${pitch.batter}_${pitch.inning}_${isTopVal}`;
+    const key = atBatIdx != null
+      ? `ab_${atBatIdx}`
+      : `${pitch.pitcher}_${pitch.batter}_${pitch.inning}_${isTopVal}`;
+
     if (currentKey === null) {
       currentKey = key;
       currentAbPitches.push(pitch);
@@ -7233,11 +7440,12 @@ function loadStreakAtBat(abIdx, isResume = false) {
     abStrikes = 0;
   } else {
     if (pitchHistory.length > 0) {
+      enrichPitchHistoryWithPitchData();
       applyPitchHistoryToPitchesList();
     } else {
       reconstructActiveAtBatState();
     }
-    
+
     // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
     if (checkReconstructedAbCompleted()) {
       console.log("Resumed Streak At-Bat is completed. Loading intermission/summary directly.");
@@ -7284,6 +7492,42 @@ function getAbPitches(abEntry) {
   return abEntry.pitches || [];
 }
 
+function getHistoryPitchData(item, listIndex, pitchList = pitchesList) {
+  if (item?.pitchData) return item.pitchData;
+  if (pitchList?.length && listIndex != null && listIndex >= 0 && listIndex < pitchList.length) {
+    return pitchList[listIndex];
+  }
+  if (pitchList?.length && item?.pitchNum != null) {
+    const idx = item.pitchNum - 1;
+    if (idx >= 0 && idx < pitchList.length) return pitchList[idx];
+  }
+  return item;
+}
+
+function getHistoryItemCrossPoint(item, listIndex) {
+  const pitch = getHistoryPitchData(item, listIndex);
+  return getPitchCrossPoint(pitch, item?.trajectory);
+}
+
+function getHistoryItemTrajectory(item, listIndex) {
+  const pitch = getHistoryPitchData(item, listIndex);
+  return resolvePitchTrajectory(pitch, item?.trajectory);
+}
+
+function enrichPitchHistoryWithPitchData() {
+  if (!pitchesList?.length || !pitchHistory?.length) return;
+  pitchHistory = pitchHistory.map((item, idx) => {
+    const pitch = getHistoryPitchData(item, idx);
+    if (!pitch) return item;
+    const trajectory = resolvePitchTrajectory(pitch, item.trajectory);
+    return {
+      ...item,
+      pitchData: pitch,
+      trajectory: trajectory || item.trajectory || null,
+    };
+  });
+}
+
 function buildFilmRoomUrl(gamePk) {
   return gamePk ? `https://www.mlb.com/video/game/${gamePk}` : "";
 }
@@ -7324,6 +7568,8 @@ function normalizePlaylistAbs(rawABs, meta = {}) {
       umpScorecardUrl: existing.umpScorecardUrl || existing.ump_scorecard_url || defaultUmp,
       pitcher: existing.pitcher || firstPitch.pitcher,
       batter: existing.batter || firstPitch.batter,
+      pitcher_hand: existing.pitcher_hand || firstPitch.pitcher_hand || 'RHP',
+      batter_hand: existing.batter_hand || firstPitch.batter_hand || 'RHB',
       pitches,
       completed: existing.completed || false,
       userCorrectCount: existing.userCorrectCount || 0,
@@ -7533,7 +7779,8 @@ function drawStreakSummarySVGMatrix() {
   }
 
   abPitches.forEach((item, index) => {
-    const cross = item.trajectory ? item.trajectory.crossPoint : null;
+    const listIndex = (item.pitchNum ?? index + 1) - 1;
+    const cross = getHistoryItemCrossPoint(item, listIndex);
     if (!cross) return;
     
     const x = cross.x;
@@ -7716,35 +7963,30 @@ function syncStreakSummarySvgPitchMarkers(selectedIndex) {
 
 function drawStreakSummaryPitchIndicators(item, szTop, szBot) {
   const streakSummarySvgIndicators = document.getElementById('streak-summary-svg-indicators');
-  if (!streakSummarySvgIndicators || !item?.trajectory?.crossPoint) return;
+  const listIndex = item?.pitchNum != null ? item.pitchNum - 1 : undefined;
+  const cross = getHistoryItemCrossPoint(item, listIndex);
+  if (!streakSummarySvgIndicators || !cross) return;
   streakSummarySvgIndicators.innerHTML = '';
-  const cross = item.trajectory.crossPoint;
   const px = cross.x;
   const py = cross.y;
-  const xMin = -0.7083;
-  const xMax = 0.7083;
-  const yMin = szBot;
-  const yMax = szTop;
-  const insideX = px >= xMin && px <= xMax;
-  const insideY = py >= yMin && py <= yMax;
-  const isIn = insideX && insideY;
+  const { xMin, xMax, yMin, yMax } = getABSZoneBounds(szBot, szTop);
+  const distFt = calcDistanceToABSZone(px, py, szBot, szTop);
+  const isIn = distFt < 0;
   let cx = px;
   let cy = py;
-  let distFeet = 0;
   if (isIn) {
     const dLeft = px - xMin;
     const dRight = xMax - px;
     const dBottom = py - yMin;
     const dTop = yMax - py;
-    distFeet = Math.min(dLeft, dRight, dBottom, dTop);
-    if (distFeet === dLeft) cx = xMin;
-    else if (distFeet === dRight) cx = xMax;
-    else if (distFeet === dBottom) cy = yMin;
+    const minDist = Math.min(dLeft, dRight, dBottom, dTop);
+    if (minDist === dLeft) cx = xMin;
+    else if (minDist === dRight) cx = xMax;
+    else if (minDist === dBottom) cy = yMin;
     else cy = yMax;
   } else {
     cx = Math.max(xMin, Math.min(px, xMax));
     cy = Math.max(yMin, Math.min(py, yMax));
-    distFeet = Math.hypot(px - cx, py - cy);
   }
 
   if (!isIn) {
@@ -8046,20 +8288,6 @@ function hideStreakSummaryScreen() {
   setCameraAngle('umpire');
 }
 
-function positionCloseCallPill(cross) {
-  if (!closeCallPill || !cross) return;
-  const pos = pickZoneDistanceLabelScreenPos(cross.x, cross.y);
-  if (!pos) {
-    closeCallPill.style.left = '50%';
-    closeCallPill.style.top = '8rem';
-    closeCallPill.style.transform = 'translate(-50%, -100%)';
-    return;
-  }
-  closeCallPill.style.left = `${pos.x}px`;
-  closeCallPill.style.top = `${pos.y}px`;
-  closeCallPill.style.transform = pos.transform;
-}
-
 async function updateAbSummaryLeaderboardSnippet(username) {
   if (!abSummaryLeaderboardSnippet || !username) return;
   abSummaryLeaderboardSnippet.textContent = '…';
@@ -8199,7 +8427,9 @@ async function showAtBatSummaryScreen(outcomeText) {
   
   if (abSummarySubtitle) {
     if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
-      const total = weeklyPlaylistABs.length || 200;
+      const total = gameMode === 'mlb_game'
+        ? (weeklyPlaylistABs.length || 1)
+        : (weeklyPlaylistABs.length || 200);
       abSummarySubtitle.textContent = `Finished At-Bat ${activeWeeklyAbIndex + 1} of ${total}`;
       abSummarySubtitle.classList.remove('hidden');
     } else if (gameMode === 'daily_streak') {
@@ -8253,6 +8483,7 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
   
   // Calculate accuracy only on taken pitches in this game session
+  enrichPitchHistoryWithPitchData();
   const abPitches = pitchHistory.slice(currentAbStartHistoryIndex).filter(x => !x.isSwingPlay);
   showSummaryPitchReview(abPitches);
   const correctCount = abPitches.filter(x => x.userCorrect).length;
@@ -8379,6 +8610,10 @@ async function showAtBatSummaryScreen(outcomeText) {
     });
   }
 
+  if (gameMode === 'mlb_game' && abSummaryWeeklyChallengeDetails) {
+    abSummaryWeeklyChallengeDetails.classList.add('hidden');
+  }
+
   // Weekly challenge dock (footer) — save stats + animate progress
   if (gameMode === 'weekly_challenge') {
     if (abSummaryWeeklyChallengeDetails) {
@@ -8478,6 +8713,11 @@ async function showAtBatSummaryScreen(outcomeText) {
     setMarqueePlayerName(abSummaryPitcherName, '.ab-summary-pitcher-name-dup', pitcher, { uppercase: true });
     setMarqueePlayerName(abSummaryBatterName, '.ab-summary-batter-name-dup', batter, { uppercase: true });
   }, 350);
+
+  if (gameMode === 'mlb_game') {
+    if (btnAbSummaryHome) btnAbSummaryHome.textContent = 'BACK TO GAME';
+    updateSummaryTimerUI();
+  }
 
   startSummaryTimerCounter();
 }
@@ -8679,6 +8919,7 @@ function restoreChallengePitchState(activeChallenge) {
   abBalls = activeChallenge.abBalls || 0;
   abStrikes = activeChallenge.abStrikes || 0;
   pitchHistory = activeChallenge.pitchHistory || [];
+  enrichPitchHistoryWithPitchData();
   applyPitchHistoryToPitchesList();
 }
 
@@ -8726,7 +8967,7 @@ function reconstructActiveAtBatState() {
         userCorrect: pitch.userCorrect === undefined ? true : pitch.userCorrect,
         realCorrect: pitch.realCorrect,
         pitchData: pitch,
-        trajectory: pitch.pitchTrajectory || null,
+        trajectory: resolvePitchTrajectory(pitch, pitch.pitchTrajectory) || pitch.pitchTrajectory || null,
         isSwingPlay: !!pitch.isSwingPlay,
         swingOutcome: pitch.swingOutcome,
         swingHitType: pitch.swingHitType
@@ -8831,6 +9072,7 @@ async function loadSavedSessionFromLocal() {
         abStrikes = session.abStrikes ?? 0;
         pitchHistory = session.pitchHistory || [];
         if (session.pitchesList) pitchesList = session.pitchesList;
+        enrichPitchHistoryWithPitchData();
       }
       activeDailyDate = session.activeDailyDate;
       activeDailyTeam = session.activeDailyTeam;
@@ -8878,6 +9120,218 @@ async function loadSavedSessionFromLocal() {
   updateChallengeProgressUI();
 }
 
+function isChallengeGameMode(mode = gameMode) {
+  return mode === 'weekly_challenge' || mode === 'daily_streak' || mode === 'mlb_game';
+}
+
+function getPauseModeLabel(mode = gameMode) {
+  if (mode === 'weekly_challenge') return 'Weekly Challenge';
+  if (mode === 'daily_streak') return 'Daily Streak';
+  if (mode === 'mlb_game') return 'Play Any Game';
+  if (mode === 'orioles_full') return 'Full Game';
+  return 'Practice Sandbox';
+}
+
+function formatPauseCount(balls, strikes) {
+  return `${balls}-${strikes}`;
+}
+
+function formatPauseAccuracy(correct, total, { withFraction = false } = {}) {
+  if (!total) return '--';
+  const pct = Math.round((correct / total) * 100);
+  return withFraction ? `${pct}% (${correct}/${total})` : `${pct}%`;
+}
+
+function getWeeklyChallengeCompletedStats() {
+  let overallCorrect = 0;
+  let overallTotal = 0;
+  let completedCount = 0;
+  const totalCount = weeklyPlaylistABs?.length || 0;
+
+  weeklyPlaylistABs?.forEach((ab) => {
+    if (ab.completed) {
+      completedCount += 1;
+      overallCorrect += ab.userCorrectCount || 0;
+      overallTotal += ab.userTotalCount || 0;
+    }
+  });
+
+  const inProgressCorrect = pitchHistory.filter((x) => !x.isSwingPlay && x.userCorrect).length;
+  const inProgressTotal = pitchHistory.filter((x) => !x.isSwingPlay).length;
+  const sessionCorrect = overallCorrect + inProgressCorrect;
+  const sessionTotal = overallTotal + inProgressTotal;
+  const sessionAccuracy = sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : null;
+  const completedAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : null;
+  const percent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  return {
+    completedCount,
+    totalCount,
+    percent,
+    sessionAccuracy,
+    completedAccuracy,
+  };
+}
+
+async function updatePauseChallengeRank(username, mode) {
+  if (!pauseChallengeRank || !username) return;
+  pauseChallengeRank.textContent = '…';
+  try {
+    if (mode === 'weekly_challenge') {
+      const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+      const { rows } = await getLeaderboardRows('weekly', username, meta.challengeWeekId);
+      const me = rows.find((r) => r.isUser);
+      pauseChallengeRank.textContent = me ? `#${me.rank} · ${me.accuracy}` : 'No rank yet';
+    } else if (mode === 'daily_streak') {
+      const { rows } = await getLeaderboardRows('daily', username);
+      const me = rows.find((r) => r.isUser);
+      pauseChallengeRank.textContent = me ? `#${me.rank} Global` : 'Unranked';
+    } else {
+      pauseChallengeRank.textContent = '—';
+    }
+  } catch {
+    pauseChallengeRank.textContent = '—';
+  }
+}
+
+function getPauseCurrentAbText() {
+  if (gameMode === 'weekly_challenge' && weeklyPlaylistABs?.length) {
+    return `${activeWeeklyAbIndex + 1} of ${weeklyPlaylistABs.length}`;
+  }
+  if (gameMode === 'daily_streak') {
+    return `${activeStreakAbIndex + 1}`;
+  }
+  if (gameMode === 'mlb_game') {
+    return `${activeWeeklyAbIndex + 1}`;
+  }
+  return '';
+}
+
+function updatePauseChallengeTracker() {
+  const inChallenge = isChallengeGameMode();
+  if (pauseChallengeDock) {
+    pauseChallengeDock.classList.toggle('hidden', !inChallenge);
+    pauseChallengeDock.classList.toggle('pause-challenge-dock--streak', gameMode === 'daily_streak');
+    pauseChallengeDock.classList.toggle('pause-challenge-dock--weekly', gameMode === 'weekly_challenge');
+  }
+
+  if (!inChallenge || !pauseChallengeDock) return;
+
+  const username = localStorage.getItem('ump_username');
+  const currentAbText = getPauseCurrentAbText();
+  if (pauseChallengeCurrentAb) {
+    pauseChallengeCurrentAb.textContent = currentAbText || '—';
+  }
+
+  if (gameMode === 'weekly_challenge' && weeklyPlaylistABs?.length) {
+    const stats = getWeeklyChallengeCompletedStats();
+    if (pauseChallengeDockHeading) pauseChallengeDockHeading.textContent = 'Weekly Challenge';
+    if (pauseChallengeCountLabel) pauseChallengeCountLabel.textContent = 'Completed ABs';
+    if (pauseChallengeCount) pauseChallengeCount.textContent = String(stats.completedCount);
+    if (pauseChallengeTotal) pauseChallengeTotal.textContent = ` / ${stats.totalCount}`;
+    if (pauseChallengePct) pauseChallengePct.textContent = `${stats.percent}%`;
+    if (pauseChallengeProgressBar) pauseChallengeProgressBar.style.width = `${stats.percent}%`;
+    if (pauseChallengeBarWrap) pauseChallengeBarWrap.classList.remove('hidden');
+    if (pauseChallengeStatALabel) pauseChallengeStatALabel.textContent = 'Accuracy';
+    if (pauseChallengeStatBLabel) pauseChallengeStatBLabel.textContent = 'Rank';
+    if (pauseChallengeAccuracy) {
+      pauseChallengeAccuracy.textContent = stats.sessionAccuracy !== null ? `${stats.sessionAccuracy}%` : '--';
+    }
+    if (pauseChallengeRank) pauseChallengeRank.textContent = username ? '…' : '—';
+    if (username) updatePauseChallengeRank(username, 'weekly_challenge');
+  } else if (gameMode === 'daily_streak') {
+    const history = streakPitchHistory?.length ? streakPitchHistory : pitchHistory;
+    const called = history.filter((x) => !x.isSwingPlay);
+    const correct = called.filter((x) => x.userCorrect).length;
+    const streakLen = correct;
+    if (pauseChallengeDockHeading) pauseChallengeDockHeading.textContent = 'Daily Streak';
+    if (pauseChallengeCountLabel) pauseChallengeCountLabel.textContent = 'Streak';
+    if (pauseChallengeCount) pauseChallengeCount.textContent = String(streakLen);
+    if (pauseChallengeTotal) pauseChallengeTotal.textContent = streakLen === 1 ? ' pitch' : ' pitches';
+    if (pauseChallengePct) {
+      pauseChallengePct.textContent = called.length > 0 ? `${formatPauseAccuracy(correct, called.length)} run` : 'New run';
+    }
+    if (pauseChallengeBarWrap) pauseChallengeBarWrap.classList.add('hidden');
+    if (pauseChallengeStatALabel) pauseChallengeStatALabel.textContent = 'Run Acc.';
+    if (pauseChallengeStatBLabel) pauseChallengeStatBLabel.textContent = 'Rank';
+    if (pauseChallengeAccuracy) pauseChallengeAccuracy.textContent = formatPauseAccuracy(correct, called.length);
+    if (pauseChallengeRank) pauseChallengeRank.textContent = username ? '…' : '—';
+    if (username) updatePauseChallengeRank(username, 'daily_streak');
+  } else if (gameMode === 'mlb_game') {
+    const called = pitchHistory.filter((x) => !x.isSwingPlay);
+    const correct = called.filter((x) => x.userCorrect).length;
+
+    if (pauseChallengeDockHeading) pauseChallengeDockHeading.textContent = 'Play Any Game';
+    if (pauseChallengeCountLabel) pauseChallengeCountLabel.textContent = 'Called';
+    if (pauseChallengeCount) pauseChallengeCount.textContent = String(called.length);
+    if (pauseChallengeTotal) pauseChallengeTotal.textContent = called.length === 1 ? ' pitch' : ' pitches';
+    if (pauseChallengePct) pauseChallengePct.textContent = formatPauseAccuracy(correct, called.length);
+    if (pauseChallengeBarWrap) pauseChallengeBarWrap.classList.add('hidden');
+    if (pauseChallengeStatALabel) pauseChallengeStatALabel.textContent = 'Accuracy';
+    if (pauseChallengeStatBLabel) pauseChallengeStatBLabel.textContent = 'Session';
+    if (pauseChallengeAccuracy) pauseChallengeAccuracy.textContent = formatPauseAccuracy(correct, called.length);
+    if (pauseChallengeRank) pauseChallengeRank.textContent = called.length > 0 ? `${called.length} calls` : '--';
+  }
+}
+
+function updatePauseScreenUI() {
+  const modeLabel = getPauseModeLabel();
+  if (pauseModeBadge) pauseModeBadge.textContent = modeLabel;
+
+  const pitchTotal = pitchesList?.length || 0;
+  const pitchNum = Math.min(currentPitchIndex + 1, Math.max(pitchTotal, 1));
+  const countText = formatPauseCount(abBalls, abStrikes);
+  const inChallenge = isChallengeGameMode();
+
+  updatePauseChallengeTracker();
+
+  if (pauseAbProgress) {
+    if (gameMode === 'daily_streak') {
+      pauseAbProgress.textContent = pitchTotal
+        ? `Pitch ${pitchNum} of ${pitchTotal} · ${countText}`
+        : `Pitch ${pitchNum} · ${countText}`;
+    } else if (pitchTotal > 0) {
+      pauseAbProgress.textContent = `Pitch ${pitchNum} of ${pitchTotal} · ${countText}`;
+    } else {
+      pauseAbProgress.textContent = countText;
+    }
+  }
+
+  if (pauseAccText) {
+    const calledPitches = pitchHistory.filter((x) => !x.isSwingPlay);
+    const correctCalls = calledPitches.filter((x) => x.userCorrect).length;
+    pauseAccText.textContent = formatPauseAccuracy(correctCalls, calledPitches.length, { withFraction: true });
+  }
+
+  if (pauseSavedNote) {
+    pauseSavedNote.classList.toggle('hidden', !inChallenge);
+  }
+
+  const pauseTimersEl = document.getElementById('pause-timers');
+  if (pauseTimersEl) {
+    const timerTexts = [];
+    if (currentState === STATES.DECISION_PENDING && timerSecondsLeft > 0) {
+      timerTexts.push(`Decision clock: ${timerSecondsLeft}s`);
+    }
+    if (abSummaryOverlay?.classList.contains('opacity-100') && overviewSecondsLeft > 0) {
+      timerTexts.push(`AB summary: ${overviewSecondsLeft}s`);
+    }
+    const lastHistory = pitchHistory[pitchHistory.length - 1];
+    if (currentState === STATES.ABS_REVIEW && quickReviewTimeLeft > 0
+      && (reviewStyle === 'quick' || (lastHistory && lastHistory.isSwingPlay))) {
+      timerTexts.push(`Autoplay review: ${(quickReviewTimeLeft / 1000).toFixed(1)}s`);
+    }
+
+    if (timerTexts.length > 0) {
+      pauseTimersEl.textContent = timerTexts.join(' · ');
+      pauseTimersEl.classList.remove('hidden');
+    } else {
+      pauseTimersEl.textContent = '';
+      pauseTimersEl.classList.add('hidden');
+    }
+  }
+}
+
 function pauseGameOnFocusLoss() {
   if (currentState === STATES.START || 
       currentState === STATES.SCOREBOARD || 
@@ -8899,6 +9353,8 @@ function pauseGameOnFocusLoss() {
 
   isGamePaused = true;
   pauseStartTime = performance.now();
+  document.body.classList.add('game-paused');
+  hideCloseCallPill();
   
   if (quickContinueInterval) {
     quickReviewTimeLeft = Math.max(0, quickReviewDelay - (performance.now() - quickReviewStartTime));
@@ -8943,72 +9399,11 @@ function pauseGameOnFocusLoss() {
     }
   }
 
-  // Update Stats in Pause Screen
-  if (pauseModeText) {
-    let modeText = "Practice Sandbox";
-    if (gameMode === 'weekly_challenge') modeText = "Weekly Challenge";
-    else if (gameMode === 'daily_streak') modeText = "Daily Streak Challenge";
-    else if (gameMode === 'orioles_full') modeText = "Orioles Full Game";
-    pauseModeText.textContent = modeText;
-  }
-  
-  if (pauseInningOutsText) {
-    const inningText = activeIsTop ? `Top ${activeInning}` : `Bot ${activeInning}`;
-    const outsText = `${inningOuts} ${inningOuts === 1 ? 'Out' : 'Outs'}`;
-    pauseInningOutsText.textContent = `${inningText} | ${outsText}`;
-  }
-  
-  if (pauseScoreText) {
-    const pitch = currentPitch || pitchesList[currentPitchIndex];
-    if (pitch) {
-      const scoreAway = pitch.score_away !== undefined ? pitch.score_away : 0;
-      const scoreHome = pitch.score_home !== undefined ? pitch.score_home : 0;
-      pauseScoreText.textContent = `Away ${scoreAway} - ${scoreHome} Home`;
-    } else {
-      pauseScoreText.textContent = "0 - 0";
-    }
-  }
-  
-  if (pauseAccText) {
-    const calledPitches = pitchHistory.filter(x => !x.isSwingPlay);
-    const correctCalls = calledPitches.filter(x => x.userCorrect).length;
-    const userAcc = calledPitches.length > 0 ? Math.round((correctCalls / calledPitches.length) * 100) : 100;
-    pauseAccText.textContent = `${userAcc}% (${correctCalls}/${calledPitches.length} Correct)`;
-  }
-
-  // Update Challenge At-Bat progress if playing a weekly challenge
-  if (pauseProgressRow && pauseProgressText) {
-    if (gameMode === 'weekly_challenge' && weeklyPlaylistABs && weeklyPlaylistABs.length > 0) {
-      pauseProgressRow.classList.remove('hidden');
-      const currentAbNum = Math.min(weeklyPlaylistABs.length, activeWeeklyAbIndex + 1);
-      pauseProgressText.textContent = `At-Bat ${currentAbNum} of ${weeklyPlaylistABs.length}`;
-    } else {
-      pauseProgressRow.classList.add('hidden');
-    }
-  }
-
-  // Populate active timers info in pause screen
-  const pauseTimersEl = document.getElementById('pause-timers');
-  if (pauseTimersEl) {
-    let timerTexts = [];
-    if (currentState === STATES.DECISION_PENDING && timerSecondsLeft > 0) {
-      timerTexts.push(`Decision Count: ${timerSecondsLeft}s left`);
-    }
-    if (abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100') && overviewSecondsLeft > 0) {
-      timerTexts.push(`AB Summary: ${overviewSecondsLeft}s left`);
-    }
-    const lastHistory = pitchHistory[pitchHistory.length - 1];
-    if (currentState === STATES.ABS_REVIEW && quickReviewTimeLeft > 0 && (reviewStyle === 'quick' || (lastHistory && lastHistory.isSwingPlay))) {
-      timerTexts.push(`Autoplay Review: ${(quickReviewTimeLeft / 1000).toFixed(1)}s left`);
-    }
-    
-    if (timerTexts.length > 0) {
-      pauseTimersEl.innerHTML = timerTexts.join('<br>');
-      pauseTimersEl.classList.remove('hidden');
-    } else {
-      pauseTimersEl.innerHTML = '';
-      pauseTimersEl.classList.add('hidden');
-    }
+  // Update pause overlay content and persist challenge progress
+  updatePauseScreenUI();
+  if (isChallengeGameMode()) {
+    saveChallengeSessionToLocal();
+    saveGameProgress();
   }
 }
 
@@ -9022,6 +9417,7 @@ function resumeGameFromPause() {
   quickReviewStartTime += pauseDuration;
   
   isGamePaused = false;
+  document.body.classList.remove('game-paused');
   playResumeSound();
 
   if (pauseScreen) {
@@ -9091,7 +9487,8 @@ function updateChallengeProgressUI() {
 function updateProfileStatsUI(animateXp = false) {
   const avgAccEl = document.getElementById('stats-avg-accuracy');
   const maxStrEl = document.getElementById('stats-max-streak');
-  const compWkEl = document.getElementById('stats-completed-weekly');
+  const bestWeeklyEl = document.getElementById('stats-best-weekly-record');
+  const totalPitchesEl = document.getElementById('stats-total-pitches-called');
   const historyTableBody = document.getElementById('history-table-body');
   
   const username = localStorage.getItem('ump_username');
@@ -9106,9 +9503,8 @@ function updateProfileStatsUI(animateXp = false) {
   if (!username) {
     if (avgAccEl) avgAccEl.textContent = "--";
     if (maxStrEl) maxStrEl.textContent = "--";
-    if (compWkEl) compWkEl.textContent = "--";
-    const statsLifetimeChallenges = document.getElementById('stats-lifetime-challenges');
-    if (statsLifetimeChallenges) statsLifetimeChallenges.textContent = "--";
+    if (bestWeeklyEl) bestWeeklyEl.textContent = "--";
+    if (totalPitchesEl) totalPitchesEl.textContent = "--";
     if (historyTableBody) historyTableBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500 font-mono-tech text-[10px]">Log in to view stats</td></tr>';
     
     // Reset Top-Bar HUD for Guest
@@ -9152,10 +9548,7 @@ function updateProfileStatsUI(animateXp = false) {
     const profileTotalXp = document.getElementById('profile-total-xp');
     if (profileTotalXp) profileTotalXp.textContent = "0 XP";
     
-    const profileFavTeamDisplay = document.getElementById('profile-fav-team-display');
-    if (profileFavTeamDisplay) profileFavTeamDisplay.textContent = "NONE";
-    
-    const profileFavTeamLogo = document.getElementById('profile-fav-team-logo');
+    if (profileFavTeamSelect) profileFavTeamSelect.value = "none";
     if (profileFavTeamLogo) profileFavTeamLogo.src = "/generic.svg";
     
     // Reset Analytics & SVG
@@ -9197,7 +9590,12 @@ function updateProfileStatsUI(animateXp = false) {
   
   const normalized = normalizeHandle(username);
   const statsKey = getStatsStorageKey(normalized);
-  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
+  let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
+  const migratedStats = ensureProfileAggregateStats(userStats);
+  userStats = migratedStats.stats;
+  if (migratedStats.changed) {
+    localStorage.setItem(statsKey, JSON.stringify(userStats));
+  }
   
   // Set handle
   updateHudHandleText(hudHandle, normalized);
@@ -9322,14 +9720,17 @@ function updateProfileStatsUI(animateXp = false) {
     profileTotalXp.textContent = `${xp.toLocaleString()} XP`;
   }
   
-  const profileFavTeamDisplay = document.getElementById('profile-fav-team-display');
-  if (profileFavTeamDisplay) {
-    profileFavTeamDisplay.textContent = (activeFavoriteTeam && activeFavoriteTeam !== "none") ? activeFavoriteTeam.toUpperCase() : "NONE";
+  if (profileFavTeamSelect) {
+    profileFavTeamSelect.value =
+      activeFavoriteTeam && activeFavoriteTeam !== "none"
+        ? activeFavoriteTeam.toLowerCase()
+        : "none";
   }
-  
-  const profileFavTeamLogo = document.getElementById('profile-fav-team-logo');
   if (profileFavTeamLogo) {
-    profileFavTeamLogo.src = (activeFavoriteTeam && activeFavoriteTeam !== "none") ? getTeamLogoUrl(activeFavoriteTeam) : "/generic.svg";
+    profileFavTeamLogo.src =
+      activeFavoriteTeam && activeFavoriteTeam !== "none"
+        ? getTeamLogoUrl(activeFavoriteTeam)
+        : "/generic.svg";
   }
   
   // Telemetry Cards
@@ -9339,13 +9740,11 @@ function updateProfileStatsUI(animateXp = false) {
   if (maxStrEl) {
     maxStrEl.textContent = userStats.maxStreak || "0";
   }
-  if (compWkEl) {
-    const activeWeekGamesCompleted = (completedABsCount && Array.isArray(completedABsCount)) ? completedABsCount.filter(c => c === 1).length : 0;
-    compWkEl.textContent = `${activeWeekGamesCompleted} / 5 Games`;
+  if (bestWeeklyEl) {
+    bestWeeklyEl.textContent = formatBestWeeklyRecordDisplay(userStats.bestWeeklyRecord);
   }
-  const statsLifetimeChallenges = document.getElementById('stats-lifetime-challenges');
-  if (statsLifetimeChallenges) {
-    statsLifetimeChallenges.textContent = `${userStats.completedWeekly || 0} Games`;
+  if (totalPitchesEl) {
+    totalPitchesEl.textContent = (userStats.totalPitchesCalled || 0).toLocaleString();
   }
   // SVG UmpCard Dots Plotting
   const dotGroup = document.getElementById('profile-umpcard-dots');
@@ -9541,7 +9940,8 @@ function enterFullReviewPanel(userHistoryItem) {
   // Animate tight zoom and draw dimension line on detailed review
   setZoomedIn(true);
   if (pitchTrajectory && pitchTrajectory.crossPoint) {
-    drawDimensionLine(pitchTrajectory.crossPoint);
+    const skipDimLabel = document.body.classList.contains('close-call-active');
+    drawDimensionLine(pitchTrajectory.crossPoint, { showLabel: !skipDimLabel });
   }
   
   selectCameraView('side');
@@ -9626,10 +10026,7 @@ function startQuickReviewAutoAdvance(delayMs) {
 }
 
 function hideQuickPreviewPanel() {
-  if (quickPreviewControls) {
-    quickPreviewControls.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
-    quickPreviewControls.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
-  }
+  hideQuickPreviewDock();
   if (btnViewDetails) {
     btnViewDetails.classList.remove('hidden');
   }
@@ -9678,53 +10075,17 @@ function populatePitchDetailBug() {
     pitchDetailBreak.textContent = `H: ${hSign}${hBreakVal.toFixed(1)}"  V: ${vSign}${vBreakVal.toFixed(1)}"`;
   }
   
-  // 4. Location
+  // 4. ABS zone status (matches call logic — not batter inside/outside corner)
   if (pitchDetailLoc) {
     const crossX = pitchTrajectory ? pitchTrajectory.crossPoint.x : 0;
     const crossY = pitchTrajectory ? pitchTrajectory.crossPoint.y : 2.5;
+    const szTop = currentPitch.sz_top ?? 3.4;
+    const szBot = currentPitch.sz_bot ?? 1.6;
+    const distFt = calcDistanceToABSZone(crossX, crossY, szBot, szTop);
+    const isStrike = distFt < 0;
+
+    pitchDetailLoc.textContent = formatAbsZoneLocation(distFt);
     
-    let horizontalLoc = "Middle";
-    const isLeft = crossX < -0.3;
-    const isRight = crossX > 0.3;
-    if (currentPitch.batter_hand === 'LHB') {
-      if (isLeft) horizontalLoc = "Inside";
-      if (isRight) horizontalLoc = "Outside";
-    } else {
-      if (isLeft) horizontalLoc = "Outside";
-      if (isRight) horizontalLoc = "Inside";
-    }
-    
-    let verticalLoc = "Middle";
-    const sz_top = currentPitch.sz_top || 3.4;
-    const sz_bot = currentPitch.sz_bot || 1.6;
-    const heightDiff = sz_top - sz_bot;
-    if (crossY > sz_top - heightDiff * 0.25) {
-      verticalLoc = "High";
-    } else if (crossY < sz_bot + heightDiff * 0.25) {
-      verticalLoc = "Low";
-    }
-    
-    let locText = "";
-    if (horizontalLoc === "Middle" && verticalLoc === "Middle") {
-      locText = "Middle-Middle";
-    } else if (horizontalLoc === "Middle") {
-      locText = verticalLoc;
-    } else if (verticalLoc === "Middle") {
-      locText = horizontalLoc;
-    } else {
-      locText = `${horizontalLoc} ${verticalLoc}`;
-    }
-    
-    // Check if it's way outside/wild
-    const distToZone = getDistanceToABSZone(crossX, crossY);
-    if (distToZone > 0.5) { // more than 6 inches outside
-      locText = "Waste Pitch";
-    }
-    
-    pitchDetailLoc.textContent = locText.toUpperCase();
-    
-    // Color style classes based on call
-    const isStrike = isStrikeABS(currentPitch, pitchTrajectory ? pitchTrajectory.crossPoint : { x: 0, y: 2.5 });
     if (isStrike) {
       pitchDetailLoc.className = "text-green-400 font-bold bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded text-xs uppercase";
     } else {
@@ -9783,17 +10144,20 @@ function startSummaryTimerCounter() {
     clearInterval(overviewTimerInterval);
     overviewTimerInterval = null;
   }
-  if (btnAbSummaryAdvance) {
-    const isEnd = (gameMode === 'weekly_challenge') ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) : isSessionOver;
-    btnAbSummaryAdvance.textContent = isEnd ? "VIEW FINAL SCOREBOARD" : "ADVANCE TO NEXT AB";
-  }
+  updateSummaryTimerUI();
 }
 
 function updateSummaryTimerUI() {
-  if (btnAbSummaryAdvance) {
-    const isEnd = (gameMode === 'weekly_challenge') ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1) : isSessionOver;
-    btnAbSummaryAdvance.textContent = isEnd ? "VIEW FINAL SCOREBOARD" : "ADVANCE TO NEXT AB";
+  if (!btnAbSummaryAdvance) return;
+  if (gameMode === 'mlb_game') {
+    const isEnd = activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1;
+    btnAbSummaryAdvance.textContent = isEnd ? 'BACK TO GAMES' : 'NEXT AB IN GAME';
+    return;
   }
+  const isEnd = (gameMode === 'weekly_challenge')
+    ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1)
+    : isSessionOver;
+  btnAbSummaryAdvance.textContent = isEnd ? 'VIEW FINAL SCOREBOARD' : 'ADVANCE TO NEXT AB';
 }
 
 function extractAtBatsFromWeeklyData() {
@@ -10050,6 +10414,9 @@ function getPlayerTeam(name) {
 }
 
 function checkReconstructedAbCompleted() {
+  if (gameMode === 'mlb_game') {
+    return pitchesList.length > 0 && currentPitchIndex >= pitchesList.length - 1;
+  }
   if (abBalls >= 4 || abStrikes >= 3) return true;
   if (pitchHistory.length > 0) {
     const lastItem = pitchHistory[pitchHistory.length - 1];
@@ -10065,6 +10432,9 @@ function checkReconstructedAbCompleted() {
 
 function determineAbOutcomeFromHistory() {
   if (!pitchesList || pitchesList.length === 0) return "AT-BAT COMPLETE";
+  if (gameMode === 'mlb_game') {
+    return formatMlbAbOutcomeText(pitchesList[pitchesList.length - 1]);
+  }
   const matchup = getMatchupNames(pitchesList[0]);
   const batterName = matchup.batter.toUpperCase();
   if (abStrikes >= 3) return `${batterName} STRIKEOUT!`;
@@ -10081,6 +10451,10 @@ function determineAbOutcomeFromHistory() {
 
 function loadWeeklyAtBat(abIdx, isResume = false) {
   if (abIdx >= weeklyPlaylistABs.length) {
+    if (gameMode === 'mlb_game') {
+      exitMlbPlaySessionToPicker();
+      return;
+    }
     completedABsCount[activeGameIndex] = 1;
     saveChallengeSessionToLocal();
     saveGameProgress();
@@ -10094,6 +10468,9 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   if (!abData || pitchesList.length === 0) {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
+  if (!isResume && pitchesList.length > 0) {
+    syncMatchupFromPitch(pitchesList[currentPitchIndex] || pitchesList[0]);
+  }
   if (!isResume) {
     activeAbEnded = false;
     currentPitchIndex = 0;
@@ -10102,8 +10479,14 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
     
     abBalls = 0;
     abStrikes = 0;
+    if (gameMode === 'mlb_game' && pitchesList[0]) {
+      if (pitchesList[0].balls != null) abBalls = pitchesList[0].balls;
+      if (pitchesList[0].strikes != null) abStrikes = pitchesList[0].strikes;
+      if (pitchesList[0].outs != null) inningOuts = pitchesList[0].outs;
+    }
   } else {
     if (pitchHistory.length > 0) {
+      enrichPitchHistoryWithPitchData();
       applyPitchHistoryToPitchesList();
     } else {
       reconstructActiveAtBatState();
@@ -10120,7 +10503,9 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
         lastAbPitcher = matchup.pitcher;
         lastAbBatter = matchup.batter;
         lastAbBlurb = lastCompletedPitch.historical_blurb || "No play-by-play description available.";
-        lastAbOutcomeText = determineAbOutcomeFromHistory();
+        lastAbOutcomeText = gameMode === 'mlb_game'
+          ? formatMlbAbOutcomeText(lastCompletedPitch)
+          : determineAbOutcomeFromHistory();
         transitionToState(STATES.IDLE);
         showAtBatSummaryScreen(lastAbOutcomeText);
       }
@@ -10277,9 +10662,11 @@ function showUmpireScorecardModal() {
   ctx.setLineDash([]);
 
   calledPitches.forEach((item, index) => {
-    if (!item.trajectory || !item.trajectory.crossPoint) return;
-    const px = item.trajectory.crossPoint.x;
-    const py = item.trajectory.crossPoint.y;
+    const listIndex = item.pitchNum != null ? item.pitchNum - 1 : index;
+    const cross = getHistoryItemCrossPoint(item, listIndex);
+    if (!cross) return;
+    const px = cross.x;
+    const py = cross.y;
     const cx = mapX(px);
     const cy = mapY(py);
     const correct = item.userCorrect;
@@ -10756,7 +11143,8 @@ function drawScorecardSVGMatrix() {
   pitchHistory.forEach((item) => {
     if (item.isSwingPlay) return;
     
-    const cross = item.trajectory ? item.trajectory.crossPoint : null;
+    const listIndex = item.pitchNum != null ? item.pitchNum - 1 : undefined;
+    const cross = getHistoryItemCrossPoint(item, listIndex);
     if (!cross) return;
     
     const x = cross.x;
@@ -10850,25 +11238,6 @@ async function fetchPlayerMlbId(playerName) {
   }
 
   return 0;
-}
-
-const TEAM_LOGO_IDS = {
-  'dbacks': 109, 'braves': 144, 'orioles': 110, 'red sox': 111, 'cubs': 112,
-  'white sox': 145, 'reds': 113, 'guardians': 114, 'rockies': 115, 'tigers': 116,
-  'astros': 117, 'royals': 118, 'angels': 108, 'dodgers': 119, 'marlins': 146,
-  'brewers': 158, 'twins': 142, 'mets': 121, 'yankees': 147, 'athletics': 133,
-  'phillies': 143, 'pirates': 134, 'padres': 135, 'giants': 137, 'mariners': 136,
-  'cardinals': 138, 'rays': 139, 'rangers': 140, 'blue jays': 141, 'nationals': 120
-};
-
-function getTeamLogoUrl(teamName) {
-  const normName = teamName.toLowerCase().replace('.', '').trim();
-  for (const [key, value] of Object.entries(TEAM_LOGO_IDS)) {
-    if (normName.includes(key) || key.includes(normName)) {
-      return `https://www.mlbstatic.com/team-logos/${value}.svg`;
-    }
-  }
-  return '/generic.svg';
 }
 
 async function updateMatchupCardImagesAndStats(pitch) {
@@ -10975,8 +11344,9 @@ function getAbSummaryPitchesViewBox(abPitches, szTop, szBot) {
   let yMin = zoneYMin;
   let yMax = zoneYMax;
 
-  abPitches.forEach((p) => {
-    const cross = p?.trajectory?.crossPoint;
+  abPitches.forEach((p, index) => {
+    const listIndex = (p?.pitchNum ?? index + 1) - 1;
+    const cross = getHistoryItemCrossPoint(p, listIndex);
     if (!cross) return;
     xMin = Math.min(xMin, cross.x);
     xMax = Math.max(xMax, cross.x);
@@ -11018,7 +11388,9 @@ function renderAbSummaryCallBoard(abPitches) {
 
 function getAbSummaryPitchStats(item) {
   const pitch = item.pitchData || item;
-  const traj = item.trajectory;
+  const listIndex = item.pitchNum != null ? item.pitchNum - 1 : undefined;
+  const traj = getHistoryItemTrajectory(item, listIndex);
+  const cross = getHistoryItemCrossPoint(item, listIndex);
   const typeMap = {
     FF: 'Four-Seam', SL: 'Slider', CU: 'Curveball', KC: 'Knuckle Curve',
     CH: 'Changeup', FC: 'Cutter', SI: 'Sinker', FS: 'Splitter', ST: 'Sweeper', SV: 'Slurve',
@@ -11032,16 +11404,11 @@ function getAbSummaryPitchStats(item) {
   const hSign = hBreakVal >= 0 ? '+' : '';
   const vSign = vBreakVal >= 0 ? '+' : '';
   let distanceText = '—';
-  if (traj && traj.crossPoint) {
-    const distFeet = getDistanceToABSZone(traj.crossPoint.x, traj.crossPoint.y);
-    const distIn = distFeet * 12;
-    const xMin = -0.7083;
-    const xMax = 0.7083;
-    const yMin = pitch.sz_bot ?? pitch.szBot ?? 1.6;
-    const yMax = pitch.sz_top ?? pitch.szTop ?? 3.4;
-    const inside = traj.crossPoint.x >= xMin && traj.crossPoint.x <= xMax
-      && traj.crossPoint.y >= yMin && traj.crossPoint.y <= yMax;
-    distanceText = `${distIn.toFixed(1)}" ${inside ? 'inside' : 'outside'}`;
+  if (cross) {
+    const szBot = pitch.sz_bot ?? pitch.szBot ?? 1.6;
+    const szTop = pitch.sz_top ?? pitch.szTop ?? 3.4;
+    const distFeet = calcDistanceToABSZone(cross.x, cross.y, szBot, szTop);
+    distanceText = formatAbsZoneDistance(distFeet);
   }
   return {
     pitchType,
@@ -11127,40 +11494,33 @@ function syncAbSummarySvgPitchMarkers(selectedIndex) {
 
 function drawAbSummaryPitchIndicators(item, szTop, szBot) {
   const abSummarySvgIndicators = document.getElementById('ab-summary-svg-indicators');
-  if (!abSummarySvgIndicators || !item?.trajectory?.crossPoint) return;
+  const listIndex = item?.pitchNum != null ? item.pitchNum - 1 : undefined;
+  const cross = getHistoryItemCrossPoint(item, listIndex);
+  if (!abSummarySvgIndicators || !cross) return;
   abSummarySvgIndicators.innerHTML = '';
-  const cross = item.trajectory.crossPoint;
   const px = cross.x;
   const py = cross.y;
-  const xMin = -0.7083;
-  const xMax = 0.7083;
-  const yMin = szBot;
-  const yMax = szTop;
-  const insideX = px >= xMin && px <= xMax;
-  const insideY = py >= yMin && py <= yMax;
-  const isIn = insideX && insideY;
+  const { xMin, xMax, yMin, yMax } = getABSZoneBounds(szBot, szTop);
+  const distFt = calcDistanceToABSZone(px, py, szBot, szTop);
+  const isIn = distFt < 0;
   let cx = px;
   let cy = py;
-  let distFeet = 0;
   if (isIn) {
     const dLeft = px - xMin;
     const dRight = xMax - px;
     const dBottom = py - yMin;
     const dTop = yMax - py;
-    distFeet = Math.min(dLeft, dRight, dBottom, dTop);
-    if (distFeet === dLeft) cx = xMin;
-    else if (distFeet === dRight) cx = xMax;
-    else if (distFeet === dBottom) cy = yMin;
+    const minDist = Math.min(dLeft, dRight, dBottom, dTop);
+    if (minDist === dLeft) cx = xMin;
+    else if (minDist === dRight) cx = xMax;
+    else if (minDist === dBottom) cy = yMin;
     else cy = yMax;
   } else {
     cx = Math.max(xMin, Math.min(px, xMax));
     cy = Math.max(yMin, Math.min(py, yMax));
-    distFeet = Math.hypot(px - cx, py - cy);
   }
-  const distInches = distFeet * 12;
 
-  // Only draw the "ruler" when OUTSIDE. When inside, the pill already tells you "inside"
-  // and a line visually cuts through the zone (confusing).
+  // Only draw the ruler when outside the ABS zone (matches call logic).
   if (!isIn) {
     const pxSvg = px;
     const pySvg = 4.0 - py;
@@ -11264,7 +11624,8 @@ function drawAbSummarySVGMatrix() {
   }
 
   abPitches.forEach((item, index) => {
-    const cross = item.trajectory ? item.trajectory.crossPoint : null;
+    const listIndex = (item.pitchNum ?? index + 1) - 1;
+    const cross = getHistoryItemCrossPoint(item, listIndex);
     if (!cross) return;
     
     const x = cross.x;
@@ -11833,7 +12194,34 @@ function mulberry32(a) {
   }
 }
 
-function launchGame(rawABs, gameMeta) {
+function mergePlaylistPitchMetadata(freshAbs, savedAbs) {
+  if (!Array.isArray(freshAbs) || !Array.isArray(savedAbs)) return savedAbs || freshAbs;
+  return savedAbs.map((saved, idx) => {
+    const fresh = freshAbs[idx];
+    if (!fresh) return saved;
+    const freshPitches = Array.isArray(fresh) ? fresh : (fresh.pitches || []);
+    const savedPitches = Array.isArray(saved) ? saved : (saved.pitches || []);
+    const mergedPitches = savedPitches.map((sp, pi) => {
+      const fp = freshPitches[pi];
+      return fp ? { ...sp, ...fp } : sp;
+    });
+    const firstFresh = freshPitches[0] || {};
+    const firstSaved = savedPitches[0] || {};
+    const freshMeta = typeof fresh === 'object' && !Array.isArray(fresh) ? fresh : {};
+    const savedMeta = typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    return {
+      ...freshMeta,
+      ...savedMeta,
+      pitches: mergedPitches,
+      pitcher: savedMeta.pitcher || freshMeta.pitcher || firstFresh.pitcher,
+      batter: savedMeta.batter || freshMeta.batter || firstFresh.batter,
+      pitcher_hand: firstFresh.pitcher_hand || savedMeta.pitcher_hand || firstSaved.pitcher_hand || 'RHP',
+      batter_hand: firstFresh.batter_hand || savedMeta.batter_hand || firstSaved.batter_hand || 'RHB',
+    };
+  });
+}
+
+function launchGame(rawABs, gameMeta, options = {}) {
   const username = localStorage.getItem('ump_username');
   if (!username) return;
 
@@ -11842,6 +12230,15 @@ function launchGame(rawABs, gameMeta) {
     : (gameMeta || {});
 
   gameMode = 'mlb_game';
+  rememberMlbPlayContext({
+    gamePk: meta.gamePk,
+    date: meta.dateString,
+    awayTeam: meta.awayTeam,
+    homeTeam: meta.homeTeam,
+    isFinal: meta.isFinal,
+    startTime: meta.startTime,
+    venue: meta.venue,
+  });
   activeDailyDate = meta.dateString || null;
   activeDailyTeam = meta.awayTeam || null;
   activeMlbGamePk = meta.gamePk || null;
@@ -11854,8 +12251,9 @@ function launchGame(rawABs, gameMeta) {
   }
 
   const normalizedABs = normalizePlaylistAbs(rawABs, meta);
+  const replaceSession = Boolean(options.replaceSession);
   const sessionKeySuffix = meta.gamePk
-    ? `mlb_${meta.gamePk}`
+    ? `mlb_${meta.gamePk}_pv${MLB_GAME_FEED_PARSE_VERSION}`
     : (meta.dateString || "session");
   const key = `pitch_ump_mlb_game_mvp_${username.toUpperCase()}_${sessionKeySuffix}`;
   const rawSession = localStorage.getItem(key);
@@ -11868,9 +12266,11 @@ function launchGame(rawABs, gameMeta) {
       const savedPk = savedData.gamePk;
       const sameGame = !meta.gamePk || savedPk === meta.gamePk;
       if (sameGame && savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === normalizedABs.length) {
-        savedPlaylist = savedData.weeklyPlaylistABs;
-        savedAbIndex = savedData.activeWeeklyAbIndex || 0;
-        if (savedAbIndex >= savedPlaylist.length) {
+        savedPlaylist = replaceSession
+          ? null
+          : mergePlaylistPitchMetadata(normalizedABs, savedData.weeklyPlaylistABs);
+        savedAbIndex = replaceSession ? 0 : (savedData.activeWeeklyAbIndex || 0);
+        if (!replaceSession && savedAbIndex >= (savedPlaylist?.length || 0)) {
           savedPlaylist = null;
           savedAbIndex = 0;
         }
@@ -11916,6 +12316,8 @@ function launchGame(rawABs, gameMeta) {
 }
 
 function hideGamePreviewModal() {
+  collapsePreviewGameDetails();
+  clearPreviewState();
   if (previewModalOverlay) {
     previewModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
     previewModalOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
@@ -12434,16 +12836,94 @@ const PLAYER_STATS_DB = {
     height: "5' 11\"",
     weight: "190 lbs",
     stats: { "AVG": ".273", "HR": "33", "RBI": "91", "OPS": ".844", "OBP": ".344", "SLG": ".500" }
+  },
+  "Kyle Schwarber": {
+    role: "BATTER",
+    hand: "LHB",
+    team: "Philadelphia Phillies",
+    height: "6' 0\"",
+    weight: "195 lbs",
+    stats: { "AVG": ".284", "HR": "12", "RBI": "28", "OPS": ".892", "OBP": ".380", "SLG": ".512" }
+  },
+  "Yoshinobu Yamamoto": {
+    role: "PITCHER",
+    hand: "RHP",
+    team: "Los Angeles Dodgers",
+    height: "6' 2\"",
+    weight: "205 lbs",
+    stats: { "ERA": "4.20", "WHIP": "1.00", "SO": "214", "IP": "177.0", "W-L": "15-7", "WAR": "5.3" }
   }
 };
 
+function getPitchMatchupHands(pitch, abEntry = null) {
+  const ab = abEntry || weeklyPlaylistABs?.[activeWeeklyAbIndex];
+  const abPitches = ab ? getAbPitches(ab) : [];
+  const refPitch = pitch || abPitches[0] || null;
+  return {
+    pitcherHand: normalizeRoleHand(
+      refPitch?.pitcher_hand || ab?.pitcher_hand || 'RHP',
+      'pitcher'
+    ),
+    batterHand: normalizeRoleHand(
+      refPitch?.batter_hand || ab?.batter_hand || 'RHB',
+      'batter'
+    ),
+  };
+}
+
+/** Single source of truth: sync 3D mannequins, nav cards, and nameplates from pitch/AB data. */
+function syncMatchupFromPitch(pitch) {
+  if (!pitch) return;
+  const { pitcherHand, batterHand } = getPitchMatchupHands(pitch);
+  const matchup = getMatchupNames(pitch);
+
+  updateHolographicBatter(batterHand, pitch.sz_bot ?? 1.6, pitch.sz_top ?? 3.4);
+  updateHolographicPitcher(pitcherHand);
+  animatePitcherWindup(0.0, pitcherHand);
+  animateBatterSwing(-1, batterHand);
+  verifyAndForceUmpireCameraPosition();
+
+  if (cardPitcherName) {
+    const pParts = matchup.pitcher.trim().split(/\s+/);
+    setMarqueePlayerName(cardPitcherName, '.card-pitcher-name-dup', matchup.pitcher, { uppercase: true });
+    cardPitcherName.setAttribute('data-lastname', pParts[pParts.length - 1].toUpperCase());
+  }
+  applyHandBadge(cardPitcherHand, pitcherHand, 'pitcher');
+  if (cardBatterName) {
+    const bParts = matchup.batter.trim().split(/\s+/);
+    setMarqueePlayerName(cardBatterName, '.card-batter-name-dup', matchup.batter, { uppercase: true });
+    cardBatterName.setAttribute('data-lastname', bParts[bParts.length - 1].toUpperCase());
+  }
+  applyHandBadge(cardBatterHand, batterHand, 'batter');
+  updateNameplates(matchup.pitcher, pitcherHand, matchup.batter, batterHand);
+  updateMatchupCardImagesAndStats(pitch);
+}
+
+function getPitchMatchupHandsFromActivePitch(role) {
+  const pitch = pitchesList?.[currentPitchIndex] || currentPitch;
+  const hands = getPitchMatchupHands(pitch);
+  return role === 'pitcher' ? hands.pitcherHand : hands.batterHand;
+}
+
+function getActivePitchRoleHand(role) {
+  return getPitchMatchupHandsFromActivePitch(role);
+}
+
 function getPlayerDetails(name, role, hand = 'R') {
+  const isPitcher = role.toUpperCase() === 'PITCHER';
+  const liveHand = formatHandForPopout(hand, isPitcher ? 'pitcher' : 'batter');
+  const handLabel = handPopoutLabel(isPitcher ? 'pitcher' : 'batter');
+
   if (PLAYER_STATS_DB[name]) {
-    return PLAYER_STATS_DB[name];
+    const entry = PLAYER_STATS_DB[name];
+    const isPitcherEntry = entry.role === 'PITCHER';
+    return {
+      ...entry,
+      handLabel: isPitcherEntry ? 'Throws' : 'Bats',
+      hand: liveHand,
+    };
   }
   
-  const isPitcher = role.toUpperCase() === 'PITCHER';
-  const displayHand = isPitcher ? `${hand}HP` : `${hand} / R`;
   const team = getPlayerTeam(name) || "Generic Team";
   
   if (isPitcher) {
@@ -12456,7 +12936,8 @@ function getPlayerDetails(name, role, hand = 'R') {
     
     return {
       role: "PITCHER",
-      hand: displayHand,
+      hand: liveHand,
+      handLabel,
       team: team,
       height: "6' 2\"",
       weight: "205 lbs",
@@ -12472,7 +12953,8 @@ function getPlayerDetails(name, role, hand = 'R') {
     
     return {
       role: "BATTER",
-      hand: displayHand,
+      hand: liveHand,
+      handLabel,
       team: team,
       height: "6' 1\"",
       weight: "195 lbs",
@@ -12565,29 +13047,8 @@ function adjustPlayerStatsPopoutPosition(popout, element) {
   }
 }
 
-function showPlayerStatsPopout(element, name, role, hand) {
-  if (!element || !name || name === '--') return;
-
-  // If there's already an active popout in this card, toggle it off
-  const existing = element.querySelector('.player-card-popout');
-  if (existing) {
-    existing.remove();
-    return;
-  }
-
-  // Remove any other active player card popouts on the page
-  document.querySelectorAll('.player-card-popout').forEach(p => p.remove());
-
-  // Ensure parent has relative positioning
-  element.classList.add('relative');
-
-  const details = getPlayerDetails(name, role, hand);
-  const popout = document.createElement('div');
-  const isBatter = element.id === 'gameplay-batter-card-trigger' || element.classList.contains('ab-summary-player--batter') || element.classList.contains('ump-player-card--batter');
-  popout.className = `player-card-popout absolute top-0 ${isBatter ? 'right-0 left-auto' : 'left-0 right-auto'} w-[220px] bg-[#0f172a] border border-slate-700/60 rounded-xl p-2.5 z-[99] flex flex-col shadow-2xl transition-all duration-200 pointer-events-auto text-left select-none`;
-
+function renderPlayerStatsPopoutContent(popout, name, details) {
   const colorClass = details.role === 'PITCHER' ? 'text-purple-400' : 'text-cyan-400';
-  
   let statsHtml = `
     <div class="flex justify-between items-center mb-1 text-[11px] font-mono-tech border-b border-white/10 pb-0.5">
       <span class="text-white uppercase font-bold truncate pr-1">${name}</span>
@@ -12599,31 +13060,63 @@ function showPlayerStatsPopout(element, name, role, hand) {
         <span class="font-bold uppercase ${colorClass}">${details.role}</span>
       </div>
       <div class="flex justify-between items-center py-0.5 border-b border-white/5">
-        <span class="text-slate-400 uppercase font-bold">Thr/Bat</span>
-        <span class="font-bold text-white uppercase">${details.hand}</span>
+        <span class="text-slate-400 uppercase font-bold">${details.handLabel || (details.role === 'PITCHER' ? 'Throws' : 'Bats')}</span>
+        <span class="font-bold text-white uppercase player-popout-hand">${details.hand}</span>
       </div>
       <div class="flex justify-between items-center py-0.5 border-b border-white/5">
         <span class="text-slate-400 uppercase font-bold">Ht/Wt</span>
-        <span class="font-bold text-white uppercase">${details.height} / ${details.weight}</span>
+        <span class="font-bold text-white uppercase player-popout-hwt">${details.height} / ${details.weight}</span>
       </div>
   `;
-
   for (const [key, val] of Object.entries(details.stats)) {
     statsHtml += `
-      <div class="flex justify-between items-center py-0.5 border-b border-white/5 last:border-b-0">
+      <div class="flex justify-between items-center py-0.5 border-b border-white/5 last:border-b-0 player-popout-stat-row">
         <span class="text-slate-400 uppercase font-bold">${key}</span>
-        <span class="font-bold text-amber-400">${val}</span>
+        <span class="font-bold text-amber-400 player-popout-stat-val" data-stat-key="${key}">${val}</span>
       </div>
     `;
   }
   statsHtml += `</div>`;
-
   popout.innerHTML = statsHtml;
+}
+
+function showPlayerStatsPopout(element, name, role, hand) {
+  if (!element || !name || name === '--') return;
+
+  const existing = element.querySelector('.player-card-popout');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  document.querySelectorAll('.player-card-popout').forEach(p => p.remove());
+  element.classList.add('relative');
+
+  const abHand = hand || getPitchMatchupHandsFromActivePitch(role === 'PITCHER' ? 'pitcher' : 'batter');
+  const details = getPlayerDetails(name, role, abHand);
+  const popout = document.createElement('div');
+  const isBatter = element.id === 'gameplay-batter-card-trigger' || element.classList.contains('ab-summary-player--batter') || element.classList.contains('ump-player-card--batter');
+  popout.className = `player-card-popout absolute top-0 ${isBatter ? 'right-0 left-auto' : 'left-0 right-auto'} w-[220px] bg-[#0f172a] border border-slate-700/60 rounded-xl p-2.5 z-[99] flex flex-col shadow-2xl transition-all duration-200 pointer-events-auto text-left select-none`;
+
+  renderPlayerStatsPopoutContent(popout, name, details);
   element.appendChild(popout);
-
   adjustPlayerStatsPopoutPosition(popout, element);
+  bindPlayerPopoutClose(popout, element);
 
-  // Setup click listener for the close button
+  const roleKey = role === 'PITCHER' ? 'pitcher' : 'batter';
+  fetchMlbPlayerProfile(name, roleKey).then((mlbProfile) => {
+    if (!popout.isConnected || !mlbProfile) return;
+    const merged = {
+      ...mlbProfile,
+      hand: abHand,
+      handLabel: roleKey === 'pitcher' ? 'Throws' : 'Bats',
+    };
+    renderPlayerStatsPopoutContent(popout, name, merged);
+    adjustPlayerStatsPopoutPosition(popout, element);
+  });
+}
+
+function bindPlayerPopoutClose(popout, element) {
   const closeBtn = popout.querySelector('.btn-close-popout');
   if (closeBtn) {
     closeBtn.addEventListener('click', (e) => {
@@ -12632,19 +13125,16 @@ function showPlayerStatsPopout(element, name, role, hand) {
     });
   }
 
-  // Prevent parent click event from re-triggering when clicking inside the popout
   popout.addEventListener('click', (e) => {
     e.stopPropagation();
   });
 
-  // Setup document-wide click listener to hide popout when clicking off
   const onDocumentClick = (e) => {
     if (!popout.contains(e.target) && !element.contains(e.target)) {
       popout.remove();
       document.removeEventListener('click', onDocumentClick);
     }
   };
-  // Wait a tick to prevent the current click event from firing the document handler instantly
   setTimeout(() => {
     document.addEventListener('click', onDocumentClick);
   }, 10);
