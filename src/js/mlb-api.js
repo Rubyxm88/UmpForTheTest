@@ -1,6 +1,6 @@
 /**
  * MLB Stats API Integration Module
- * Fetches real game data from statsapi.mlb.com for Daily Compete mode.
+ * Fetches real game data from statsapi.mlb.com for Play Any Game mode.
  * All endpoints are public and require no API key.
  */
 

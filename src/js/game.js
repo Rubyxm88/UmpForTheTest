@@ -1,10 +1,23 @@
 import * as THREE from 'three';
 import { getObfuscatedPitches } from '../data/pitches.js';
 import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
-import { WEEKLY_CHALLENGE_DATA } from '../data/weekly_challenge.js';
+import { WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META } from '../data/weekly_challenge.js';
+import { STANDINGS_BOARDS } from '../data/challenge_registry.js';
+import {
+  getMockWeeklyRows,
+  getMockWeeklyPeriods,
+  getMockDailyRows,
+  getMockAlltimeRows,
+  getMockCrewRows,
+} from '../data/leaderboard_mock.js';
+import {
+  resolveWeeklyChallengeMeta,
+  getPreviousIsoWeekKey,
+  formatWeekLabel,
+} from './challenge-utils.js';
 import { DAILY_CHALLENGE_DATA } from '../data/daily_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
-import { fetchTeamSchedule, fetchGameForDate, fetchGamePitches, fetchAllGamesForDate } from './mlb-api.js';
+import { fetchGamePitches, fetchAllGamesForDate } from './mlb-api.js';
 import { 
   hashPIN, 
   getProfile, 
@@ -23,6 +36,8 @@ import {
   apiMe,
   apiSaveStats,
   apiFetchLeaderboard,
+  apiFetchLeaderboardPeriods,
+  apiFetchCrewLeaderboard,
   apiSubmitLeaderboard,
   apiUpdatePin,
 } from './api-client.js';
@@ -200,7 +215,6 @@ let activeAbIndex = 0; // Current at-bat index in the active weekly game
 let currentAbPitches = []; // Pitches sequence for the current at-bat
 let activeAbPitchIndex = 0; // Current pitch index in the current at-bat
 let completedABsCount = [0, 0, 0, 0, 0]; // Progress tracking for weekly games 1-5
-let dnfDisconnectsCount = 0; // Tracks disconnect count
 let isSessionOver = false;
 let quickStartNextPitch = false;
 let quickReviewStartTime = 0;
@@ -218,8 +232,8 @@ let abStartCountdownInterval = null;
 let btnAbSummaryHome;
 let abPitchCounter;
 let btnStartWeeklyChallenge, weeklyChallengeProgressText, weeklyChallengeProgressBar;
-let dailyMatchupTitle, dailyCompeteStatus, btnPlayDailyCompete, dailyHistoricList, dailyCompeteTeamSelect;
 let activeDailyDate = "";
+let activeMlbGamePk = null;
 
 // Game Preview Modal Elements
 let previewModalOverlay, previewModalTitle, previewModalDate;
@@ -364,9 +378,10 @@ let teamGridContainer, dashboardGamesList, finalScorecardRe24;
 let activeFavoriteTeam = null;
 let activeDailyTeam = null;
 let confirmModalOverlay, btnConfirmModalYes, btnConfirmModalNo;
-let challengeDetailModalOverlay, challengeDetailTitle, challengeDetailSubtitle, challengeDetailDesc;
-let challengeDetailGamesCount, challengeDetailBestStreak, challengeDetailCompleted;
-let btnChallengeDetailClose, btnChallengeDetailPlay, challengeDetailLeaderboardBody;
+let challengeDetailModalOverlay, challengeDetailModalPanel, challengeDetailTitle, challengeDetailSubtitle, challengeDetailDesc;
+let challengeDetailGamesCount, challengeDetailAbCount, challengeDetailCompleted, challengeDetailReset;
+let challengeDetailGamesList;
+let btnChallengeDetailClose, btnChallengeDetailPlay, btnChallengeDetailStandings, btnChallengeDetailLastWeek;
 let btnInfoWeeklyChallenge, btnInfoStreakChallenge;
 
 // Overlays
@@ -432,7 +447,15 @@ let abStartBatterImg, abStartBatterLogo, abStartBatterStats;
 let abStartPitcherName, abStartBatterName, btnAbStartExit;
 
 // Leaderboard Buttons & Table
-let leaderBtnWeekly, leaderBtnDaily, leaderBtnAlltime, leaderboardTableBody, leaderboardDivisionTitle;
+let leaderBtnWeekly, leaderBtnDaily, leaderBtnCrew, leaderboardList;
+let btnStandingsBack, btnStandingsHistory, standingsContextLabel, standingsCrewSeg;
+let activeStandingsBoard = 'weekly';
+let activeCrewMetric = 'rank';
+let activeWeeklyPeriodKey = null;
+let standingsViewMode = 'ranks';
+let cachedWeeklyPeriods = null;
+let weeklyChallengeMeta = null;
+let challengeDetailModalOpen = false;
 
 let selectSpeed;
 let isSettingsOpen = false;
@@ -541,6 +564,25 @@ function setMarqueePlayerName(primaryEl, dupSelectorOrEl, name, options = {}) {
   requestAnimationFrame(() => requestAnimationFrame(measureMarquee));
 }
 
+/** Normalize R/L/RHP/LHP/RHB/LHB into display label + badge class. */
+function formatHandBadge(hand, role) {
+  const isPitcher = role === 'pitcher';
+  const isLeft = String(hand || '').toUpperCase().includes('L');
+  const label = isPitcher ? (isLeft ? 'LHP' : 'RHP') : (isLeft ? 'LHB' : 'RHB');
+  const modifier = isPitcher ? (isLeft ? 'lhp' : 'rhp') : (isLeft ? 'lhb' : 'rhb');
+  return {
+    label,
+    className: `ab-summary-hand-badge ab-summary-hand-badge--${modifier}`
+  };
+}
+
+function applyHandBadge(el, hand, role) {
+  if (!el) return;
+  const { label, className } = formatHandBadge(hand, role);
+  el.textContent = label;
+  el.className = className;
+}
+
 function hideAbSummaryXpPopover() {
   const pop = document.getElementById('ab-summary-xp-popover');
   const btn = document.getElementById('ab-summary-xp-earned');
@@ -628,6 +670,10 @@ function hideGameplayHudForSummary(hide) {
   if (challengeTrackerHud) {
     setOverlayVisible(challengeTrackerHud, !hide);
   }
+}
+
+function setAbStartOverlayActive(active) {
+  document.body.classList.toggle('ab-start-active', active);
 }
 
 /**
@@ -1746,6 +1792,20 @@ function bindRetroAudioToElements() {
 }
 
 
+function updateHudHandleText(el, text) {
+  if (!el) return;
+  el.textContent = text;
+  
+  const len = text.length;
+  if (len > 10) {
+    el.style.fontSize = 'clamp(11px, 3.8vw, 18px)';
+  } else if (len > 8) {
+    el.style.fontSize = 'clamp(14px, 4.4vw, 22px)';
+  } else {
+    el.style.fontSize = ''; // use stylesheet default
+  }
+}
+
 function normalizeHandle(handle) {
   return (handle || '').trim().toUpperCase();
 }
@@ -1787,7 +1847,6 @@ async function applyCloudSessionToLocal(handle, pinVal, cloud) {
     overallAccuracy: stats.overallAccuracy ?? null,
     maxStreak: stats.maxStreak || 0,
     completedWeekly: stats.completedWeekly || 0,
-    dnfs: stats.dnfs || 0,
     history: stats.history || [],
   });
 
@@ -1817,7 +1876,7 @@ async function getGlobalUserStats(handle) {
   const statsKey = getStatsStorageKey(handle);
   const fallback = JSON.parse(
     localStorage.getItem(statsKey) ||
-      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}'
+      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
   );
   try {
     const me = await apiMe();
@@ -1881,7 +1940,7 @@ function loginUserSession(handleVal) {
       if (resumeHandle) resumeHandle.textContent = normalized.toUpperCase();
       
       const statsKey = getStatsStorageKey(normalized);
-      const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+      const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
       
       let xp = userStats.xp !== undefined ? userStats.xp : 0;
       
@@ -1915,14 +1974,18 @@ function loginUserSession(handleVal) {
       if (!isBonusClaimed) {
         if (bonusStatus) bonusStatus.textContent = "READY TO CLAIM (+100 XP)";
         if (bonusCheck) {
-          bonusCheck.textContent = "[ CLAIM NOW ]";
-          bonusCheck.className = "ump-stat-card__value text-yellow-400 text-[11px] sm:text-xs font-bold animate-pulse";
+          bonusCheck.textContent = "CLAIM NOW";
+          bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed";
+          bonusCheck.removeAttribute('disabled');
+          bonusCheck.style.pointerEvents = 'auto';
         }
       } else {
         if (bonusStatus) bonusStatus.textContent = "CLAIMED (+100 XP)";
         if (bonusCheck) {
-          bonusCheck.textContent = "[ CLAIMED ]";
-          bonusCheck.className = "ump-stat-card__value ump-stat-card__value--ok text-[11px] sm:text-xs font-bold";
+          bonusCheck.textContent = "CLAIMED";
+          bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+          bonusCheck.setAttribute('disabled', 'true');
+          bonusCheck.style.pointerEvents = 'none';
         }
       }
       
@@ -1947,25 +2010,8 @@ function loginUserSession(handleVal) {
         insertCoinText.classList.add('text-emerald-400');
         insertCoinText.classList.remove('text-yellow-400');
       }
-      
-      // Trigger login claim after display transition if not claimed yet
-      setTimeout(() => {
-        if (!isBonusClaimed) {
-          performDailyClaimAndTransition(normalized);
-        } else {
-          setTimeout(() => {
-            if (activeFavoriteTeam) {
-              transitionToState(STATES.START);
-            } else {
-              transitionToState(STATES.TEAM_SELECT);
-            }
-          }, 1000);
-        }
-      }, 600);
-      
     }, 300);
   } else {
-    // Normal transition if welcome screen elements are missing or not in WELCOME state
     if (activeFavoriteTeam) {
       transitionToState(STATES.START);
     } else {
@@ -2089,6 +2135,7 @@ export async function startGameSession() {
   if (WEEKLY_CHALLENGE_DATA.length < 6) {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
+  weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
   cacheDOM();
   document.addEventListener('click', () => {
     initAudio();
@@ -2154,33 +2201,13 @@ export async function startGameSession() {
   transitionToState(STATES.WELCOME);
   
   tick();
-  
-  // Fade out app launch loader after initialization
-  setTimeout(() => {
-    const loader = document.getElementById('app-launch-loader');
-    if (loader) {
-      loader.style.opacity = '0';
-      loader.style.pointerEvents = 'none';
-      setTimeout(() => {
-        loader.style.display = 'none';
-        
-        // Trigger automated integration test if requested in URL
-        if (window.location.search.includes('run_test=1')) {
-          console.log("TEST: Initiating automated integration test...");
-          setTimeout(() => {
-            runAutomatedIntegrationTest();
-          }, 1000);
-        }
-      }, 600);
-    } else {
-      if (window.location.search.includes('run_test=1')) {
-        console.log("TEST: Initiating automated integration test (no loader)...");
-        setTimeout(() => {
-          runAutomatedIntegrationTest();
-        }, 1000);
-      }
-    }
-  }, 800);
+
+  hideAppLaunchLoader();
+
+  if (window.location.search.includes('run_test=1')) {
+    console.log("TEST: Initiating automated integration test...");
+    setTimeout(() => runAutomatedIntegrationTest(), 1000);
+  }
 }
 
 
@@ -2289,15 +2316,19 @@ function cacheDOM() {
   btnInfoStreakChallenge = document.getElementById('btn-info-streak-challenge');
 
   challengeDetailModalOverlay = document.getElementById('challenge-detail-modal-overlay');
+  challengeDetailModalPanel = document.getElementById('challenge-detail-modal-panel');
   challengeDetailTitle = document.getElementById('challenge-detail-title');
   challengeDetailSubtitle = document.getElementById('challenge-detail-subtitle');
   challengeDetailDesc = document.getElementById('challenge-detail-desc');
   challengeDetailGamesCount = document.getElementById('challenge-detail-games-count');
-  challengeDetailBestStreak = document.getElementById('challenge-detail-best-streak');
+  challengeDetailAbCount = document.getElementById('challenge-detail-ab-count');
   challengeDetailCompleted = document.getElementById('challenge-detail-completed');
+  challengeDetailReset = document.getElementById('challenge-detail-reset');
+  challengeDetailGamesList = document.getElementById('challenge-detail-games-list');
   btnChallengeDetailClose = document.getElementById('btn-challenge-detail-close');
   btnChallengeDetailPlay = document.getElementById('btn-challenge-detail-play');
-  challengeDetailLeaderboardBody = document.getElementById('challenge-detail-leaderboard-body');
+  btnChallengeDetailStandings = document.getElementById('btn-challenge-detail-standings');
+  btnChallengeDetailLastWeek = document.getElementById('btn-challenge-detail-last-week');
 
   // Overlays
   abSummaryOverlay = document.getElementById('ab-summary-overlay');
@@ -2408,13 +2439,6 @@ function cacheDOM() {
   btnStartWeeklyChallenge = document.getElementById('btn-start-weekly-challenge');
   weeklyChallengeProgressText = document.getElementById('weekly-challenge-progress-text');
   weeklyChallengeProgressBar = document.getElementById('weekly-challenge-progress-bar');
-
-  // Daily Compete Elements
-  dailyMatchupTitle = document.getElementById('daily-matchup-title');
-  dailyCompeteStatus = document.getElementById('daily-compete-status');
-  btnPlayDailyCompete = document.getElementById('btn-play-daily-compete');
-  dailyHistoricList = document.getElementById('daily-historic-list');
-  dailyCompeteTeamSelect = document.getElementById('daily-compete-team-select');
 
   // Game Preview Modal Elements
   previewModalOverlay = document.getElementById('game-preview-modal-overlay');
@@ -2634,9 +2658,12 @@ function cacheDOM() {
   // Leaderboard Buttons & Table
   leaderBtnWeekly = document.getElementById('leader-btn-weekly');
   leaderBtnDaily = document.getElementById('leader-btn-daily');
-  leaderBtnAlltime = document.getElementById('leader-btn-alltime');
-  leaderboardTableBody = document.getElementById('leaderboard-table-body');
-  leaderboardDivisionTitle = document.getElementById('leaderboard-division-title');
+  leaderBtnCrew = document.getElementById('leader-btn-crew');
+  btnStandingsBack = document.getElementById('btn-standings-back');
+  btnStandingsHistory = document.getElementById('btn-standings-history');
+  standingsContextLabel = document.getElementById('standings-context-label');
+  standingsCrewSeg = document.getElementById('standings-crew-seg');
+  leaderboardList = document.getElementById('leaderboard-list');
 
   // Player Card Modal elements
   playerCardModalOverlay = document.getElementById('player-card-modal-overlay');
@@ -2665,6 +2692,14 @@ async function submitLoginAction() {
     return;
   }
   
+  if (handleVal.length > 12) {
+    if (loginErrorMsg) {
+      loginErrorMsg.textContent = "ERROR: HANDLE CANNOT EXCEED 12 CHARACTERS";
+      loginErrorMsg.classList.remove('hidden');
+    }
+    return;
+  }
+  
   if (!/^\d{4,8}$/.test(pinVal)) {
     if (loginErrorMsg) {
       loginErrorMsg.textContent = "ERROR: PIN MUST BE 4 TO 8 DIGITS";
@@ -2674,7 +2709,7 @@ async function submitLoginAction() {
   }
   
   const handleValNormalized = handleVal.toUpperCase();
-  
+
   if (loginErrorMsg) {
     loginErrorMsg.textContent = "VERIFYING CREW CHIEF CREDENTIALS...";
     loginErrorMsg.classList.remove('hidden');
@@ -2766,30 +2801,18 @@ function attachEvents() {
 
   // Weekly game cards button listener delegation
   document.querySelectorAll('.btn-play-game-ab').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', async (e) => {
       initAudio();
       const gameIdx = parseInt(e.target.getAttribute('data-game-idx'));
-      showTemporaryLoadingScreen("Loading Matchup...", 1000, () => {
-        startWeeklyChallengeGame(gameIdx);
-      });
+      startWeeklyChallengeGame(gameIdx);
     });
   });
 
   if (btnStartDailyStreak) {
-    btnStartDailyStreak.addEventListener('click', (e) => {
+    btnStartDailyStreak.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
-      showTemporaryLoadingScreen("Loading Streak Challenge...", 1000, () => {
-        startDailyStreakChallenge();
-      });
-    });
-  }
-
-  const weeklyChallengeCard = document.getElementById('weekly-challenge-card');
-  if (weeklyChallengeCard) {
-    weeklyChallengeCard.addEventListener('click', (e) => {
-      initAudio();
-      openChallengeDetailModal('weekly');
+      startDailyStreakChallenge();
     });
   }
 
@@ -2823,6 +2846,36 @@ function attachEvents() {
       hideChallengeDetailModal();
     });
   }
+
+  if (challengeDetailModalOverlay) {
+    challengeDetailModalOverlay.addEventListener('click', (e) => {
+      if (e.target === challengeDetailModalOverlay) {
+        hideChallengeDetailModal();
+      }
+    });
+  }
+  if (challengeDetailModalPanel) {
+    challengeDetailModalPanel.addEventListener('click', (e) => e.stopPropagation());
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (challengeDetailModalOpen) hideChallengeDetailModal();
+    hideStandingsXpPopover();
+  });
+
+  const standingsXpPopoverClose = document.getElementById('standings-xp-popover-close');
+  if (standingsXpPopoverClose) {
+    standingsXpPopoverClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideStandingsXpPopover();
+    });
+  }
+  document.addEventListener('click', (e) => {
+    const pop = document.getElementById('standings-xp-popover');
+    if (!pop || pop.classList.contains('hidden')) return;
+    if (pop.contains(e.target) || e.target.closest('.standings-row__level')) return;
+    hideStandingsXpPopover();
+  });
 
   if (btnStartGame) {
     btnStartGame.addEventListener('click', () => {
@@ -2940,28 +2993,23 @@ function attachEvents() {
     btnPauseRestart.addEventListener('click', (e) => {
       e.stopPropagation();
       initAudio();
-      showTemporaryLoadingScreen("Restarting Session...", 1000, () => {
-        isGamePaused = false;
-        if (pauseScreen) {
-          pauseScreen.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-          pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
-        }
-        
-        // Restart current game session
-        if (gameMode === 'weekly_challenge') {
-          startWeeklyChallengeGame(activeGameIndex);
-        } else if (gameMode === 'daily_compete') {
-          startDailyCompeteGame(activeDailyDate);
-        } else if (gameMode === 'daily_streak') {
-          startDailyStreakChallenge();
-        } else if (gameMode === 'orioles_full') {
-          gameMode = 'orioles_full';
-          resetGameSession();
-        } else {
-          gameMode = 'standard';
-          resetGameSession();
-        }
-      });
+      isGamePaused = false;
+      if (pauseScreen) {
+        pauseScreen.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+        pauseScreen.classList.remove('opacity-100', 'pointer-events-auto', 'scale-100');
+      }
+
+      if (gameMode === 'weekly_challenge') {
+        startWeeklyChallengeGame(activeGameIndex);
+      } else if (gameMode === 'daily_streak') {
+        startDailyStreakChallenge();
+      } else if (gameMode === 'orioles_full') {
+        gameMode = 'orioles_full';
+        resetGameSession();
+      } else {
+        gameMode = 'standard';
+        resetGameSession();
+      }
     });
   }
 
@@ -3002,19 +3050,10 @@ function attachEvents() {
   }
 
   if (btnStartWeeklyChallenge) {
-    btnStartWeeklyChallenge.addEventListener('click', (e) => {
+    btnStartWeeklyChallenge.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
-      startWeeklyChallenge();
-    });
-  }
-
-  if (btnPlayDailyCompete) {
-    btnPlayDailyCompete.addEventListener('click', (e) => {
-      e.stopPropagation();
-      initAudio();
-      const todayStr = new Date().toISOString().split('T')[0];
-      startDailyCompeteGame(todayStr);
+      await startWeeklyChallenge();
     });
   }
 
@@ -3043,15 +3082,15 @@ function attachEvents() {
   }
 
   if (btnPreviewModalStart) {
-    btnPreviewModalStart.addEventListener('click', (e) => {
+    btnPreviewModalStart.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
-      if (window._onPreviewStartCallback) {
-        const callback = window._onPreviewStartCallback;
-        window._onPreviewStartCallback = null;
-        showTemporaryLoadingScreen("Loading Matchup...", 1000, callback);
-      }
+      const callback = window._onPreviewStartCallback;
+      window._onPreviewStartCallback = null;
       hideGamePreviewModal();
+      if (callback) {
+        await callback();
+      }
     });
   }
 
@@ -3099,6 +3138,7 @@ function attachEvents() {
         if (!confirmed) return;
       }
       initAudio();
+      setAbStartOverlayActive(false);
       if (abStartOverlay) {
         abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
         abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
@@ -3306,28 +3346,42 @@ function attachEvents() {
         const loginBonusKey = `daily_login_bonus_${username}_${today}`;
         const isBonusClaimed = localStorage.getItem(loginBonusKey) === 'claimed';
         
+        // Play arcade resume sequence
+        playCoinSound();
+        playUmpireVocalCall('STRIKE');
+        playMenuTransitionSound();
+
         if (!isBonusClaimed) {
-          await performDailyClaimAndTransition(username);
+          // Silent and instant claim so they don't miss out on transition
+          localStorage.setItem(loginBonusKey, 'claimed');
+          awardXP(100);
+          showFloatingXP(100, "DAILY LOGIN BONUS! +100 XP");
+        }
+        
+        if (activeFavoriteTeam) {
+          transitionToState(STATES.START);
         } else {
-          // Play arcade resume sequence
-          playCoinSound();
-          playUmpireVocalCall('STRIKE');
-          
-          btnWelcomeStart.disabled = true;
-          btnWelcomeStart.classList.add('animate-pulse');
-          
-          setTimeout(() => {
-            btnWelcomeStart.disabled = false;
-            btnWelcomeStart.classList.remove('animate-pulse');
-            if (activeFavoriteTeam) {
-              transitionToState(STATES.START);
-            } else {
-              transitionToState(STATES.TEAM_SELECT);
-            }
-          }, 800);
+          transitionToState(STATES.TEAM_SELECT);
         }
       } else {
         submitLoginAction();
+      }
+    });
+  }
+
+  const welcomeLoginBonusCheck = document.getElementById('welcome-login-bonus-check');
+  if (welcomeLoginBonusCheck) {
+    welcomeLoginBonusCheck.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      initAudio();
+      const username = localStorage.getItem('ump_username');
+      if (username) {
+        const today = new Date().toLocaleDateString();
+        const loginBonusKey = `daily_login_bonus_${username}_${today}`;
+        const isBonusClaimed = localStorage.getItem(loginBonusKey) === 'claimed';
+        if (!isBonusClaimed) {
+          await performDailyClaimAndTransition(username);
+        }
       }
     });
   }
@@ -3485,13 +3539,65 @@ function attachEvents() {
   }
 
   if (leaderBtnWeekly) {
-    leaderBtnWeekly.addEventListener('click', () => renderLeaderboard('weekly'));
+    leaderBtnWeekly.addEventListener('click', () => {
+      activeStandingsBoard = 'weekly';
+      standingsViewMode = 'ranks';
+      const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+      activeWeeklyPeriodKey = meta.challengeWeekId;
+      renderLeaderboard('weekly');
+    });
   }
   if (leaderBtnDaily) {
-    leaderBtnDaily.addEventListener('click', () => renderLeaderboard('daily'));
+    leaderBtnDaily.addEventListener('click', () => {
+      activeStandingsBoard = 'daily';
+      standingsViewMode = 'ranks';
+      renderLeaderboard('daily');
+    });
   }
-  if (leaderBtnAlltime) {
-    leaderBtnAlltime.addEventListener('click', () => renderLeaderboard('alltime'));
+  if (leaderBtnCrew) {
+    leaderBtnCrew.addEventListener('click', () => {
+      activeStandingsBoard = 'crew';
+      standingsViewMode = 'ranks';
+      renderLeaderboard('crew');
+    });
+  }
+  if (btnStandingsBack) {
+    btnStandingsBack.addEventListener('click', () => {
+      if (standingsViewMode === 'history' || standingsViewMode === 'alltime') {
+        standingsViewMode = 'ranks';
+        activeWeeklyPeriodKey = getCurrentChallengeWeekId();
+        renderLeaderboard(activeStandingsBoard);
+        return;
+      }
+      if (activeStandingsBoard === 'weekly' && activeWeeklyPeriodKey !== getCurrentChallengeWeekId()) {
+        standingsViewMode = 'history';
+        renderLeaderboard('weekly');
+      }
+    });
+  }
+  if (btnStandingsHistory) {
+    btnStandingsHistory.addEventListener('click', () => {
+      if (activeStandingsBoard === 'weekly') {
+        standingsViewMode = 'history';
+        renderLeaderboard('weekly');
+      } else if (activeStandingsBoard === 'daily') {
+        standingsViewMode = 'alltime';
+        renderLeaderboard('daily');
+      }
+    });
+  }
+  if (standingsCrewSeg) {
+    standingsCrewSeg.querySelectorAll('[data-crew-metric]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (activeStandingsBoard !== 'crew') return;
+        activeCrewMetric = btn.getAttribute('data-crew-metric') || 'rank';
+        standingsCrewSeg.querySelectorAll('[data-crew-metric]').forEach((b) => {
+          b.classList.toggle('standings-seg__btn--active', b === btn);
+        });
+        renderLeaderboard('crew');
+      });
+    });
   }
 
   if (btnConfirmTeam) {
@@ -3505,8 +3611,8 @@ function attachEvents() {
       const team = TEAMS_LIST.find(t => t.id === selectedTeamId);
       if (team) {
         saveFavoriteTeam(team.name);
-        transitionToState(STATES.START);
         renderDashboardGamesList();
+        transitionToState(STATES.START);
       }
     });
   }
@@ -3858,11 +3964,6 @@ async function performDailyClaimAndTransition(username) {
   const welcomeLevel = document.getElementById('welcome-resume-level');
   const welcomeStartBtn = document.getElementById('btn-welcome-start');
   const bonusContainer = document.getElementById('welcome-login-bonus-container');
-  
-  if (welcomeStartBtn) {
-    welcomeStartBtn.disabled = true;
-    welcomeStartBtn.classList.add('animate-pulse');
-  }
 
   // 1. Visual Claim feedback
   if (bonusContainer) {
@@ -3872,13 +3973,15 @@ async function performDailyClaimAndTransition(username) {
     bonusStatus.textContent = "CLAIMING...";
   }
   if (bonusCheck) {
-    bonusCheck.textContent = "[ CLAIMING... ]";
-    bonusCheck.className = "ump-stat-card__value text-yellow-300 text-[11px] sm:text-xs font-bold";
+    bonusCheck.textContent = "CLAIMING...";
+    bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claiming";
+    bonusCheck.setAttribute('disabled', 'true');
+    bonusCheck.style.pointerEvents = 'none';
   }
 
   // Fetch current stats before claim
   const statsKey = getStatsStorageKey(username);
-  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   const oldXp = userStats.xp || 0;
   const oldProgress = getXpProgressInLevel(oldXp);
 
@@ -3891,14 +3994,14 @@ async function performDailyClaimAndTransition(username) {
   playCoinSound();
 
   // Delay slightly for the visual feedback of "CLAIMING"
-  await new Promise(resolve => setTimeout(resolve, 600));
+  await new Promise(resolve => setTimeout(resolve, 200));
 
   // 2. Award XP & update texts
   await awardXP(100); 
   showFloatingXP(100, "DAILY LOGIN BONUS! +100 XP");
 
   // Fetch new stats after claim
-  const newStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  const newStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   const newXp = newStats.xp || 0;
   const newProgress = getXpProgressInLevel(newXp);
 
@@ -3906,8 +4009,10 @@ async function performDailyClaimAndTransition(username) {
     bonusStatus.textContent = "CLAIMED (+100 XP)";
   }
   if (bonusCheck) {
-    bonusCheck.textContent = "[ CLAIMED ]";
-    bonusCheck.className = "ump-stat-card__value ump-stat-card__value--ok text-[11px] sm:text-xs font-bold";
+    bonusCheck.textContent = "CLAIMED";
+    bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+    bonusCheck.setAttribute('disabled', 'true');
+    bonusCheck.style.pointerEvents = 'none';
   }
 
   // 3. Animate XP bar on welcome screen
@@ -3939,24 +4044,12 @@ async function performDailyClaimAndTransition(username) {
     if (welcomeXpText) welcomeXpText.textContent = `${newProgress.progress} / ${XP_PER_LEVEL} XP`;
   }
 
-  // Wait for the animation to finish
-  await new Promise(resolve => setTimeout(resolve, 1200));
-
-  if (bonusContainer) {
-    bonusContainer.classList.remove('animate-claim-success');
-  }
-
-  // 4. Transition to next state
-  if (welcomeStartBtn) {
-    welcomeStartBtn.disabled = false;
-    welcomeStartBtn.classList.remove('animate-pulse');
-  }
-  
-  if (activeFavoriteTeam) {
-    transitionToState(STATES.START);
-  } else {
-    transitionToState(STATES.TEAM_SELECT);
-  }
+  // Clean up pulse animation on container after visual completion
+  setTimeout(() => {
+    if (bonusContainer) {
+      bonusContainer.classList.remove('animate-claim-success');
+    }
+  }, 1200);
 }
 
 /**
@@ -3980,7 +4073,7 @@ function updateWelcomeScreenState() {
     
     // Fetch and calculate User Stats for the Welcome screen
     const statsKey = getStatsStorageKey(storedUser);
-    const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
     
     let xp = userStats.xp !== undefined ? userStats.xp : 0;
     if (userStats.xp === undefined) {
@@ -3988,11 +4081,9 @@ function updateWelcomeScreenState() {
       history.forEach(h => {
         const isWeekly = h.gameName && h.gameName.includes("Weekly");
         const isStreak = h.gameName && h.gameName.includes("Streak");
-        const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
         
         if (isWeekly) xp += (h.correctCalls || 0) * 10;
         else if (isStreak) xp += (h.correctCalls || 0) * 15;
-        else if (isDailyCompete) xp += (h.correctCalls || 0) * 12;
         else xp += (h.correctCalls || 0) * 5;
       });
     }
@@ -4029,14 +4120,18 @@ function updateWelcomeScreenState() {
     if (!isBonusClaimed) {
       if (bonusStatus) bonusStatus.textContent = "READY TO CLAIM (+100 XP)";
       if (bonusCheck) {
-        bonusCheck.textContent = "[ CLAIM NOW ]";
-        bonusCheck.className = "ump-stat-card__value text-yellow-400 text-[11px] sm:text-xs font-bold animate-pulse";
+        bonusCheck.textContent = "CLAIM NOW";
+        bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed";
+        bonusCheck.removeAttribute('disabled');
+        bonusCheck.style.pointerEvents = 'auto';
       }
     } else {
       if (bonusStatus) bonusStatus.textContent = "CLAIMED (+100 XP)";
       if (bonusCheck) {
-        bonusCheck.textContent = "[ CLAIMED ]";
-        bonusCheck.className = "ump-stat-card__value ump-stat-card__value--ok text-[11px] sm:text-xs font-bold";
+        bonusCheck.textContent = "CLAIMED";
+        bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+        bonusCheck.setAttribute('disabled', 'true');
+        bonusCheck.style.pointerEvents = 'none';
       }
     }
     
@@ -4080,9 +4175,12 @@ function updateWelcomeScreenState() {
 
 let playCrackSoundTriggered = false;
 
-function transitionToState(newState) {
+function transitionToState(newState, options = {}) {
+  const { deferNavUpdate = false } = options;
   const oldState = currentState;
   currentState = newState;
+  console.log('DEBUG TRANSITION:', oldState, '->', newState, 'activeFavoriteTeam:', activeFavoriteTeam);
+  console.log('DEBUG TRANSITION STACK:\n', new Error().stack);
   const loggedIn = !!localStorage.getItem('ump_username');
   
   if (newState === STATES.WELCOME) {
@@ -4093,7 +4191,6 @@ function transitionToState(newState) {
       showBall(false);
       animatePitcherWindup(0, demoPitchData ? demoPitchData.pitcher_hand : 'R');
     }
-    // If we are transitioning out of WELCOME state, reset the camera angle immediately
     if (oldState === STATES.WELCOME) {
       setCameraAngle('umpire');
     }
@@ -4128,7 +4225,7 @@ function transitionToState(newState) {
       teamSearchInput.value = "";
     }
     generateTeamSelectGrid();
-    setCameraAngle('umpire'); // Explicitly reset camera from any panning drift
+    setCameraAngle('umpire');
   } else if (newState === STATES.START) {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
@@ -4136,7 +4233,7 @@ function transitionToState(newState) {
     isSettingsOpen = false;
     updateSettingsVisibility();
     switchTab('play');
-    setCameraAngle('umpire'); // Explicitly reset camera from any panning drift
+    setCameraAngle('umpire');
   } else {
     setOverlayVisible(welcomeScreen, false);
     setOverlayVisible(teamSelectScreen, false);
@@ -4144,7 +4241,9 @@ function transitionToState(newState) {
   }
 
   // Update unified top nav bar context
-  updateUnifiedTopNav(newState);
+  if (!deferNavUpdate) {
+    updateUnifiedTopNav(newState);
+  }
   
   if (btnHudLogout) {
     const logoutSpan = btnHudLogout.querySelector('span') || document.getElementById('adaptive-nav-action-text');
@@ -4211,20 +4310,16 @@ function transitionToState(newState) {
             populateInningDropdown();
           }
           loadHalfInning(activeInning, activeIsTop);
-        } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+        } else if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
           if (inningCard) inningCard.classList.add('hidden');
           if (weeklyPlaylistABs.length === 0) {
             if (gameMode === 'weekly_challenge') {
               const rawABs = extractAtBatsFromWeeklyData();
               weeklyPlaylistABs = [...rawABs];
-            } else {
-              const team = activeFavoriteTeam || "Orioles";
-              const todayStr = new Date().toISOString().split('T')[0];
-              weeklyPlaylistABs = generateDailyCondensedGame(team, todayStr);
             }
           }
           const abData = weeklyPlaylistABs[activeWeeklyAbIndex] || weeklyPlaylistABs[0];
-          pitchesList = abData.pitches;
+          pitchesList = getAbPitches(abData);
           currentPitchIndex = 0;
         } else if (gameMode === 'daily_streak') {
           if (inningCard) inningCard.classList.add('hidden');
@@ -4255,10 +4350,9 @@ function transitionToState(newState) {
       
       if (gameMode === 'standard') {
         pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF 10`;
-      } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+      } else if (gameMode === 'weekly_challenge') {
         const total = weeklyPlaylistABs.length || 16;
-        const prefix = gameMode === 'weekly_challenge' ? 'WEEKLY CHALLENGE' : 'DAILY COMPETE';
-        pitchCounterText.textContent = `${prefix} | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
+        pitchCounterText.textContent = `WEEKLY CHALLENGE | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
       } else if (gameMode === 'daily_streak') {
         pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
       } else {
@@ -5265,7 +5359,7 @@ function submitUserDecision(userCall) {
   const username = localStorage.getItem('ump_username');
   if (username) {
     const statsKey = getStatsStorageKey(username);
-    let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
     
     if (!userStats.recentPitches) userStats.recentPitches = [];
     
@@ -5311,7 +5405,7 @@ function submitUserDecision(userCall) {
     totalCorrectSum += currentSessionCalled.filter(x => x.userCorrect).length;
     
     // Add previously completed weekly ABs in this match (not yet in history)
-    if ((gameMode === 'weekly_challenge' || gameMode === 'daily_compete') && weeklyPlaylistABs) {
+    if (gameMode === 'weekly_challenge' && weeklyPlaylistABs) {
       weeklyPlaylistABs.forEach((ab, idx) => {
         if (ab.completed && idx !== activeWeeklyAbIndex) {
           totalCallsSum += ab.userTotalCount || 0;
@@ -5648,22 +5742,8 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
 
     const pH = pitch.pitcher_hand || 'RHP';
     const bH = pitch.batter_hand || 'RHB';
-    if (abStartPitcherHand) {
-      abStartPitcherHand.textContent = pH;
-      if (pH.includes("R")) {
-        abStartPitcherHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25";
-      } else {
-        abStartPitcherHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/25";
-      }
-    }
-    if (abStartBatterHand) {
-      abStartBatterHand.textContent = bH;
-      if (bH.includes("L")) {
-        abStartBatterHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/25";
-      } else {
-        abStartBatterHand.className = "text-[7px] font-mono-tech font-bold uppercase px-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/25";
-      }
-    }
+    applyHandBadge(abStartPitcherHand, pH, 'pitcher');
+    applyHandBadge(abStartBatterHand, bH, 'batter');
 
     // Dynamic headshot lookup
     fetchPlayerMlbId(matchup.pitcher).then(pitcherId => {
@@ -5702,7 +5782,8 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
 
     // Dynamic stats
     if (abStartPitcherStats) {
-      const isLHP = pH === "LHP";
+      const { label: pitcherHandLabel } = formatHandBadge(pH, 'pitcher');
+      const isLHP = pitcherHandLabel === 'LHP';
       if (matchup.pitcher === "Corbin Burnes") abStartPitcherStats.textContent = "ERA: 2.94 | SO: 200 | WHIP: 1.07";
       else if (matchup.pitcher === "Tarik Skubal") abStartPitcherStats.textContent = "ERA: 2.58 | SO: 228 | WHIP: 0.95";
       else if (matchup.pitcher === "Gerrit Cole") abStartPitcherStats.textContent = "ERA: 3.12 | SO: 180 | WHIP: 1.10";
@@ -5766,9 +5847,9 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     } else if (gameMode === 'daily_streak') {
       challengeBadge.textContent = 'Daily Streak';
       challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-amber-600 to-orange-600 rounded-full shadow-lg';
-    } else if (gameMode === 'daily_compete') {
-      challengeBadge.textContent = 'Daily Compete';
-      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-cyan-600 to-blue-600 rounded-full shadow-lg';
+    } else if (gameMode === 'mlb_game') {
+      challengeBadge.textContent = 'Play Any Game';
+      challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg';
     } else {
       challengeBadge.textContent = 'Standard Mode';
       challengeBadge.className = 'px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-slate-600 to-slate-700 rounded-full';
@@ -5823,10 +5904,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     }
     if (startSubtitle) {
       startSubtitle.classList.remove('hidden');
-      if (gameMode === 'daily_compete') {
-        const total = weeklyPlaylistABs.length || 200;
-        startSubtitle.textContent = `At-bat ${activeWeeklyAbIndex + 1} of ${total}`;
-      } else if (gameMode === 'daily_streak') {
+      if (gameMode === 'daily_streak') {
         const called = streakPitchHistory.filter(x => !x.isSwingPlay);
         const correct = called.filter(x => x.userCorrect).length;
         startSubtitle.textContent = `Current Streak: ${correct} Pitch${correct !== 1 ? 'es' : ''}`;
@@ -5837,7 +5915,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
   }
 
   if (startTitle) {
-    if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+    if (gameMode === 'weekly_challenge') {
       const total = weeklyPlaylistABs.length || 200;
       startTitle.textContent = isResume 
         ? `RESUME: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}` 
@@ -5852,6 +5930,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
   }
 
   // Show overlay with transition
+  setAbStartOverlayActive(true);
   abStartOverlay.classList.remove('opacity-0', 'pointer-events-none');
   abStartOverlay.classList.add('opacity-100', 'pointer-events-auto');
   const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
@@ -5898,6 +5977,7 @@ function confirmAtBatStart() {
   }
 
   animateMatchupToTopNav(() => {
+    setAbStartOverlayActive(false);
     if (abStartOverlay) {
       abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
       abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
@@ -5963,6 +6043,7 @@ function returnToMainMenu() {
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
   if (abStartOverlay) {
+    setAbStartOverlayActive(false);
     abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
     abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
     const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
@@ -6074,9 +6155,9 @@ function updateLiveScoreboard() {
 
   if (gameMode === 'standard') {
     pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF 10`;
-  } else if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+  } else if (gameMode === 'weekly_challenge') {
     const total = weeklyPlaylistABs.length || 16;
-    const prefix = gameMode === 'weekly_challenge' ? 'WEEKLY CHALLENGE' : 'DAILY COMPETE';
+    const prefix = 'WEEKLY CHALLENGE';
     pitchCounterText.textContent = `${prefix} | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
   } else if (gameMode === 'daily_streak') {
     pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
@@ -6270,7 +6351,7 @@ function renderScoreboardDashboard() {
   let displayCorrectCount = userCorrectCount;
   let displayAcc = userAcc;
 
-  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+  if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
     let overallCorrect = 0;
     let overallTotal = 0;
     weeklyPlaylistABs.forEach(ab => {
@@ -6294,21 +6375,15 @@ function renderScoreboardDashboard() {
   const username = localStorage.getItem('ump_username');
   if (username) {
     const statsKey = getStatsStorageKey(username);
-    let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
     
     if (gameMode === 'weekly_challenge') {
       userStats.completedWeekly = (userStats.completedWeekly || 0) + 1;
-    } else if (gameMode === 'daily_compete') {
-      if (!userStats.dailyHistory) userStats.dailyHistory = {};
-      userStats.dailyHistory[activeDailyDate] = displayAcc;
-      const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${activeDailyDate}`;
-      localStorage.removeItem(key);
     }
-    userStats.dnfs = dnfDisconnectsCount;
     
-    // Calculate new overall accuracy combining all history sessions
-    let totalCallsSum = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length;
-    let totalCorrectSum = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount;
+    const usesPlaylistTotals = gameMode === 'weekly_challenge' || gameMode === 'mlb_game';
+    let totalCallsSum = usesPlaylistTotals ? displayPitchesCount : calledPitches.length;
+    let totalCorrectSum = usesPlaylistTotals ? displayCorrectCount : userCorrectCount;
     if (userStats.history) {
       userStats.history.forEach(h => {
         totalCallsSum += h.totalCalls;
@@ -6346,8 +6421,8 @@ function renderScoreboardDashboard() {
     if (gameMode === 'weekly_challenge') {
       const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
       gameName = gameData ? gameData.title : "Weekly Challenge";
-    } else if (gameMode === 'daily_compete') {
-      gameName = `Daily Compete (${activeDailyDate})`;
+    } else if (gameMode === 'mlb_game') {
+      gameName = "Play Any Game";
     } else if (gameMode === 'orioles_full') {
       gameName = "Orioles simulation";
     } else if (gameMode === 'daily_streak') {
@@ -6364,62 +6439,36 @@ function renderScoreboardDashboard() {
     userStats.history.push({
       gameName,
       matchup,
-      correctCalls: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount,
-      totalCalls: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length,
-      accuracy: (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc,
+      correctCalls: usesPlaylistTotals ? displayCorrectCount : userCorrectCount,
+      totalCalls: usesPlaylistTotals ? displayPitchesCount : calledPitches.length,
+      accuracy: usesPlaylistTotals ? displayAcc : userAcc,
       date: new Date().toLocaleDateString()
     });
-    
-    if (gameMode === 'daily_compete' && activeDailyTeam) {
-      if (!userStats.dailyHistory) userStats.dailyHistory = {};
-      userStats.dailyHistory[`${activeDailyTeam}_${activeDailyDate}`] = (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc;
-      
-      if (!userStats.teamStats) userStats.teamStats = {};
-      if (!userStats.teamStats[activeDailyTeam]) {
-        userStats.teamStats[activeDailyTeam] = {
-          completedCount: 0,
-          correctCalls: 0,
-          totalCalls: 0,
-          accuracySum: 0
-        };
-      }
-      const tStats = userStats.teamStats[activeDailyTeam];
-      tStats.completedCount++;
-      tStats.correctCalls += (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayCorrectCount : userCorrectCount;
-      tStats.totalCalls += (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayPitchesCount : calledPitches.length;
-      tStats.accuracySum += parseFloat((gameMode === 'weekly_challenge' || gameMode === 'daily_compete') ? displayAcc : userAcc);
-    }
 
     localStorage.setItem(statsKey, JSON.stringify(userStats));
     saveGlobalUserStats(username, userStats);
     updateProfileStatsUI();
 
-    // Submit global scores to KVDB
+    // Leaderboard submit — weekly and streak only (Play Any Game updates profile accuracy only)
     if (gameMode === 'weekly_challenge') {
       const weeklyPoints = displayCorrectCount * 10;
       submitGlobalScore('weekly', username, activeFavoriteTeam || 'None', `${displayAcc}%`, `${weeklyPoints} pts`, weeklyPoints);
     } else if (gameMode === 'daily_streak') {
       submitGlobalScore('daily', username, activeFavoriteTeam || 'None', `${userAcc}%`, `${userCorrectCount} Streak`, userCorrectCount);
     }
-    
-    // Compile mastery stats and completed teams lists
+
     const completedTeamsList = Object.keys(userStats.teamStats || {});
-    const teamString = completedTeamsList.length > 0 ? completedTeamsList.join(',') : 'None';
-    
-    let avgAcc = 0;
     if (completedTeamsList.length > 0) {
+      const teamString = completedTeamsList.join(',');
       let sumAcc = 0;
       completedTeamsList.forEach(t => {
         const ts = userStats.teamStats[t];
         sumAcc += ts.totalCalls > 0 ? (ts.correctCalls / ts.totalCalls) * 100 : 0;
       });
-      avgAcc = Math.round(sumAcc / completedTeamsList.length);
-    } else {
-      avgAcc = userStats.overallAccuracy || 90;
+      const avgAcc = Math.round(sumAcc / completedTeamsList.length);
+      const masteryScore = completedTeamsList.length * 1000 + avgAcc;
+      submitGlobalScore('alltime', username, teamString, `${avgAcc}%`, `${completedTeamsList.length} Teams (${masteryScore} pts)`, masteryScore);
     }
-    
-    const masteryScore = completedTeamsList.length * 1000 + avgAcc;
-    submitGlobalScore('alltime', username, teamString, `${avgAcc}%`, `${completedTeamsList.length} Teams (${masteryScore} pts)`, masteryScore);
   }
 
   let rating = 'ROOKIE BALL';
@@ -6696,9 +6745,20 @@ function getInningOrdinal(inn) {
   return `${inn}th`;
 }
 
-function goToMainMenu() {
-  showTemporaryLoadingScreen("Returning to Menu...", 850, () => {
-    clearInterval(timerInterval);
+async function goToMainMenu() {
+  playMenuTransitionSound();
+  if (abStartOverlay && isOverlayShowing(abStartOverlay)) {
+    setAbStartOverlayActive(false);
+    await fadeOverlayOut(abStartOverlay);
+  }
+  if (abSummaryOverlay && isOverlayShowing(abSummaryOverlay)) {
+    await fadeOverlayOut(abSummaryOverlay);
+  }
+  if (scoreboardScreen && isOverlayShowing(scoreboardScreen)) {
+    await fadeOverlayOut(scoreboardScreen);
+  }
+
+  clearInterval(timerInterval);
     if (overviewTimerInterval) {
       clearInterval(overviewTimerInterval);
       overviewTimerInterval = null;
@@ -6724,6 +6784,7 @@ function goToMainMenu() {
       gameStatusBadge.classList.remove('opacity-100', 'pointer-events-auto');
     }
     if (abStartOverlay) {
+      setAbStartOverlayActive(false);
       abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
       abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
       const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
@@ -6780,16 +6841,14 @@ function goToMainMenu() {
     pitchHistory = [];
     currentAbStartHistoryIndex = 0;
     
-    if (!activeFavoriteTeam) {
-      transitionToState(STATES.WELCOME);
-    } else {
-      transitionToState(STATES.START);
-    }
-    
-    // Refresh dashboard metrics
-    updateChallengeProgressUI();
-    updateProfileStatsUI();
-  });
+  if (!activeFavoriteTeam) {
+    transitionToState(STATES.WELCOME);
+  } else {
+    transitionToState(STATES.START);
+  }
+
+  updateChallengeProgressUI();
+  updateProfileStatsUI();
 }
 
 function getMatchupNames(pitch) {
@@ -6818,7 +6877,7 @@ function getShortName(fullName) {
   return fullName;
 }
 
-function switchTab(tabName) {
+function switchTab(tabName, options = {}) {
   console.log('DEBUG: switchTab called with:', tabName);
   try {
     const tabs = ['play', 'leaderboard', 'stats'];
@@ -6841,13 +6900,37 @@ function switchTab(tabName) {
   if (tabName === 'stats') {
     updateProfileStatsUI();
   } else if (tabName === 'leaderboard') {
-    renderLeaderboard('weekly');
+    applyStandingsTabOptions(options);
+    renderLeaderboard(activeStandingsBoard);
   } else if (tabName === 'play') {
-    renderDailyCompeteDashboard();
     loadPlayTabRecentGames();
+    updateChallengeProgressUI();
   }
   } catch (err) {
     console.error('DEBUG ERROR: Error switching tab:', err);
+  }
+}
+
+function openStandingsTab(options = {}) {
+  switchTab('leaderboard', options);
+}
+
+function applyStandingsTabOptions(options = {}) {
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  if (options.board) activeStandingsBoard = options.board;
+  if (options.crewMetric) activeCrewMetric = options.crewMetric;
+  if (options.view === 'history') {
+    standingsViewMode = 'history';
+  } else if (options.view === 'alltime') {
+    standingsViewMode = 'alltime';
+  } else if (options.view === 'ranks') {
+    standingsViewMode = 'ranks';
+  }
+  if (options.periodKey) {
+    activeWeeklyPeriodKey = options.periodKey;
+    standingsViewMode = 'ranks';
+  } else if (standingsViewMode !== 'history' && (options.period === 'current' || !activeWeeklyPeriodKey)) {
+    activeWeeklyPeriodKey = meta.challengeWeekId;
   }
 }
 
@@ -7101,20 +7184,97 @@ function loadStreakAtBat(abIdx, isResume = false) {
   }, isResume);
 }
 
+function getAbPitches(abEntry) {
+  if (!abEntry) return [];
+  if (Array.isArray(abEntry)) return abEntry;
+  return abEntry.pitches || [];
+}
+
+function buildFilmRoomUrl(gamePk) {
+  return gamePk ? `https://www.mlb.com/video/game/${gamePk}` : "";
+}
+
+function buildUmpScorecardUrl(gamePk) {
+  return gamePk ? `https://umpscorecards.com/single_game/?game_id=${gamePk}` : "";
+}
+
+function isGenericExternalUrl(url, kind) {
+  if (!url) return true;
+  const normalized = url.replace(/\/+$/, "");
+  const genericFilm = new Set([
+    "https://www.mlb.com",
+    "https://www.mlb.com/video"
+  ]);
+  const genericUmp = new Set([
+    "https://umpscorecards.com",
+    "https://www.umpscorecards.com",
+    "https://umpscorecards.com/games"
+  ]);
+  return kind === "film" ? genericFilm.has(normalized) : genericUmp.has(normalized);
+}
+
+function normalizePlaylistAbs(rawABs, meta = {}) {
+  const defaultFilm = meta.filmRoomUrl || buildFilmRoomUrl(meta.gamePk);
+  const defaultUmp = meta.umpScorecardUrl || buildUmpScorecardUrl(meta.gamePk);
+
+  return rawABs.map((entry) => {
+    const pitches = getAbPitches(entry);
+    const firstPitch = pitches[0] || {};
+    const existing = Array.isArray(entry) ? {} : entry;
+    return {
+      ...existing,
+      gameIndex: existing.gameIndex ?? meta.gameIndex,
+      gamePk: existing.gamePk ?? meta.gamePk,
+      gameTitle: existing.gameTitle ?? meta.gameTitle,
+      filmRoomUrl: existing.filmRoomUrl || existing.film_room_url || defaultFilm,
+      umpScorecardUrl: existing.umpScorecardUrl || existing.ump_scorecard_url || defaultUmp,
+      pitcher: existing.pitcher || firstPitch.pitcher,
+      batter: existing.batter || firstPitch.batter,
+      pitches,
+      completed: existing.completed || false,
+      userCorrectCount: existing.userCorrectCount || 0,
+      userTotalCount: existing.userTotalCount || 0
+    };
+  });
+}
+
 function getRevisitedUrls(pitch, abData) {
   let filmRoomUrl = "https://www.mlb.com/video";
   let umpScorecardUrl = "https://www.umpscorecards.com";
 
-  const rawUmpUrl = abData?.umpScorecardUrl || abData?.ump_scorecard_url || "";
-  const rawFilmUrl = abData?.filmRoomUrl || abData?.film_room_url || "";
-  
-  let gameId = null;
+  let rawUmpUrl = abData?.umpScorecardUrl || abData?.ump_scorecard_url || "";
+  let rawFilmUrl = abData?.filmRoomUrl || abData?.film_room_url || "";
+
+  if (
+    abData?.gameIndex != null &&
+    WEEKLY_CHALLENGE_DATA[abData.gameIndex] &&
+    (isGenericExternalUrl(rawFilmUrl, "film") || isGenericExternalUrl(rawUmpUrl, "ump") || !rawFilmUrl || !rawUmpUrl)
+  ) {
+    const catalogGame = WEEKLY_CHALLENGE_DATA[abData.gameIndex];
+    if (!rawFilmUrl || isGenericExternalUrl(rawFilmUrl, "film")) {
+      rawFilmUrl = catalogGame.film_room_url || rawFilmUrl;
+    }
+    if (!rawUmpUrl || isGenericExternalUrl(rawUmpUrl, "ump")) {
+      rawUmpUrl = catalogGame.ump_scorecard_url || rawUmpUrl;
+    }
+  }
+
+  if (abData?.gamePk) {
+    if (!rawFilmUrl || isGenericExternalUrl(rawFilmUrl, "film")) {
+      rawFilmUrl = buildFilmRoomUrl(abData.gamePk);
+    }
+    if (!rawUmpUrl || isGenericExternalUrl(rawUmpUrl, "ump")) {
+      rawUmpUrl = buildUmpScorecardUrl(abData.gamePk);
+    }
+  }
+
+  let gameId = abData?.gamePk || null;
   const gameIdMatch = rawUmpUrl.match(/game_id=(\d+)/) || rawFilmUrl.match(/\/game\/(\d+)/);
   if (gameIdMatch) {
     gameId = gameIdMatch[1];
   }
 
-  if (rawUmpUrl) {
+  if (rawUmpUrl && !isGenericExternalUrl(rawUmpUrl, "ump")) {
     umpScorecardUrl = rawUmpUrl;
   } else if (gameId) {
     umpScorecardUrl = `https://umpscorecards.com/single_game/?game_id=${gameId}`;
@@ -7122,10 +7282,10 @@ function getRevisitedUrls(pitch, abData) {
     umpScorecardUrl = `https://umpscorecards.com/games/`;
   }
 
-  if (rawFilmUrl) {
+  if (rawFilmUrl && !isGenericExternalUrl(rawFilmUrl, "film")) {
     filmRoomUrl = rawFilmUrl;
   } else if (pitch && pitch.pitcher && pitch.batter) {
-    const queryStr = `${pitch.pitcher} vs ${pitch.batter}` + (pitch.inning ? ` Inning ${pitch.inning}` : '');
+    const queryStr = `${pitch.pitcher} vs ${pitch.batter}` + (pitch.inning ? ` Inning ${pitch.inning}` : "");
     filmRoomUrl = `https://www.mlb.com/video/search?q=${encodeURIComponent(queryStr)}`;
   }
 
@@ -7659,7 +7819,7 @@ async function showStreakSummaryScreen() {
 
   if (username) {
     const statsKey = getStatsStorageKey(username);
-    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
     
     const todayStr = new Date().toISOString().split('T')[0];
     if (!localStats.streakHistory) localStats.streakHistory = {};
@@ -7799,7 +7959,8 @@ async function updateAbSummaryLeaderboardSnippet(username) {
   if (!abSummaryLeaderboardSnippet || !username) return;
   abSummaryLeaderboardSnippet.textContent = '…';
   try {
-    const { rows } = await getLeaderboardRows('weekly', username);
+    const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+    const { rows } = await getLeaderboardRows('weekly', username, meta.challengeWeekId);
     const me = rows.find((r) => r.isUser);
     abSummaryLeaderboardSnippet.textContent = me
       ? `#${me.rank} · ${me.accuracy}`
@@ -7814,7 +7975,8 @@ async function updateAbStartLeaderboardSnippet(username) {
   if (!startLeaderboardEl || !username) return;
   startLeaderboardEl.textContent = '…';
   try {
-    const { rows } = await getLeaderboardRows('weekly', username);
+    const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+    const { rows } = await getLeaderboardRows('weekly', username, meta.challengeWeekId);
     const me = rows.find((r) => r.isUser);
     startLeaderboardEl.textContent = me
       ? `#${me.rank} · ${me.accuracy}`
@@ -7854,7 +8016,6 @@ function showLevelUpCelebration(newLevel, oldLevel) {
     card.classList.add('animate-shake');
   }
 
-  // Engage app launch loader as translucent backdrop overlay
   const loader = document.getElementById('app-launch-loader');
   const subtext = document.getElementById('loader-subtext');
   if (loader) {
@@ -7863,6 +8024,8 @@ function showLevelUpCelebration(newLevel, oldLevel) {
     loader.style.pointerEvents = 'none';
     loader.style.opacity = '0.85';
   }
+
+  const dismissPromotionLoader = () => hideAppLaunchLoader();
 
   if (levelUpOverlay && levelUpBadge && levelUpTitle) {
     // Replace standard level badge with our rotating large rank badge SVG
@@ -7890,17 +8053,11 @@ function showLevelUpCelebration(newLevel, oldLevel) {
       levelUpOverlay.classList.add('opacity-0');
       levelUpOverlay.setAttribute('aria-hidden', 'true');
       
-      // Fade out and hide backdrop loader
-      if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-          loader.style.display = 'none';
-          loader.style.pointerEvents = 'auto';
-        }, 600);
-      }
+      dismissPromotionLoader();
     }, milestone ? 4000 : 3000);
   } else {
     showLevelUpToast(newLevel);
+    dismissPromotionLoader();
   }
 }
 
@@ -7936,7 +8093,7 @@ async function showAtBatSummaryScreen(outcomeText) {
   abSummaryTitle.textContent = displayOutcome.toUpperCase();
   
   if (abSummarySubtitle) {
-    if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+    if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
       const total = weeklyPlaylistABs.length || 200;
       abSummarySubtitle.textContent = `Finished At-Bat ${activeWeeklyAbIndex + 1} of ${total}`;
       abSummarySubtitle.classList.remove('hidden');
@@ -7958,18 +8115,10 @@ async function showAtBatSummaryScreen(outcomeText) {
   
   const targetPitch = lastCompletedPitch || currentPitch;
   if (abSummaryPitcherHandBadge && targetPitch) {
-    const pH = (targetPitch.pitcher_hand || "R").includes("L") ? "LHP" : "RHP";
-    abSummaryPitcherHandBadge.textContent = pH;
-    abSummaryPitcherHandBadge.className = pH === "RHP"
-      ? "ab-summary-hand-badge ab-summary-hand-badge--rhp"
-      : "ab-summary-hand-badge ab-summary-hand-badge--lhp";
+    applyHandBadge(abSummaryPitcherHandBadge, targetPitch.pitcher_hand, 'pitcher');
   }
   if (abSummaryBatterHandBadge && targetPitch) {
-    const bH = (targetPitch.batter_hand || "R").includes("L") ? "LHB" : "RHB";
-    abSummaryBatterHandBadge.textContent = bH;
-    abSummaryBatterHandBadge.className = bH === "LHB"
-      ? "ab-summary-hand-badge ab-summary-hand-badge--lhb"
-      : "ab-summary-hand-badge ab-summary-hand-badge--rhb";
+    applyHandBadge(abSummaryBatterHandBadge, targetPitch.batter_hand, 'batter');
   }
 
   fetchPlayerMlbId(pitcher).then(pitcherId => {
@@ -8030,7 +8179,7 @@ async function showAtBatSummaryScreen(outcomeText) {
 
   if (username) {
     const statsKey = getStatsStorageKey(username);
-    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
     
     const updateStatsUI = (stats) => {
       const totalXp = stats.xp || 0;
@@ -8126,7 +8275,7 @@ async function showAtBatSummaryScreen(outcomeText) {
   }
 
   // Weekly challenge dock (footer) — save stats + animate progress
-  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+  if (gameMode === 'weekly_challenge') {
     if (abSummaryWeeklyChallengeDetails) {
       abSummaryWeeklyChallengeDetails.classList.remove('hidden');
     }
@@ -8200,16 +8349,9 @@ async function showAtBatSummaryScreen(outcomeText) {
     abSummaryWeeklyChallengeDetails.classList.add('hidden');
   }
 
-  // Connect film room and umpire scorecard URLs specifically to this at-bat's game
-  let urls;
-  if ((gameMode === 'weekly_challenge' || gameMode === 'daily_compete') && weeklyPlaylistABs[activeWeeklyAbIndex]) {
-    const abData = weeklyPlaylistABs[activeWeeklyAbIndex];
-    urls = getRevisitedUrls(targetPitch, abData);
-  } else {
-    // Fallback for standard or Orioles game
-    const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex] || WEEKLY_CHALLENGE_DATA[0];
-    urls = getRevisitedUrls(targetPitch, gameData);
-  }
+  // Connect film room and umpire scorecard URLs to the completed at-bat's source game
+  const abEntry = weeklyPlaylistABs[activeWeeklyAbIndex] || null;
+  const urls = getRevisitedUrls(targetPitch, abEntry);
   if (abSummaryFilmLink) abSummaryFilmLink.href = urls.filmRoomUrl;
   if (abSummaryScorecardLink) abSummaryScorecardLink.href = urls.umpScorecardUrl;
 
@@ -8263,10 +8405,12 @@ function advanceNextAtBat() {
   currentAbStartHistoryIndex = pitchHistory.length;
   
   // Advance in weekly challenge playlist
-  if (gameMode === 'weekly_challenge' || gameMode === 'daily_compete') {
+  if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
     activeWeeklyAbIndex++;
     saveChallengeSessionToLocal();
-    updateChallengeProgressUI();
+    if (gameMode === 'weekly_challenge') {
+      updateChallengeProgressUI();
+    }
     loadWeeklyAtBat(activeWeeklyAbIndex);
   } else if (gameMode === 'daily_streak') {
     activeStreakAbIndex++;
@@ -8323,10 +8467,10 @@ function saveChallengeSessionToLocal() {
 
   const data = {
     completedABsCount,
-    dnfDisconnectsCount,
     weeklyPlaylistABs: sanitizedPlaylist,
     activeWeeklyAbIndex,
     activeGameIndex,
+    gamePk: activeMlbGamePk,
     profileStats: {
       avgAccuracy: 92.5,
       maxStreak: 12
@@ -8350,8 +8494,10 @@ function saveChallengeSessionToLocal() {
   }
   
   let key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
-  if (gameMode === 'daily_compete') {
-    key = username ? `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${activeDailyDate}` : `pitch_ump_daily_compete_mvp_guest_${activeDailyDate}`;
+  if (gameMode === 'mlb_game' && activeMlbGamePk) {
+    key = username
+      ? `pitch_ump_mlb_game_mvp_${username.toUpperCase()}_mlb_${activeMlbGamePk}`
+      : `pitch_ump_mlb_game_mvp_guest_mlb_${activeMlbGamePk}`;
   }
   
   try {
@@ -8363,12 +8509,7 @@ function saveChallengeSessionToLocal() {
   if (username) {
     getGlobalUserStats(username).then(stats => {
       try {
-        if (gameMode === 'daily_compete') {
-          if (!stats.dailyProgress) stats.dailyProgress = {};
-          stats.dailyProgress[activeDailyDate] = data;
-        } else {
-          stats.challengeProgress = data;
-        }
+        stats.challengeProgress = data;
         saveGlobalUserStats(username, stats);
       } catch (err) {
         console.error("Failed to update global user stats with active challenge:", err);
@@ -8454,12 +8595,11 @@ function getMondayDateString(d = new Date()) {
 
 async function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
-  
-  // Weekly Challenge Auto-Reset Check
-  const currentWeekMonday = getMondayDateString();
+  weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  const currentWeekId = weeklyChallengeMeta.challengeWeekId;
   const storedWeek = localStorage.getItem('ump_weekly_challenge_week');
-  if (storedWeek !== currentWeekMonday) {
-    console.log("Weekly challenge week changed! Stored:", storedWeek, "Current Monday:", currentWeekMonday, "Resetting weekly challenge progress.");
+  if (storedWeek !== currentWeekId) {
+    console.log('Weekly challenge week changed! Stored:', storedWeek, 'Current:', currentWeekId, 'Resetting weekly challenge progress.');
     const userSuffix = username ? username.toUpperCase() : 'GUEST';
     localStorage.removeItem(`pitch_ump_challenge_mvp_${userSuffix}`);
     localStorage.removeItem('pitch_ump_challenge_mvp_guest');
@@ -8475,7 +8615,7 @@ async function loadSavedSessionFromLocal() {
     activeWeeklyAbIndex = 0;
     activeGameIndex = 0;
     weeklyPlaylistABs = extractAtBatsFromWeeklyData();
-    localStorage.setItem('ump_weekly_challenge_week', currentWeekMonday);
+    localStorage.setItem('ump_weekly_challenge_week', currentWeekId);
   }
 
   if (!username) {
@@ -8521,7 +8661,6 @@ async function loadSavedSessionFromLocal() {
     try {
       const data = JSON.parse(rawWeekly);
       if (data.completedABsCount) completedABsCount = data.completedABsCount;
-      if (data.dnfDisconnectsCount) dnfDisconnectsCount = data.dnfDisconnectsCount;
       if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
       if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
       if (data.weeklyPlaylistABs && data.weeklyPlaylistABs.length > 0) {
@@ -8750,13 +8889,14 @@ function updateChallengeProgressUI() {
       btnStartWeeklyChallenge.textContent = "Start Challenge";
     }
   }
+
+  updateWeeklyChallengeRankSnippet();
 }
 
 function updateProfileStatsUI(animateXp = false) {
   const avgAccEl = document.getElementById('stats-avg-accuracy');
   const maxStrEl = document.getElementById('stats-max-streak');
   const compWkEl = document.getElementById('stats-completed-weekly');
-  const dnfEl = document.getElementById('stats-dnfs');
   const historyTableBody = document.getElementById('history-table-body');
   
   const username = localStorage.getItem('ump_username');
@@ -8774,11 +8914,10 @@ function updateProfileStatsUI(animateXp = false) {
     if (compWkEl) compWkEl.textContent = "--";
     const statsLifetimeChallenges = document.getElementById('stats-lifetime-challenges');
     if (statsLifetimeChallenges) statsLifetimeChallenges.textContent = "--";
-    if (dnfEl) dnfEl.textContent = "0";
     if (historyTableBody) historyTableBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500 font-mono-tech text-[10px]">Log in to view stats</td></tr>';
     
     // Reset Top-Bar HUD for Guest
-    if (hudHandle) hudHandle.textContent = "GUEST_UMPIRE";
+    updateHudHandleText(hudHandle, "GUEST_UMPIRE");
     if (hudFavBadge) {
       hudFavBadge.textContent = "NONE";
       hudFavBadge.className = "text-[8px] font-bold px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded uppercase font-mono-tech";
@@ -8863,10 +9002,10 @@ function updateProfileStatsUI(animateXp = false) {
   
   const normalized = normalizeHandle(username);
   const statsKey = getStatsStorageKey(normalized);
-  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   
   // Set handle
-  if (hudHandle) hudHandle.textContent = normalized;
+  updateHudHandleText(hudHandle, normalized);
   
   // Set favorite team & logo
   if (hudFavBadge) {
@@ -8897,14 +9036,11 @@ function updateProfileStatsUI(animateXp = false) {
     history.forEach(h => {
       const isWeekly = h.gameName && h.gameName.includes("Weekly");
       const isStreak = h.gameName && h.gameName.includes("Streak");
-      const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
       
       if (isWeekly) {
         xp += (h.correctCalls || 0) * 10;
       } else if (isStreak) {
         xp += (h.correctCalls || 0) * 15;
-      } else if (isDailyCompete) {
-        xp += (h.correctCalls || 0) * 12;
       } else {
         xp += (h.correctCalls || 0) * 5;
       }
@@ -9016,10 +9152,6 @@ function updateProfileStatsUI(animateXp = false) {
   if (statsLifetimeChallenges) {
     statsLifetimeChallenges.textContent = `${userStats.completedWeekly || 0} Games`;
   }
-  if (dnfEl) {
-    dnfEl.textContent = userStats.dnfs !== undefined ? userStats.dnfs : dnfDisconnectsCount;
-  }
-  
   // SVG UmpCard Dots Plotting
   const dotGroup = document.getElementById('profile-umpcard-dots');
   const recentPitches = userStats.recentPitches || [];
@@ -9546,7 +9678,8 @@ function extractAtBatsFromWeeklyData() {
   });
   
   // Deterministic Mulberry32 generator
-  const randGenerator = mulberry32(20260525);
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  const randGenerator = mulberry32(meta.shuffleSeed);
   const deterministicShuffle = (arr) => {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(randGenerator() * (i + 1));
@@ -9578,6 +9711,7 @@ function extractAtBatsFromWeeklyData() {
 
 async function startWeeklyChallenge() {
   if (!requireLoggedInUser()) return;
+  hideChallengeDetailModal();
   gameMode = 'weekly_challenge';
   cancelAutoPlayPitch();
   isTransitioningToSummary = false;
@@ -9744,7 +9878,7 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   activeWeeklyAbIndex = abIdx;
   const abData = weeklyPlaylistABs[activeWeeklyAbIndex];
   
-  pitchesList = abData.pitches;
+  pitchesList = getAbPitches(abData);
   if (!isResume) {
     activeAbEnded = false;
     currentPitchIndex = 0;
@@ -9786,28 +9920,18 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   saveChallengeSessionToLocal();
   saveGameProgress();
   
-  if (isResume) {
-    transitionToState(STATES.IDLE);
+  const enterGameplay = () => {
     showAtBatStartScreen(() => {
-      // After user confirms or timer expires, start auto-play
       if (currentState === STATES.IDLE && !isGamePaused) {
         autoPlayTimeout = setTimeout(() => {
           triggerPitchRelease();
         }, 600);
       }
-    }, true);
-  } else {
-    // Show At-Bat Start Preview with matchup, then transition to IDLE
-    transitionToState(STATES.IDLE);
-    showAtBatStartScreen(() => {
-      // After user confirms or timer expires, start auto-play
-      if (currentState === STATES.IDLE && !isGamePaused) {
-        autoPlayTimeout = setTimeout(() => {
-          triggerPitchRelease();
-        }, 600);
-      }
-    }, false);
-  }
+    }, isResume);
+  };
+
+  transitionToState(STATES.IDLE, { deferNavUpdate: true });
+  enterGameplay();
 }
 
 function showUmpireScorecardModal() {
@@ -9977,7 +10101,7 @@ async function updateDailyStreakStatusUI() {
   const rankEl = document.getElementById('daily-streak-rank');
   
   const statsKey = `pitch_ump_stats_${username.toUpperCase()}`;
-  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   
   if (historicalEl) {
     historicalEl.textContent = `${userStats.maxStreak || 0} Pitches`;
@@ -10033,6 +10157,46 @@ function resumeAutoPlayPitch() {
 }
 
 // Local session load complete
+
+const MENU_CROSSFADE_MS = 320;
+
+function isOverlayShowing(el) {
+  return el && el.classList.contains('opacity-100') && !el.classList.contains('hidden');
+}
+
+function fadeOverlayOut(el, durationMs = MENU_CROSSFADE_MS) {
+  if (!el || !isOverlayShowing(el)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      el.classList.add('hidden');
+      resolve();
+    };
+    const onEnd = (e) => {
+      if (e.target !== el || e.propertyName !== 'opacity') return;
+      el.removeEventListener('transitionend', onEnd);
+      done();
+    };
+    el.addEventListener('transitionend', onEnd);
+    setTimeout(done, durationMs + 80);
+    el.classList.add('opacity-0', 'pointer-events-none');
+    el.classList.remove('opacity-100', 'pointer-events-auto');
+  });
+}
+
+function fadeOverlayIn(el) {
+  if (!el) return;
+  el.classList.remove('hidden', 'scale-95');
+  el.classList.add('opacity-0', 'pointer-events-none', 'scale-100');
+  el.classList.remove('opacity-100', 'pointer-events-auto');
+  void el.offsetWidth;
+  requestAnimationFrame(() => {
+    el.classList.remove('opacity-0', 'pointer-events-none');
+    el.classList.add('opacity-100', 'pointer-events-auto');
+  });
+}
 
 function setOverlayVisible(el, visible) {
   if (!el) return;
@@ -10973,12 +11137,515 @@ function highlightPitchInSummary(index) {
   updateAbSummaryZoneDistance(item);
 }
 
+async function getLeaderboardRows(board, username, period) {
+  return apiFetchLeaderboard(board, username, period);
+}
+
+async function getCrewLeaderboardRows(metric, username) {
+  return apiFetchCrewLeaderboard(metric, username);
+}
+
+async function fetchLeaderboardWithMock(board, username, period) {
+  const handle = username || localStorage.getItem('ump_username') || 'YOU';
+  try {
+    const result = await getLeaderboardRows(board, handle, period);
+    if (result.rows.length > 0) {
+      return { ...result, isMock: false };
+    }
+  } catch (err) {
+    console.warn(`Leaderboard ${board} unavailable, using sample data:`, err);
+  }
+
+  const rows =
+    board === 'weekly'
+      ? getMockWeeklyRows(handle, period)
+      : board === 'daily'
+        ? getMockDailyRows(handle)
+        : getMockAlltimeRows(handle);
+
+  return { rows, source: 'mock', isMock: true, periodKey: period };
+}
+
+async function fetchCrewWithMock(metric, username) {
+  const handle = username || localStorage.getItem('ump_username') || 'YOU';
+  try {
+    const result = await getCrewLeaderboardRows(metric, handle);
+    if (result.rows.length > 0) {
+      return { ...result, isMock: false };
+    }
+  } catch (err) {
+    console.warn(`Crew leaderboard unavailable, using sample data:`, err);
+  }
+
+  return { rows: getMockCrewRows(metric, handle), source: 'mock', isMock: true, metric };
+}
+
+async function fetchWeeklyPeriodsWithMock() {
+  try {
+    const result = await getLeaderboardPeriods('weekly');
+    if (result.periods?.length > 0) {
+      return { ...result, isMock: false };
+    }
+  } catch (err) {
+    console.warn('Weekly history unavailable, using sample data:', err);
+  }
+
+  return {
+    periods: getMockWeeklyPeriods(getCurrentChallengeWeekId()),
+    source: 'mock',
+    isMock: true,
+  };
+}
+
+async function getLeaderboardPeriods(board) {
+  return apiFetchLeaderboardPeriods(board);
+}
+
+function getCurrentChallengeWeekId() {
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  return meta.challengeWeekId;
+}
+
+function getActiveWeeklyPeriodKey() {
+  return activeWeeklyPeriodKey || getCurrentChallengeWeekId();
+}
+
+function syncStandingsBoardTabs(type) {
+  const tabs = [
+    { btn: leaderBtnWeekly, id: 'weekly' },
+    { btn: leaderBtnDaily, id: 'daily' },
+    { btn: leaderBtnCrew, id: 'crew' },
+  ];
+  tabs.forEach(({ btn, id }) => {
+    if (!btn) return;
+    const active = id === type;
+    btn.classList.toggle('ump-tab--active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
+function syncStandingsContextBar(type) {
+  const currentWeek = getCurrentChallengeWeekId();
+  const periodKey = getActiveWeeklyPeriodKey();
+  const isWeekly = type === 'weekly';
+  const isStreak = type === 'daily';
+  const isHistory = isWeekly && standingsViewMode === 'history';
+  const isAlltime = isStreak && standingsViewMode === 'alltime';
+  const isPastWeek = isWeekly && !isHistory && periodKey !== currentWeek;
+
+  if (standingsCrewSeg) {
+    standingsCrewSeg.classList.toggle('hidden', type !== 'crew');
+  }
+  const contextBar = document.getElementById('standings-context-bar');
+  if (contextBar) {
+    contextBar.classList.toggle('hidden', type === 'crew');
+  }
+  if (btnStandingsBack) {
+    btnStandingsBack.classList.toggle(
+      'hidden',
+      type === 'crew' || (!isHistory && !isAlltime && !isPastWeek)
+    );
+  }
+  if (btnStandingsHistory) {
+    const showSecondary = (isWeekly && !isHistory && !isPastWeek) || (isStreak && !isAlltime);
+    btnStandingsHistory.classList.toggle('hidden', !showSecondary);
+    if (showSecondary) {
+      btnStandingsHistory.textContent = isWeekly ? 'History' : 'All-time';
+    }
+  }
+  if (standingsContextLabel) {
+    if (isHistory) {
+      standingsContextLabel.textContent = 'Past weekly challenges';
+    } else if (isAlltime) {
+      standingsContextLabel.textContent = 'All-time streak leaders';
+    } else if (type === 'weekly') {
+      standingsContextLabel.textContent =
+        periodKey === currentWeek ? `${formatWeekLabel(currentWeek)} · this week` : `${formatWeekLabel(periodKey)} · archived`;
+    } else if (type === 'daily') {
+      standingsContextLabel.textContent = "Today's streak board";
+    } else if (type === 'crew') {
+      const crewLabels = {
+        rank: 'Crew Chief · sorted by level (XP)',
+        wins: 'Crew Chief · sorted by weekly wins',
+        streak: 'Crew Chief · sorted by best streak',
+      };
+      standingsContextLabel.textContent = crewLabels[activeCrewMetric] || 'Crew Chief standings';
+    }
+  }
+}
+
+function getStandingsHandleLabel(name) {
+  return (name || '').replace(/\s*\(YOU\)\s*/i, '').trim() || 'Umpire';
+}
+
+function getStandingsRowLevel(row) {
+  if (row.xp) return getLevelFromXp(row.xp);
+  if (activeStandingsBoard === 'crew' && activeCrewMetric === 'rank' && row.score_raw) {
+    return Math.max(1, Number(row.score_raw) || 1);
+  }
+  return Math.max(1, Math.min(100, Math.round(50 - row.rank * 1.5 + (row.score_raw || 0) / 100)));
+}
+
+function getStandingsRowXp(row, level) {
+  if (row.xp) return row.xp;
+  if (activeStandingsBoard === 'crew' && activeCrewMetric === 'rank' && row.score_raw) {
+    return Math.max(0, (level - 1) * XP_PER_LEVEL + Math.floor(XP_PER_LEVEL * 0.4));
+  }
+  return Math.max(0, (level - 1) * XP_PER_LEVEL + 250);
+}
+
+let standingsXpPopoverAnchor = null;
+
+function hideStandingsXpPopover() {
+  const pop = document.getElementById('standings-xp-popover');
+  if (!pop) return;
+  pop.classList.add('hidden');
+  pop.setAttribute('aria-hidden', 'true');
+  standingsXpPopoverAnchor = null;
+}
+
+function showStandingsXpPopover(anchor, { handle, xp }) {
+  const pop = document.getElementById('standings-xp-popover');
+  if (!pop || !anchor) return;
+
+  const safeXp = Number.isFinite(xp) ? xp : 0;
+  const progress = getXpProgressInLevel(safeXp);
+  const tier = getLevelTier(progress.level);
+
+  const badgeEl = document.getElementById('standings-xp-popover-badge');
+  const handleEl = document.getElementById('standings-xp-popover-handle');
+  const tierEl = document.getElementById('standings-xp-popover-tier');
+  const levelEl = document.getElementById('standings-xp-popover-level');
+  const xpEl = document.getElementById('standings-xp-popover-xp');
+
+  if (badgeEl) badgeEl.innerHTML = getRankIconHtml(progress.level);
+  if (handleEl) handleEl.textContent = handle;
+  if (tierEl) tierEl.textContent = tier.title;
+  if (levelEl) levelEl.textContent = `Level ${progress.level}`;
+  if (xpEl) xpEl.textContent = `${safeXp.toLocaleString()} XP`;
+
+  pop.classList.remove('hidden');
+  pop.setAttribute('aria-hidden', 'false');
+  standingsXpPopoverAnchor = anchor;
+
+  const rect = anchor.getBoundingClientRect();
+  const popWidth = pop.offsetWidth || 224;
+  const popHeight = pop.offsetHeight || 160;
+  let top = rect.bottom + 8;
+  let left = rect.left + rect.width / 2 - popWidth / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - popWidth - 8));
+  if (top + popHeight > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - popHeight - 8);
+  }
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
+}
+
+function bindStandingsLevelButtons() {
+  if (!leaderboardList) return;
+  leaderboardList.querySelectorAll('.standings-row__level').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const handle = btn.getAttribute('data-handle') || 'Umpire';
+      const xp = Number(btn.getAttribute('data-xp')) || 0;
+      const pop = document.getElementById('standings-xp-popover');
+      if (standingsXpPopoverAnchor === btn && pop && !pop.classList.contains('hidden')) {
+        hideStandingsXpPopover();
+        return;
+      }
+      showStandingsXpPopover(btn, { handle, xp });
+    });
+  });
+}
+
+const STANDINGS_MEDAL_STYLES = {
+  1: {
+    from: '#fff8dc',
+    mid: '#e8c547',
+    to: '#9a7a1e',
+    stroke: '#e8c547',
+    text: '#2a1800',
+    glow: 'drop-shadow(0 0 6px rgba(232, 197, 71, 0.55))',
+  },
+  2: {
+    from: '#f8fafc',
+    mid: '#94a3b8',
+    to: '#64748b',
+    stroke: '#cbd5e1',
+    text: '#1e293b',
+    glow: '',
+  },
+  3: {
+    from: '#f0c896',
+    mid: '#cd7f32',
+    to: '#8b5a2b',
+    stroke: '#cd7f32',
+    text: '#f4ecd8',
+    textStroke: '#2a1800',
+    glow: '',
+  },
+};
+
+function getStandingsMedalHtml(rank) {
+  if (rank < 1 || rank > 3) return `#${rank}`;
+
+  const info = STANDINGS_MEDAL_STYLES[rank];
+  const gradId = `standings-medal-${rank}-${Math.floor(Math.random() * 100000)}`;
+  const fontSize = rank === 1 ? '10px' : '9px';
+  const filterAttr = info.glow ? ` style="filter:${info.glow}"` : '';
+  const stitchAccent =
+    rank === 1
+      ? '<line x1="16" y1="2" x2="16" y2="6" stroke="#c41e3a" stroke-width="1.5" stroke-linecap="round"/>'
+      : '';
+  const textStroke = info.textStroke
+    ? ` stroke="${info.textStroke}" stroke-width="0.85" paint-order="stroke fill"`
+    : '';
+
+  return `
+    <svg class="standings-row__medal standings-row__medal--${rank}" viewBox="0 0 32 32"${filterAttr} aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${info.from}" />
+          <stop offset="55%" stop-color="${info.mid}" />
+          <stop offset="100%" stop-color="${info.to}" />
+        </linearGradient>
+      </defs>
+      <polygon points="16,2 30,9 30,23 16,30 2,23 2,9" fill="url(#${gradId})" stroke="${info.stroke}" stroke-width="1.2"/>
+      <polygon points="16,4 27,10 27,22 16,28 5,22 5,10" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="0.75"/>
+      ${stitchAccent}
+      <text x="16" y="20" font-family="'Press Start 2P', monospace" font-size="${fontSize}" fill="${info.text}" text-anchor="middle"${textStroke}>${rank}</text>
+    </svg>`;
+}
+
+function formatLeaderboardRank(rank) {
+  if (rank >= 1 && rank <= 3) {
+    return getStandingsMedalHtml(rank);
+  }
+  return `#${rank}`;
+}
+
+function getStandingsScoreClass(type) {
+  if (type === 'daily') return 'standings-row__stat--amber';
+  if (type === 'crew') return 'standings-row__stat--purple';
+  return '';
+}
+
+function renderStandingsList(rows, type, columns, isMock = false) {
+  if (!leaderboardList) return;
+
+  hideStandingsXpPopover();
+  leaderboardList.classList.toggle('standings-list--mock', isMock);
+  leaderboardList.classList.remove('standings-list--history');
+  const isCrewRank = type === 'crew' && activeCrewMetric === 'rank';
+  leaderboardList.classList.toggle('standings-list--crew-rank', isCrewRank);
+
+  const scoreClass = getStandingsScoreClass(type);
+  const scoreLabel = columns.find((c) => c.key === 'score')?.label || 'Score';
+
+  const header = `
+    <div class="standings-list-header">
+      <span>#</span>
+      <span>Lvl</span>
+      <span>Name</span>
+      ${isCrewRank ? '' : `<span class="text-center">${scoreLabel}</span>`}
+    </div>
+  `;
+
+  const body = rows
+    .map((r) => {
+      const pLevel = getStandingsRowLevel(r);
+      const xp = getStandingsRowXp(r, pLevel);
+      const handle = getStandingsHandleLabel(r.name);
+      const metaLine = isCrewRank ? '' : `<div class="standings-row__meta">${r.accuracy}</div>`;
+      const scoreCell = isCrewRank
+        ? ''
+        : `<div class="standings-row__stat ${scoreClass}"><strong>${r.score}</strong></div>`;
+
+      return `
+        <div class="standings-row ${r.isUser ? 'standings-row--you' : ''}" role="listitem">
+          <div class="standings-row__rank">${formatLeaderboardRank(r.rank)}</div>
+          <button type="button" class="standings-row__level" data-handle="${handle}" data-xp="${xp}" data-level="${pLevel}" aria-label="View ${handle} level and XP">
+            ${getRankIconHtml(pLevel)}
+          </button>
+          <div class="standings-row__main">
+            <span class="standings-row__name-text">${handle}${r.isUser ? ' <span class="text-[var(--retro-grass)]">(you)</span>' : ''}</span>
+            ${metaLine}
+          </div>
+          ${scoreCell}
+        </div>
+      `;
+    })
+    .join('');
+
+  leaderboardList.innerHTML = header + body;
+  bindStandingsLevelButtons();
+}
+
+function renderWeeklyHistoryList(periods, isMock = false) {
+  if (!leaderboardList) return;
+
+  hideStandingsXpPopover();
+  leaderboardList.classList.toggle('standings-list--mock', isMock);
+  leaderboardList.classList.add('standings-list--history');
+  leaderboardList.classList.remove('standings-list--crew-rank');
+
+  const currentWeek = getCurrentChallengeWeekId();
+  const header = `
+    <div class="standings-list-header">
+      <span>Week</span>
+      <span>Winner</span>
+      <span class="text-center">Score</span>
+    </div>
+  `;
+
+  if (!periods.length) {
+    leaderboardList.innerHTML = `${header}<div class="standings-empty">No completed weekly challenges yet</div>`;
+    return;
+  }
+
+  const body = periods
+    .map((p) => {
+      const isCurrent = p.periodKey === currentWeek;
+      const winner = p.winnerHandle || '—';
+      return `
+        <button type="button" class="standings-row standings-row--clickable w-full text-left" data-period-key="${p.periodKey}" role="listitem">
+          <div class="standings-row__rank">${isCurrent ? 'Now' : p.periodKey.replace(/^\d+-W/, 'W')}</div>
+          <div class="standings-row__main">
+            <span class="standings-row__name-text">${winner}</span>
+            <div class="standings-row__meta">${p.winnerAccuracy || '—'} · ${p.entryCount} umpire${p.entryCount === 1 ? '' : 's'}</div>
+          </div>
+          <div class="standings-row__stat"><strong>${p.winnerScore || '—'}</strong></div>
+        </button>
+      `;
+    })
+    .join('');
+
+  leaderboardList.innerHTML = header + body;
+  leaderboardList.querySelectorAll('[data-period-key]').forEach((el) => {
+    el.addEventListener('click', () => {
+      activeWeeklyPeriodKey = el.getAttribute('data-period-key');
+      standingsViewMode = 'ranks';
+      renderLeaderboard('weekly');
+    });
+  });
+}
+
+function renderStandingsEmpty(source, message) {
+  const msg =
+    message ||
+    (source === 'offline'
+      ? 'Could not load standings — use npm run dev:api locally'
+      : 'No scores for this period yet');
+  if (leaderboardList) {
+    leaderboardList.classList.remove('standings-list--mock');
+    leaderboardList.innerHTML = `<div class="standings-empty">${msg}</div>`;
+  }
+}
+
+function renderStandingsLoading() {
+  if (leaderboardList) {
+    hideStandingsXpPopover();
+    leaderboardList.classList.remove('standings-list--mock', 'standings-list--crew-rank', 'standings-list--history');
+    leaderboardList.innerHTML = '<div class="standings-loading">Loading…</div>';
+  }
+}
+
+async function renderLeaderboard(type) {
+  if (!leaderboardList) return;
+
+  activeStandingsBoard = type;
+  syncStandingsBoardTabs(type);
+  syncStandingsContextBar(type);
+  renderStandingsLoading();
+
+  if (type === 'weekly' && standingsViewMode === 'history') {
+    try {
+      const result = await fetchWeeklyPeriodsWithMock();
+      cachedWeeklyPeriods = result.periods || [];
+      renderWeeklyHistoryList(cachedWeeklyPeriods, result.isMock);
+    } catch (err) {
+      console.warn('Error loading weekly history:', err);
+      renderWeeklyHistoryList(getMockWeeklyPeriods(getCurrentChallengeWeekId()), true);
+    }
+    return;
+  }
+
+  let boardConfig =
+    type === 'daily' && standingsViewMode === 'alltime'
+      ? STANDINGS_BOARDS.find((b) => b.id === 'streak_alltime')
+      : STANDINGS_BOARDS.find((b) => b.id === type);
+  boardConfig = boardConfig || STANDINGS_BOARDS[0];
+  let columns = boardConfig.columns || [];
+  if (type === 'crew') {
+    const sub = boardConfig.subBoards?.find((s) => s.metric === activeCrewMetric) || boardConfig.subBoards?.[0];
+    columns = sub?.columns || columns;
+  }
+
+  const activeHandle = localStorage.getItem('ump_username') || 'YOU';
+  let rows = [];
+  let isMock = false;
+
+  try {
+    if (type === 'crew') {
+      const result = await fetchCrewWithMock(activeCrewMetric, activeHandle);
+      rows = result.rows;
+      isMock = result.isMock;
+    } else if (type === 'weekly') {
+      const period = getActiveWeeklyPeriodKey();
+      const result = await fetchLeaderboardWithMock('weekly', activeHandle, period);
+      rows = result.rows;
+      isMock = result.isMock;
+    } else if (standingsViewMode === 'alltime') {
+      const result = await fetchLeaderboardWithMock('alltime', activeHandle);
+      rows = result.rows;
+      isMock = result.isMock;
+    } else {
+      const result = await fetchLeaderboardWithMock('daily', activeHandle);
+      rows = result.rows;
+      isMock = result.isMock;
+    }
+  } catch (err) {
+    console.warn('Error loading leaderboard:', err);
+    renderStandingsEmpty('offline');
+    return;
+  }
+
+  if (rows.length === 0) {
+    renderStandingsEmpty('empty');
+    return;
+  }
+
+  renderStandingsList(rows, type, columns, isMock);
+}
+
+async function updateWeeklyChallengeRankSnippet() {
+  const snippetEl = document.getElementById('weekly-challenge-rank-snippet');
+  if (!snippetEl) return;
+  const username = localStorage.getItem('ump_username');
+  if (!username) {
+    snippetEl.classList.add('hidden');
+    return;
+  }
+  snippetEl.classList.remove('hidden');
+  snippetEl.textContent = 'Loading rank…';
+  try {
+    const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+    const { rows } = await getLeaderboardRows('weekly', username, meta.challengeWeekId);
+    const me = rows.find((r) => r.isUser);
+    snippetEl.textContent = me ? `Your rank: #${me.rank} · ${me.accuracy}` : 'Complete the challenge to rank';
+  } catch {
+    snippetEl.textContent = 'Rank unavailable offline';
+  }
+}
+
 async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScore) {
   if (!name || name.toUpperCase() === 'YOU' || name.toUpperCase() === 'GUEST' || name.trim() === '') return;
   const board = type === 'streak' ? 'daily' : type;
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
   try {
     await apiSubmitLeaderboard({
       board,
+      periodKey: board === 'weekly' ? meta.challengeWeekId : undefined,
       team: team || 'None',
       accuracy,
       scoreText: scoreValue,
@@ -10987,172 +11654,6 @@ async function submitGlobalScore(type, name, team, accuracy, scoreValue, rawScor
   } catch (err) {
     console.warn('Failed to sync score to global leaderboard:', err);
   }
-}
-
-async function renderLeaderboard(type) {
-  if (!leaderboardTableBody || !leaderboardDivisionTitle) return;
-  
-  const buttons = [
-    { btn: leaderBtnWeekly, name: 'weekly' },
-    { btn: leaderBtnDaily, name: 'daily' },
-    { btn: leaderBtnAlltime, name: 'alltime' }
-  ];
-  
-  buttons.forEach(b => {
-    if (b.btn) {
-      if (b.name === type) {
-        b.btn.classList.replace('bg-gray-800', 'bg-purple-600');
-        b.btn.classList.replace('text-gray-400', 'text-white');
-      } else {
-        b.btn.classList.replace('bg-purple-600', 'bg-gray-800');
-        b.btn.classList.replace('text-white', 'text-gray-400');
-        b.btn.classList.add('hover:text-white');
-      }
-    }
-  });
-
-  let divisionTitle = "Umpire Crew Standings";
-  if (type === 'weekly') {
-    divisionTitle = "Weekly Challenge Standings";
-  } else if (type === 'daily') {
-    divisionTitle = "Daily Streak Challenge Standings";
-  } else if (type === 'alltime') {
-    divisionTitle = "Team Mastery Standings (Daily Compete)";
-  }
-  leaderboardDivisionTitle.textContent = divisionTitle.toUpperCase();
-
-  const activeHandle = localStorage.getItem('ump_username') || "YOU";
-
-  // Rewrite table headers dynamically
-  const table = leaderboardTableBody.closest('table');
-  const thead = table ? table.querySelector('thead') : null;
-  if (thead) {
-    if (type === 'weekly') {
-      thead.innerHTML = `
-        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
-          <th class="p-3">Rank</th>
-          <th class="p-3">Crew Chief</th>
-          <th class="p-3 text-center">Accuracy</th>
-          <th class="p-3 text-center">Score</th>
-        </tr>
-      `;
-    } else if (type === 'daily') {
-      thead.innerHTML = `
-        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
-          <th class="p-3">Rank</th>
-          <th class="p-3">Crew Chief</th>
-          <th class="p-3 text-center">Accuracy</th>
-          <th class="p-3 text-center">Best Streak</th>
-        </tr>
-      `;
-    } else if (type === 'alltime') {
-      thead.innerHTML = `
-        <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
-          <th class="p-3">Rank</th>
-          <th class="p-3">Crew Chief</th>
-          <th class="p-3">Teams Completed</th>
-          <th class="p-3 text-center">Avg Accuracy</th>
-          <th class="p-3 text-center">Mastery Score</th>
-        </tr>
-      `;
-    }
-  }
-
-  // Display loading
-  leaderboardTableBody.innerHTML = `
-    <tr>
-      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-6 text-center text-purple-400 font-mono-tech text-[10px] animate-pulse">
-        LOADING GLOBAL STANDINGS...
-      </td>
-    </tr>
-  `;
-
-  let rows = [];
-  let source = 'empty';
-  try {
-    const result = await getLeaderboardRows(type, activeHandle);
-    rows = result.rows;
-    source = result.source;
-  } catch (err) {
-    console.warn("Error loading leaderboard:", err);
-    source = 'offline';
-  }
-
-  leaderboardTableBody.innerHTML = '';
-  rows.forEach(r => {
-    const tr = document.createElement('tr');
-    tr.className = `border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}`;
-    
-    let rankHtml = `#${r.rank}`;
-    if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇 #1</span>`;
-    else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈 #2</span>`;
-    else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉 #3</span>`;
-
-    const pLevel = r.xp ? getLevelFromXp(r.xp) : Math.max(1, Math.min(100, Math.round(50 - (r.rank * 1.5) + (r.score_raw || 0) / 100)));
-    const rankIconHtml = getRankIconHtml(pLevel);
-
-    let rowContent = "";
-    if (type === 'weekly' || type === 'daily') {
-      rowContent = `
-        <td class="p-3">${rankHtml}</td>
-        <td class="p-3">
-          <div class="flex items-center gap-2.5">
-            ${rankIconHtml}
-            <span class="uppercase tracking-wider font-bold">${r.name}</span>
-          </div>
-        </td>
-        <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
-        <td class="p-3 text-center font-bold ${type === 'daily' ? 'text-amber-400' : ''}">${r.score}</td>
-      `;
-    } else {
-      // type === 'alltime' (Mastery Standings)
-      let teamsHtml = '<span class="text-gray-500 font-bold">NONE</span>';
-      if (r.team && r.team !== 'None' && r.team !== 'none') {
-        const teams = r.team.split(',').map(t => t.trim());
-        teamsHtml = `<div class="flex flex-wrap gap-1">` + teams.map(t => {
-          return `<span class="px-1.5 py-0.2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded text-[9px] uppercase font-mono-tech font-bold">${t.slice(0, 3)}</span>`;
-        }).join('') + `</div>`;
-      }
-      rowContent = `
-        <td class="p-3">${rankHtml}</td>
-        <td class="p-3">
-          <div class="flex items-center gap-2.5">
-            ${rankIconHtml}
-            <span class="uppercase tracking-wider font-bold">${r.name}</span>
-          </div>
-        </td>
-        <td class="p-3">${teamsHtml}</td>
-        <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
-        <td class="p-3 text-center font-bold text-purple-400">${r.score}</td>
-      `;
-    }
-
-    tr.innerHTML = rowContent;
-    leaderboardTableBody.appendChild(tr);
-  });
-
-  if (rows.length === 0) {
-    const note = document.createElement('tr');
-    const msg =
-      source === 'offline'
-        ? 'Could not load standings — check connection or deploy API routes'
-        : 'No scores yet — complete a challenge to appear on the board';
-    note.innerHTML = `
-      <td colspan="${type === 'alltime' ? 5 : 4}" class="p-4 text-center text-[9px] font-mono-tech text-gray-500 uppercase tracking-wider">
-        ${msg}
-      </td>
-    `;
-    leaderboardTableBody.appendChild(note);
-  }
-}
-
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
 }
 
 function mulberry32(a) {
@@ -11164,928 +11665,19 @@ function mulberry32(a) {
   }
 }
 
-function generateDailyCondensedGame(teamName, dateString) {
-  const seed = hashString(teamName + dateString);
-  const rand = mulberry32(seed);
-  
-  // Find opponent
-  const oppTeams = TEAMS_LIST.filter(t => t.name !== teamName);
-  const oppIdx = Math.floor(rand() * oppTeams.length);
-  const opponent = oppTeams[oppIdx];
-  
-  // Choose home/away randomly
-  const isHome = rand() < 0.5;
-  const awayTeam = isHome ? opponent.name : teamName;
-  const homeTeam = isHome ? teamName : opponent.name;
-  
-  const teamPlayers = {
-    'Orioles': ["Gunnar Henderson", "Adley Rutschman", "Colton Cowser", "Anthony Santander", "Ryan Mountcastle", "Jordan Westburg"],
-    'Tigers': ["Riley Greene", "Kerry Carpenter", "Mark Canha", "Colt Keith", "Gio Urshela", "Jake Rogers"],
-    'Phillies': ["Bryce Harper", "Trea Turner", "Kyle Schwarber", "Alec Bohm", "Bryson Stott", "Nick Castellanos"],
-    'Mets': ["Francisco Lindor", "Pete Alonso", "Brandon Nimmo", "Jeff McNeil", "Starling Marte", "Francisco Alvarez"],
-    'Dodgers': ["Shohei Ohtani", "Mookie Betts", "Freddie Freeman", "Teoscar Hernández", "Max Muncy", "Will Smith"],
-    'Yankees': ["Aaron Judge", "Juan Soto", "Giancarlo Stanton", "Anthony Volpe", "Anthony Rizzo", "Gleyber Torres"],
-    'Red Sox': ["Rafael Devers", "Jarren Duran", "Tyler O'Neill", "Masataka Yoshida", "Connor Wong", "Ceddanne Rafaela"],
-    'Astros': ["Jose Altuve", "Yordan Alvarez", "Alex Bregman", "Kyle Tucker", "Jeremy Peña", "Yainer Diaz"],
-    'Rangers': ["Corey Seager", "Marcus Semien", "Adolis García", "Jonah Heim", "Wyatt Langford", "Josh Jung"],
-    'Giants': ["Matt Chapman", "Jung Hoo Lee", "LaMonte Wade Jr.", "Jorge Soler", "Thairo Estrada", "Patrick Bailey"]
-  };
-  
-  const getPlayersForTeam = (t) => {
-    return teamPlayers[t] || [`Player A (${t})`, `Player B (${t})`, `Player C (${t})`, `Player D (${t})`, `Player E (${t})`, `Player F (${t})`];
-  };
-  
-  const awayBatters = getPlayersForTeam(awayTeam);
-  const homeBatters = getPlayersForTeam(homeTeam);
-  
-  const teamPitchers = {
-    'Orioles': ["Corbin Burnes", "Grayson Rodriguez"],
-    'Tigers': ["Tarik Skubal", "Jack Flaherty"],
-    'Phillies': ["Zack Wheeler", "Aaron Nola"],
-    'Mets': ["Kodai Senga", "Luis Severino"],
-    'Dodgers': ["Yoshinobu Yamamoto", "Tyler Glasnow"],
-    'Yankees': ["Gerrit Cole", "Marcus Stroman"],
-    'Red Sox': ["Nick Pivetta", "Brayan Bello"],
-    'Astros': ["Framber Valdez", "Justin Verlander"],
-    'Rangers': ["Nathan Eovaldi", "Jon Gray"],
-    'Giants': ["Logan Webb", "Kyle Harrison"]
-  };
-  
-  const getPitcherForTeam = (t) => {
-    const list = teamPitchers[t] || [`Pitcher X (${t})`, `Pitcher Y (${t})`];
-    return list[Math.floor(rand() * list.length)];
-  };
-  
-  const awayPitcher = getPitcherForTeam(awayTeam);
-  const homePitcher = getPitcherForTeam(homeTeam);
-  
-  const abList = [];
-  for (let abIdx = 0; abIdx < 15; abIdx++) {
-    const inning = Math.floor(abIdx / 2) + 1;
-    const isTop = abIdx % 2 === 0;
-    const battingTeam = isTop ? awayTeam : homeTeam;
-    const pitchingTeam = isTop ? homeTeam : awayTeam;
-    
-    const batterList = isTop ? awayBatters : homeBatters;
-    const batterName = batterList[abIdx % batterList.length];
-    const pitcherName = isTop ? homePitcher : awayPitcher;
-    
-    const pitches = [];
-    const numPitches = Math.floor(rand() * 4) + 1;
-    for (let pIdx = 0; pIdx < numPitches; pIdx++) {
-      const pitchTypes = ["Fastball", "Slider", "Changeup", "Curveball", "Sinker", "Cutter"];
-      const pitchType = pitchTypes[Math.floor(rand() * pitchTypes.length)];
-      const speed = Math.floor(rand() * 20) + 80;
-      
-      const isBorderline = rand() < 0.5;
-      let crossX = 0;
-      let crossY = 2.5;
-      const szTop = 3.4;
-      const szBot = 1.6;
-      
-      if (isBorderline) {
-        const borderType = Math.floor(rand() * 4);
-        if (borderType === 0) {
-          crossX = -0.8283 + (rand() * 0.2 - 0.1);
-          crossY = szBot + (rand() * 1.5);
-        } else if (borderType === 1) {
-          crossX = 0.8283 + (rand() * 0.2 - 0.1);
-          crossY = szBot + (rand() * 1.5);
-        } else if (borderType === 2) {
-          crossX = -0.8 + (rand() * 1.6);
-          crossY = szBot - 0.12 + (rand() * 0.2 - 0.1);
-        } else {
-          crossX = -0.8 + (rand() * 1.6);
-          crossY = szTop + 0.12 + (rand() * 0.2 - 0.1);
-        }
-      } else {
-        const isStrike = rand() < 0.5;
-        if (isStrike) {
-          crossX = -0.6 + (rand() * 1.2);
-          crossY = szBot + 0.2 + (rand() * 1.4);
-        } else {
-          crossX = rand() < 0.5 ? -1.3 - (rand() * 0.5) : 1.3 + (rand() * 0.5);
-          crossY = rand() < 0.5 ? szBot - 0.5 - (rand() * 0.5) : szTop + 0.5 + (rand() * 0.5);
-        }
-      }
-      
-      const isStrikeAbs = Math.abs(crossX) <= 0.8283 && crossY >= (szBot - 0.12) && crossY <= (szTop + 0.12);
-      const absCall = isStrikeAbs ? "S" : "B";
-      const realCall = absCall;
-      
-      const isLastPitch = pIdx === numPitches - 1;
-      let isSwing = false;
-      let swingOutcome = null;
-      let swingHitType = null;
-      
-      if (isLastPitch) {
-        const outcomeRoll = rand();
-        if (outcomeRoll < 0.3) {
-          isSwing = true;
-          swingOutcome = "HIT";
-          swingHitType = rand() < 0.15 ? "HOMERUN" : (rand() < 0.3 ? "DOUBLE" : "SINGLE");
-        } else if (outcomeRoll < 0.6) {
-          isSwing = true;
-          swingOutcome = "OUT";
-          swingHitType = rand() < 0.5 ? "FLYOUT" : "GROUNDOUT";
-        } else if (outcomeRoll < 0.8) {
-          isSwing = true;
-          swingOutcome = "WHIFF";
-        }
-      }
-      
-      const pitchObj = {
-        id: 20000 + abIdx * 10 + pIdx,
-        inning,
-        is_top: isTop,
-        pitcher: pitcherName,
-        pitcher_hand: rand() < 0.75 ? "RHP" : "LHP",
-        batter: batterName,
-        batter_hand: rand() < 0.6 ? "RHB" : "LHB",
-        pitch_type: pitchType,
-        speed_mph: speed,
-        release_pos_x: isTop ? 1.7 : -1.7,
-        release_pos_y: 50.5,
-        release_pos_z: 6.0,
-        vx0: isTop ? -crossX * 0.1 : crossX * 0.1,
-        vy0: -130.0,
-        vz0: -5.0,
-        ax: 2.0,
-        ay: 25.0,
-        az: -20.0,
-        sz_top: szTop,
-        sz_bot: szBot,
-        real_ump_call: realCall,
-        abs_call: absCall,
-        is_critical: isBorderline,
-        historical_blurb: `${pitcherName} throws a ${speed} MPH ${pitchType}. ${batterName} ${isSwing ? (swingOutcome === 'HIT' ? 'hits a line drive ' + swingHitType : (swingOutcome === 'WHIFF' ? 'swings and misses' : 'hits a routine ' + swingHitType)) : 'takes it for a called ' + (absCall === 'S' ? 'STRIKE' : 'BALL')}.`,
-        is_swing: isSwing,
-        swing_outcome: swingOutcome,
-        swing_hit_type: swingHitType
-      };
-      
-      pitches.push(pitchObj);
-    }
-    
-    abList.push({
-      gameIndex: abIdx,
-      gameTitle: `${awayTeam.toUpperCase()} @ ${homeTeam.toUpperCase()}`,
-      filmRoomUrl: "https://www.mlb.com",
-      umpScorecardUrl: "https://umpscorecards.com",
-      pitches,
-      batter: batterName,
-      pitcher: isTop ? homePitcher : awayPitcher
-    });
-  }
-  
-  return abList;
-}
-
-function renderDailyCompeteDashboard() {
-  const username = localStorage.getItem('ump_username');
-  if (!username) {
-    if (dailyMatchupTitle) dailyMatchupTitle.textContent = "LOGIN TO PLAY";
-    if (dailyCompeteStatus) {
-      dailyCompeteStatus.textContent = "AUTHENTICATION REQUIRED";
-      dailyCompeteStatus.className = "text-[9px] font-bold text-red-400 uppercase mt-0.5";
-    }
-    if (btnPlayDailyCompete) btnPlayDailyCompete.disabled = true;
-    if (dailyHistoricList) dailyHistoricList.innerHTML = `<div class="text-[10px] text-gray-500 text-center py-4">PLEASE LOG IN TO VIEW ARCHIVES</div>`;
-    return;
-  }
-  
-  if (btnPlayDailyCompete) btnPlayDailyCompete.disabled = false;
-
-  // Populate team dropdown if not already populated
-  if (dailyCompeteTeamSelect && dailyCompeteTeamSelect.children.length === 0) {
-    TEAMS_LIST.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.name;
-      opt.textContent = t.name.toUpperCase();
-      dailyCompeteTeamSelect.appendChild(opt);
-    });
-    if (activeFavoriteTeam) {
-      dailyCompeteTeamSelect.value = activeFavoriteTeam;
-    } else {
-      dailyCompeteTeamSelect.value = "Orioles";
-    }
-    dailyCompeteTeamSelect.onchange = () => {
-      renderDailyCompeteDashboard();
-    };
-  }
-  
-  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
-  const todayStr = new Date().toISOString().split('T')[0];
-  
-  if (dailyMatchupTitle) {
-    dailyMatchupTitle.textContent = `${team.toUpperCase()} DAILY GAME`;
-  }
-  
-  getGlobalUserStats(username).then(stats => {
-    const dailyHistory = stats.dailyHistory || {};
-    const todayResult = dailyHistory[`${team}_${todayStr}`];
-    
-    if (dailyCompeteStatus) {
-      if (todayResult !== undefined) {
-        dailyCompeteStatus.textContent = `COMPLETED - ${todayResult}% ACCURACY`;
-        dailyCompeteStatus.className = "text-[9px] font-bold text-emerald-400 uppercase mt-0.5";
-        if (btnPlayDailyCompete) btnPlayDailyCompete.textContent = "Replay Daily";
-      } else {
-        dailyCompeteStatus.textContent = "UNPLAYED (Available)";
-        dailyCompeteStatus.className = "text-[9px] font-bold text-yellow-400 uppercase mt-0.5";
-        if (btnPlayDailyCompete) btnPlayDailyCompete.textContent = "Play Now";
-      }
-    }
-    
-    if (dailyHistoricList) {
-      dailyHistoricList.innerHTML = "";
-      const startDate = new Date("2026-04-01T00:00:00");
-      const endDate = new Date();
-      
-      const dates = [];
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        dates.push(d.toISOString().split('T')[0]);
-      }
-      dates.reverse();
-      
-      dates.forEach(dStr => {
-        const result = dailyHistory[`${team}_${dStr}`];
-        const item = document.createElement('div');
-        item.className = "flex items-center justify-between p-2 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-white/5 cursor-pointer transition-colors";
-        
-        let statusHtml = `<span class="text-[8px] font-mono-tech px-1.5 py-0.5 bg-yellow-500/10 text-yellow-500 rounded font-bold border border-yellow-500/20">UNPLAYED</span>`;
-        if (result !== undefined) {
-          statusHtml = `<span class="text-[8px] font-mono-tech px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 rounded font-bold border border-emerald-500/20">${result}% ACCURACY</span>`;
-        }
-        
-        const dateObj = new Date(dStr + "T00:00:00");
-        const formattedDate = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        
-        item.innerHTML = `
-          <div class="flex flex-col">
-            <span class="text-[9px] font-mono-tech text-gray-500">${dStr}</span>
-            <span class="text-[10px] font-black text-white mt-0.5">${formattedDate}</span>
-          </div>
-          ${statusHtml}
-        `;
-        
-        item.addEventListener('click', () => {
-          startDailyCompeteGame(dStr);
-        });
-        
-        dailyHistoricList.appendChild(item);
-      });
-    }
-  });
-}
-
-function getTeamAbbreviation(teamName) {
-  if (!teamName) return 'UNK';
-  const name = teamName.toLowerCase();
-  if (name.includes('rays')) return 'TB';
-  if (name.includes('orioles')) return 'BAL';
-  if (name.includes('red sox')) return 'BOS';
-  if (name.includes('yankees')) return 'NYY';
-  if (name.includes('blue jays')) return 'TOR';
-  if (name.includes('white sox')) return 'CWS';
-  if (name.includes('guardians')) return 'CLE';
-  if (name.includes('tigers')) return 'DET';
-  if (name.includes('royals')) return 'KC';
-  if (name.includes('twins')) return 'MIN';
-  if (name.includes('astros')) return 'HOU';
-  if (name.includes('angels')) return 'LAA';
-  if (name.includes('athletics') || name.includes('athletics')) return 'OAK';
-  if (name.includes('mariners')) return 'SEA';
-  if (name.includes('rangers')) return 'TEX';
-  if (name.includes('braves')) return 'ATL';
-  if (name.includes('marlins')) return 'MIA';
-  if (name.includes('mets')) return 'NYM';
-  if (name.includes('phillies')) return 'PHI';
-  if (name.includes('nationals')) return 'WSH';
-  if (name.includes('cubs')) return 'CHC';
-  if (name.includes('reds')) return 'CIN';
-  if (name.includes('brewers')) return 'MIL';
-  if (name.includes('pirates')) return 'PIT';
-  if (name.includes('cardinals')) return 'STL';
-  if (name.includes('diamondbacks') || name.includes('d-backs')) return 'AZ';
-  if (name.includes('rockies')) return 'COL';
-  if (name.includes('dodgers')) return 'LAD';
-  if (name.includes('padres')) return 'SD';
-  if (name.includes('giants')) return 'SF';
-  
-  const words = teamName.split(' ');
-  if (words.length >= 2) {
-    return (words[0][0] + words[1][0]).toUpperCase();
-  }
-  return teamName.substring(0, 3).toUpperCase();
-}
-
-async function getLeaderboardRows(type, username) {
-  const board = type === 'streak' ? 'daily' : type;
-  const result = await apiFetchLeaderboard(board, username);
-  return {
-    rows: result.rows || [],
-    source: result.source === 'live' ? 'live' : 'empty',
-  };
-}
-
-async function fetchYesterdayGames() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateStr = yesterday.toISOString().split('T')[0];
-  
-  const games = await fetchAllGamesForDate(dateStr);
-  if (!games || games.length === 0) return [];
-
-  // Sort: Favorite team first, then others
-  if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
-    const favLower = activeFavoriteTeam.toLowerCase();
-    games.forEach(g => {
-      g.isFavorite = (g.awayTeam.toLowerCase().includes(favLower) || g.homeTeam.toLowerCase().includes(favLower));
-    });
-    games.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
-  } else {
-    games.forEach(g => { g.isFavorite = false; });
-  }
-
-  return games;
-}
-
-async function getGamePitchesWithCache(gamePk) {
-  const cached = await getCachedGame(gamePk);
-  if (cached) {
-    console.log(`Loaded game ${gamePk} from IndexedDB cache`);
-    return cached.data;
-  }
-  const gameData = await fetchGamePitches(gamePk);
-  if (gameData) {
-    await saveCachedGame(gamePk, gameData);
-    console.log(`Fetched game ${gamePk} from MLB API and saved to IndexedDB cache`);
-  }
-  return gameData;
-}
-
-async function openGameDetailModal(game) {
-  if (previewModalOverlay) {
-    previewModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-    previewModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
-  }
-  
-  if (previewModalTitle) previewModalTitle.textContent = "GAME DETAIL HUB";
-  if (previewModalDate) previewModalDate.textContent = new Date(game.date).toLocaleDateString().toUpperCase();
-  if (previewAwayName) previewAwayName.textContent = game.awayTeam.toUpperCase();
-  if (previewHomeName) previewHomeName.textContent = game.homeTeam.toUpperCase();
-  if (previewAwayScore) previewAwayScore.textContent = game.awayScore;
-  if (previewHomeScore) previewHomeScore.textContent = game.homeScore;
-  if (previewModalVenue) previewModalVenue.textContent = game.venue.toUpperCase();
-  if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(game.awayTeam);
-  if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(game.homeTeam);
-  
-  if (previewLoadingIndicator) previewLoadingIndicator.classList.remove('hidden');
-  if (btnPreviewModalStart) btnPreviewModalStart.disabled = true;
-  if (detailModalInningsRow) detailModalInningsRow.innerHTML = '';
-  if (detailModalAbGrid) detailModalAbGrid.innerHTML = '';
-  
-  try {
-    let allAtBats = await getGamePitchesWithCache(game.gamePk);
-    if (!allAtBats || allAtBats.length === 0) {
-      if (previewModalAbs) previewModalAbs.textContent = "0 AT-BATS";
-      if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
-      return;
-    }
-
-    // Regroup if flat array from legacy cache formats
-    if (allAtBats.length > 0 && !Array.isArray(allAtBats[0])) {
-      const grouped = [];
-      let current = [];
-      let lastBat = null;
-      allAtBats.forEach(p => {
-        if (lastBat && p.batter !== lastBat && current.length > 0) {
-          grouped.push(current);
-          current = [];
-        }
-        current.push(p);
-        lastBat = p.batter;
-      });
-      if (current.length > 0) grouped.push(current);
-      allAtBats = grouped;
-    }
-    
-    if (previewModalAbs) previewModalAbs.textContent = `${allAtBats.length} AT-BATS`;
-    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
-    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
-    
-    if (detailModalInningsRow) {
-      const innings = [...new Set(allAtBats.map(ab => ab && ab[0] ? ab[0].inning : null))].filter(Boolean).sort((a,b) => a - b);
-      innings.forEach(inn => {
-        const btn = document.createElement('button');
-        btn.className = 'px-3 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-[9px] font-mono-tech font-bold hover:bg-purple-600/30 hover:border-purple-500/50 transition-all text-white cursor-pointer pointer-events-auto shrink-0';
-        btn.textContent = `INN ${inn}`;
-        btn.addEventListener('click', () => {
-          detailModalInningsRow.querySelectorAll('button').forEach(b => {
-            b.classList.remove('bg-purple-600', 'border-purple-500');
-            b.classList.add('bg-slate-900', 'border-white/10');
-          });
-          btn.classList.remove('bg-slate-900', 'border-white/10');
-          btn.classList.add('bg-purple-600', 'border-purple-500');
-          renderAtBatsForInning(inn, allAtBats, game);
-        });
-        detailModalInningsRow.appendChild(btn);
-      });
-      if (innings.length > 0) {
-        detailModalInningsRow.children[0].click();
-      }
-    }
-    
-    btnPreviewModalStart.onclick = () => {
-      hideGamePreviewModal();
-      const condensedABs = selectCondensedAtBats(allAtBats, 15);
-      launchGame(condensedABs, game.awayTeam, new Date(game.date).toISOString().split('T')[0]);
-    };
-  } catch (err) {
-    console.error(err);
-    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
-  }
-}
-
-function renderAtBatsForInning(inning, allAtBats, game) {
-  if (!detailModalAbGrid) return;
-  detailModalAbGrid.innerHTML = '';
-  
-  const inningABs = allAtBats.filter(ab => ab[0]?.inning === inning);
-  
-  if (inningABs.length === 0) {
-    detailModalAbGrid.innerHTML = '<span class="text-xs text-gray-500 font-mono-tech text-center py-8">No matchups in this inning</span>';
-    return;
-  }
-  
-  inningABs.forEach((ab, idx) => {
-    const firstPitch = ab[0];
-    if (!firstPitch) return;
-    
-    const abDiv = document.createElement('div');
-    abDiv.className = 'flex justify-between items-center p-2.5 bg-slate-900/60 hover:bg-slate-900 border border-white/5 hover:border-blue-500/50 rounded-xl transition-all gap-2';
-    
-    const sideText = firstPitch.is_top ? 'TOP' : 'BOT';
-    const pitchCountText = `${ab.length} Pitch${ab.length > 1 ? 'es' : ''}`;
-    
-    const pitcherName = firstPitch.pitcher || "Pitcher";
-    const batterName = firstPitch.batter || "Batter";
-    const pHand = firstPitch.pitcher_hand || "RHP";
-    const bHand = firstPitch.batter_hand || "LHB";
-    
-    abDiv.innerHTML = `
-      <div class="flex flex-col text-left">
-        <span class="text-[8px] font-mono-tech text-blue-400 font-extrabold uppercase tracking-wider">${sideText} ${inning} • ${pitchCountText}</span>
-        <span class="text-[10px] font-bold text-white uppercase">
-          <span class="hover:underline cursor-pointer player-stats-link text-purple-400" data-name="${pitcherName}" data-role="PITCHER" data-hand="${pHand}">${pitcherName}</span>
-          <span class="text-gray-500 mx-0.5 font-normal">vs</span>
-          <span class="hover:underline cursor-pointer player-stats-link text-cyan-400" data-name="${batterName}" data-role="BATTER" data-hand="${bHand}">${batterName}</span>
-        </span>
-      </div>
-      <button class="btn-play-ab px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-[8px] font-bold uppercase transition-all cursor-pointer pointer-events-auto">Play AB</button>
-    `;
-    
-    abDiv.querySelector('.btn-play-ab').addEventListener('click', () => {
-      hideGamePreviewModal();
-      launchGame([ab], game.awayTeam, new Date().toISOString().split('T')[0]);
-    });
-    
-    abDiv.querySelectorAll('.player-stats-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const name = link.getAttribute('data-name');
-        const role = link.getAttribute('data-role');
-        const hand = link.getAttribute('data-hand');
-        showPlayerStatsPopout(link, name, role, hand);
-      });
-    });
-    
-    detailModalAbGrid.appendChild(abDiv);
-  });
-}
-
-function selectCondensedAtBats(allAtBats, limit = 15) {
-  const scored = allAtBats.map((ab, originalIndex) => {
-    let score = 0;
-    const firstPitch = ab[0];
-    if (!firstPitch) return { ab, score: 0, originalIndex };
-
-    const scoreDiff = Math.abs(firstPitch.score_away - firstPitch.score_home);
-    score += Math.max(0, 8 - scoreDiff) * 3;
-
-    if (firstPitch.inning >= 7) {
-      score += 10;
-    } else if (firstPitch.inning >= 4) {
-      score += 5;
-    }
-
-    score += firstPitch.outs * 4;
-
-    const calledPitchesCount = ab.filter(p => !p.is_swing).length;
-    score += calledPitchesCount * 5;
-
-    return { ab, score, originalIndex };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  
-  const selected = scored.slice(0, limit);
-  selected.sort((a, b) => a.originalIndex - b.originalIndex);
-  
-  return selected.map(s => s.ab);
-}
-
-async function findGamesForDate(dateStr) {
-  const games = await fetchAllGamesForDate(dateStr);
-  if (!games || games.length === 0) return [];
-
-  // Sort: Favorite team first, then others
-  if (activeFavoriteTeam && activeFavoriteTeam !== "none") {
-    const favLower = activeFavoriteTeam.toLowerCase();
-    games.forEach(g => {
-      g.isFavorite = (g.awayTeam.toLowerCase().includes(favLower) || g.homeTeam.toLowerCase().includes(favLower));
-    });
-    games.sort((a, b) => (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0));
-  } else {
-    games.forEach(g => { g.isFavorite = false; });
-  }
-
-  return games;
-}
-
-async function handleFindGames() {
-  const dateVal = gameFinderDate ? gameFinderDate.value : "";
-  if (!dateVal) {
-    alert("Please select a date first!");
-    return;
-  }
-  
-  if (gameFinderResults) {
-    gameFinderResults.classList.remove('hidden');
-    gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-blue-400 py-4 animate-pulse">⚡ SEARCHING MLB SCHEDULE...</div>';
-  }
-  
-  try {
-    const games = await findGamesForDate(dateVal);
-    if (!games || games.length === 0) {
-      gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-gray-500 py-4">No games found for this date. Try another date.</div>';
-      return;
-    }
-    
-    gameFinderResults.innerHTML = '';
-    games.forEach(g => {
-      const card = document.createElement('div');
-      card.className = g.isFavorite
-        ? 'glass-panel p-2.5 rounded-lg border-2 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.15)] flex items-center justify-between hover:border-amber-500/80 hover:scale-[1.01] transition-all select-none gap-2 text-left cursor-pointer'
-        : 'glass-panel p-2.5 rounded-lg border border-white/5 flex items-center justify-between hover:border-blue-500/50 hover:scale-[1.01] transition-all select-none gap-2 text-left cursor-pointer';
-      
-      const awayLogo = getTeamLogoUrl(g.awayTeam);
-      const homeLogo = getTeamLogoUrl(g.homeTeam);
-      const awayAbbr = getTeamAbbreviation(g.awayTeam);
-      const homeAbbr = getTeamAbbreviation(g.homeTeam);
-
-      card.innerHTML = `
-        <div class="flex items-center gap-1.5 flex-1">
-          ${g.isFavorite ? '<span class="text-amber-400 text-xs">⭐</span>' : ''}
-          <img src="${awayLogo}" class="w-5 h-5 object-contain bg-slate-950/40 rounded-full p-0.5" />
-          <span class="text-xs font-black text-white">${awayAbbr}</span>
-          <span class="text-xs font-mono-tech font-bold text-gray-300">${g.awayScore}</span>
-        </div>
-        <div class="flex flex-col items-center px-1">
-          <span class="text-[9px] font-mono-tech font-bold text-gray-500">@</span>
-          <span class="text-[9px] font-mono-tech text-emerald-400 font-bold uppercase whitespace-nowrap">${g.status.toUpperCase()}</span>
-        </div>
-        <div class="flex items-center gap-1.5 justify-end flex-1">
-          <span class="text-xs font-mono-tech font-bold text-gray-300">${g.homeScore}</span>
-          <span class="text-xs font-black text-white">${homeAbbr}</span>
-          <img src="${homeLogo}" class="w-5 h-5 object-contain bg-slate-950/40 rounded-full p-0.5" />
-        </div>
-      `;
-      
-      card.addEventListener('click', async () => {
-        await openGameDetailModal(g);
-      });
-      
-      gameFinderResults.appendChild(card);
-    });
-  } catch (e) {
-    console.error(e);
-    gameFinderResults.innerHTML = '<div class="col-span-full text-center text-xs text-red-400 py-4">Failed to load games.</div>';
-  }
-}
-
-async function loadPlayTabRecentGames() {
-  if (recentGamesDate) {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    recentGamesDate.textContent = yesterday.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
-  }
-  
-  if (!recentGamesGrid) return;
-  recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-purple-400 py-4 animate-pulse">⚡ LOADING YESTERDAY\'S MLB GAMES...</div>';
-
-  try {
-    const games = await fetchYesterdayGames();
-    if (!games || games.length === 0) {
-      recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-gray-500 py-4">No MLB games found for yesterday.</div>';
-      return;
-    }
-    
-    recentGamesGrid.innerHTML = '';
-    games.forEach(g => {
-      const card = document.createElement('div');
-      card.className = g.isFavorite
-        ? 'glass-panel p-3.5 rounded-xl border-2 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.15)] flex items-center justify-between hover:border-amber-500/80 hover:scale-[1.01] transition-all select-none gap-3 cursor-pointer'
-        : 'glass-panel p-3.5 rounded-xl border border-white/10 flex items-center justify-between hover:border-purple-500/50 hover:scale-[1.01] transition-all select-none gap-3 cursor-pointer';
-      
-      const awayLogo = getTeamLogoUrl(g.awayTeam);
-      const homeLogo = getTeamLogoUrl(g.homeTeam);
-      const awayAbbr = getTeamAbbreviation(g.awayTeam);
-      const homeAbbr = getTeamAbbreviation(g.homeTeam);
-      
-      card.innerHTML = `
-        <div class="flex items-center gap-2 flex-1">
-          ${g.isFavorite ? '<span class="text-amber-400 text-xs">⭐</span>' : ''}
-          <img src="${awayLogo}" class="w-6 h-6 object-contain bg-slate-950/40 rounded-full p-0.5" />
-          <span class="text-xs md:text-sm font-black text-white uppercase">${awayAbbr}</span>
-          <span class="text-xs md:text-sm font-mono-tech font-black text-gray-300">${g.awayScore}</span>
-        </div>
-        
-        <div class="flex flex-col items-center px-2">
-          <span class="text-[9px] font-mono-tech font-bold text-gray-500">@</span>
-          <span class="text-[10px] font-mono-tech text-emerald-400 font-bold uppercase whitespace-nowrap">${g.status.toUpperCase()}</span>
-        </div>
-
-        <div class="flex items-center gap-2 justify-end flex-1">
-          <span class="text-xs md:text-sm font-mono-tech font-black text-gray-300">${g.homeScore}</span>
-          <span class="text-xs md:text-sm font-black text-white uppercase">${homeAbbr}</span>
-          <img src="${homeLogo}" class="w-6 h-6 object-contain bg-slate-950/40 rounded-full p-0.5" />
-        </div>
-      `;
-      
-      card.addEventListener('click', async () => {
-        await openGameDetailModal(g);
-      });
-      
-      recentGamesGrid.appendChild(card);
-    });
-  } catch (e) {
-    console.error(e);
-    recentGamesGrid.innerHTML = '<div class="col-span-full text-center text-xs text-red-400 py-4">Failed to load recent MLB games.</div>';
-  }
-}
-
-async function awardXP(amount) {
+function launchGame(rawABs, gameMeta) {
   const username = localStorage.getItem('ump_username');
   if (!username) return;
 
-  const stats = await getGlobalUserStats(username);
-  const oldXp = stats.xp || 0;
-  const oldLevel = getLevelFromXp(oldXp);
-  stats.xp = oldXp + amount;
-  const newLevel = getLevelFromXp(stats.xp);
-  stats.level = newLevel;
+  const meta = typeof gameMeta === "string"
+    ? { dateString: gameMeta, awayTeam: null, homeTeam: null, gamePk: null, title: null }
+    : (gameMeta || {});
 
-  await saveGlobalUserStats(username, stats);
-  triggerXpSurgeAnimation(amount);
-  updateProfileStatsUI(true);
-
-  if (newLevel > oldLevel) {
-    showLevelUpCelebration(newLevel, oldLevel);
-  }
-}
-
-function showFloatingXP(amount, customText) {
-  const container = document.body;
-  const el = document.createElement('div');
-  el.textContent = customText || `+${amount} XP`;
-  
-  if (customText) {
-    el.className = 'fixed text-yellow-300 font-mono-tech font-black text-2xl md:text-3xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_15px_rgba(234,179,8,0.9)]';
-  } else {
-    el.className = 'fixed text-emerald-400 font-mono-tech font-black text-xl md:text-2xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_12px_rgba(16,185,129,0.8)]';
-  }
-  
-  el.style.left = '50%';
-  el.style.top = '52%';
-  el.style.opacity = '1';
-  
-  container.appendChild(el);
-  
-  // Force a browser reflow/repaint to guarantee CSS transition works
-  el.offsetHeight;
-  
-  requestAnimationFrame(() => {
-    el.style.top = '32%';
-    el.style.opacity = '0';
-  });
-  
-  setTimeout(() => {
-    el.remove();
-  }, 1000);
-}
-
-function showLevelUpToast(newLevel) {
-  playLevelUpSound();
-  const container = document.body;
-  const toast = document.createElement('div');
-  toast.className = 'fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-yellow-500 to-amber-600 text-slate-950 font-black px-6 py-3 rounded-full text-sm font-mono-tech z-[400] shadow-2xl border-2 border-yellow-300 uppercase tracking-widest animate-bounce';
-  toast.innerHTML = `⭐ LEVEL UP! NOW LEVEL ${newLevel} ⭐`;
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.remove();
-  }, 3000);
-}
-
-function playLevelUpSound() {
-  if (!audioCtx) return;
-  const now = audioCtx.currentTime;
-  const frequencies = [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98, 2093.00]; // C5, E5, G5, C6, E6, G6, C7
-  frequencies.forEach((freq, idx) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, now + idx * 0.05);
-    
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.2, now + idx * 0.05 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.4);
-    
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start(now + idx * 0.05);
-    osc.stop(now + idx * 0.05 + 0.45);
-  });
-}
-
-async function saveGameProgress() {
-  const username = localStorage.getItem('ump_username');
-  if (!username) return;
-
-  const sanitizePitch = (pitch) => {
-    if (!pitch) return pitch;
-    const clean = { ...pitch };
-    delete clean.pitchTrajectory;
-    delete clean.trajectory;
-    return clean;
-  };
-
-  const sanitizeWeeklyPlaylist = (playlist) => {
-    if (!playlist) return playlist;
-    return playlist.map(ab => {
-      const cleanAb = { ...ab };
-      if (cleanAb.pitches) {
-        cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
-      }
-      return cleanAb;
-    });
-  };
-
-  const sanitizedPlaylist = sanitizeWeeklyPlaylist(weeklyPlaylistABs);
-  const sanitizedPitchesList = pitchesList ? pitchesList.map(sanitizePitch) : [];
-
-  const sessionData = {
-    gameMode,
-    activeWeeklyAbIndex,
-    currentPitchIndex,
-    abBalls,
-    abStrikes,
-    pitchHistory: pitchHistory.map(h => ({
-      pitchNum: h.pitchNum,
-      pitchType: h.pitchType,
-      speedMph: h.speedMph,
-      userCall: h.userCall,
-      absCall: h.absCall,
-      realCall: h.realCall,
-      userCorrect: h.userCorrect,
-      realCorrect: h.realCorrect,
-      isSwingPlay: h.isSwingPlay,
-      swingOutcome: h.swingOutcome,
-      swingHitType: h.swingHitType
-    })),
-    weeklyPlaylistABs: sanitizedPlaylist,
-    activeDailyDate,
-    activeDailyTeam,
-    pitchesList: sanitizedPitchesList,
-    totalPitchesCount,
-    totalBattersFaced,
-    totalSessionK,
-    totalSessionBB,
-    totalSessionH,
-    totalSessionOuts
-  };
-  
-  try {
-    await saveActiveSession(username, sessionData);
-    console.log("Game progress saved to IndexedDB session storage.");
-  } catch (err) {
-    console.error("Failed to save game progress to IndexedDB:", err);
-  }
-}
-
-async function startDailyCompeteGame(dateString) {
-  const username = localStorage.getItem('ump_username');
-  if (!username) return;
-
-  const team = dailyCompeteTeamSelect ? dailyCompeteTeamSelect.value : (activeFavoriteTeam || "Orioles");
-  
-  // Show preview modal in loading state
-  if (previewModalOverlay) {
-    previewModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-    previewModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
-  }
-  if (previewModalTitle) previewModalTitle.textContent = `${team.toUpperCase()} DAILY GAME`;
-  if (previewModalDate) previewModalDate.textContent = dateString.toUpperCase();
-  if (previewAwayName) previewAwayName.textContent = "LOADING...";
-  if (previewHomeName) previewHomeName.textContent = "LOADING...";
-  if (previewAwayScore) previewAwayScore.textContent = "-";
-  if (previewHomeScore) previewHomeScore.textContent = "-";
-  if (previewModalVenue) previewModalVenue.textContent = "LOADING...";
-  if (previewModalAbs) previewModalAbs.textContent = "";
-  if (previewLoadingIndicator) previewLoadingIndicator.classList.remove('hidden');
-  if (btnPreviewModalStart) btnPreviewModalStart.disabled = true;
-
-  try {
-    // 1. Fetch team schedule from MLB Stats API
-    console.log(`MLB API: Fetching schedule for ${team} on ${dateString}`);
-    const games = await fetchTeamSchedule(team, dateString, dateString);
-    let gameData = null;
-    let playlistABs = null;
-
-    if (games && games.length > 0) {
-      gameData = games[0];
-      console.log(`MLB API: Found gamePk ${gameData.gamePk} - ${gameData.awayTeam} @ ${gameData.homeTeam}`);
-      
-      // Update UI with real game data
-      if (previewAwayName) previewAwayName.textContent = gameData.awayTeam.toUpperCase();
-      if (previewHomeName) previewHomeName.textContent = gameData.homeTeam.toUpperCase();
-      if (previewAwayScore) previewAwayScore.textContent = gameData.awayScore;
-      if (previewHomeScore) previewHomeScore.textContent = gameData.homeScore;
-      if (previewModalVenue) previewModalVenue.textContent = gameData.venue.toUpperCase();
-      if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(gameData.awayTeam);
-      if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(gameData.homeTeam);
-
-      // Fetch pitch data
-      console.log(`MLB API: Fetching play-by-play for gamePk ${gameData.gamePk}`);
-      playlistABs = await fetchGamePitches(gameData.gamePk);
-    }
-
-    // If no real game data, or fetch failed, fall back to procedural generation
-    if (!gameData || !playlistABs || playlistABs.length === 0) {
-      console.log("MLB API: No game found or failed to parse. Falling back to procedurally generated game.");
-      
-      // Procedural fallback details
-      const seed = hashString(team + dateString);
-      const rand = mulberry32(seed);
-      const oppTeams = TEAMS_LIST.filter(t => t.name !== team);
-      const oppIdx = Math.floor(rand() * oppTeams.length);
-      const opponent = oppTeams[oppIdx];
-      const isHome = rand() < 0.5;
-      const awayName = isHome ? opponent.name : team;
-      const homeName = isHome ? team : opponent.name;
-      const awayScore = Math.floor(rand() * 8);
-      const homeScore = Math.floor(rand() * 8);
-
-      if (previewAwayName) previewAwayName.textContent = awayName.toUpperCase();
-      if (previewHomeName) previewHomeName.textContent = homeName.toUpperCase();
-      if (previewAwayScore) previewAwayScore.textContent = awayScore;
-      if (previewHomeScore) previewHomeScore.textContent = homeScore;
-      if (previewModalVenue) previewModalVenue.textContent = (isHome ? `${team} STADIUM` : `${opponent.name} STADIUM`).toUpperCase();
-      if (previewAwayLogo) previewAwayLogo.src = getTeamLogoUrl(awayName);
-      if (previewHomeLogo) previewHomeLogo.src = getTeamLogoUrl(homeName);
-
-      playlistABs = generateDailyCondensedGame(team, dateString);
-    }
-
-    if (previewModalAbs) previewModalAbs.textContent = `${playlistABs.length} MATCHUPS`;
-    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
-    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
-
-    // Define the launch function when they confirm
-    window._onPreviewStartCallback = () => {
-      launchGame(playlistABs, team, dateString);
-    };
-
-  } catch (err) {
-    console.error("Error setting up daily compete game preview:", err);
-    // Secure fallback
-    const playlistABs = generateDailyCondensedGame(team, dateString);
-    if (previewLoadingIndicator) previewLoadingIndicator.classList.add('hidden');
-    if (btnPreviewModalStart) btnPreviewModalStart.disabled = false;
-    window._onPreviewStartCallback = () => {
-      launchGame(playlistABs, team, dateString);
-    };
-  }
-}
-
-function launchGame(rawABs, team, dateString) {
-  const username = localStorage.getItem('ump_username');
-  if (!username) return;
-
-  gameMode = 'daily_compete';
-  activeDailyDate = dateString;
-  activeDailyTeam = team;
+  gameMode = 'mlb_game';
+  activeDailyDate = meta.dateString || null;
+  activeDailyTeam = meta.awayTeam || null;
+  activeMlbGamePk = meta.gamePk || null;
+  activeGameIndex = meta.gameIndex ?? activeGameIndex;
   isGamePaused = false;
 
   if (pauseScreen) {
@@ -12093,7 +11685,11 @@ function launchGame(rawABs, team, dateString) {
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
 
-  const key = `pitch_ump_daily_compete_mvp_${username.toUpperCase()}_${dateString}`;
+  const normalizedABs = normalizePlaylistAbs(rawABs, meta);
+  const sessionKeySuffix = meta.gamePk
+    ? `mlb_${meta.gamePk}`
+    : (meta.dateString || "session");
+  const key = `pitch_ump_mlb_game_mvp_${username.toUpperCase()}_${sessionKeySuffix}`;
   const rawSession = localStorage.getItem(key);
   let savedPlaylist = null;
   let savedAbIndex = 0;
@@ -12101,7 +11697,9 @@ function launchGame(rawABs, team, dateString) {
   if (rawSession) {
     try {
       const savedData = JSON.parse(rawSession);
-      if (savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === rawABs.length) {
+      const savedPk = savedData.gamePk;
+      const sameGame = !meta.gamePk || savedPk === meta.gamePk;
+      if (sameGame && savedData.weeklyPlaylistABs && savedData.weeklyPlaylistABs.length === normalizedABs.length) {
         savedPlaylist = savedData.weeklyPlaylistABs;
         savedAbIndex = savedData.activeWeeklyAbIndex || 0;
         if (savedAbIndex >= savedPlaylist.length) {
@@ -12110,14 +11708,14 @@ function launchGame(rawABs, team, dateString) {
         }
       }
     } catch (e) {
-      console.error("Failed to restore daily compete playlist", e);
+      console.error("Failed to restore MLB game playlist", e);
     }
   }
 
   if (savedPlaylist) {
     weeklyPlaylistABs = savedPlaylist;
     activeWeeklyAbIndex = savedAbIndex;
-    
+
     const raw = localStorage.getItem(key);
     if (raw) {
       try {
@@ -12138,7 +11736,7 @@ function launchGame(rawABs, team, dateString) {
       }
     }
   } else {
-    weeklyPlaylistABs = [...rawABs];
+    weeklyPlaylistABs = normalizedABs;
     activeWeeklyAbIndex = 0;
     currentPitchIndex = 0;
     abBalls = 0;
@@ -12157,91 +11755,147 @@ function hideGamePreviewModal() {
 }
 
 async function openChallengeDetailModal(type) {
+  challengeDetailModalOpen = true;
   if (challengeDetailModalOverlay) {
-    challengeDetailModalOverlay.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-    challengeDetailModalOverlay.classList.add('opacity-100', 'scale-100', 'pointer-events-auto');
+    challengeDetailModalOverlay.classList.remove('opacity-0', 'pointer-events-none');
+    challengeDetailModalOverlay.classList.add('opacity-100', 'pointer-events-auto');
   }
 
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
-  const profile = await getProfile(username);
-  
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  const totalAbs = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || meta.targetAtBats;
+  const completedAbs = activeWeeklyAbIndex;
+  const gamesWrap = document.getElementById('challenge-detail-games-wrap');
+  const statsGrid = document.getElementById('challenge-detail-stats');
+
   if (type === 'weekly') {
-    if (challengeDetailTitle) challengeDetailTitle.textContent = "WEEKLY CHALLENGE INFO";
-    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = "MLB CURATED MATCHUPS";
-    if (challengeDetailDesc) challengeDetailDesc.textContent = "Analyze pitch-by-pitch datasets sourced directly from controversial called strikes and balls. Complete all matchups to log your score globally.";
-    
-    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = "5 Featured Games";
-    if (challengeDetailBestStreak) challengeDetailBestStreak.textContent = "N/A (Score Based)";
-    if (challengeDetailCompleted) challengeDetailCompleted.textContent = profile ? `${profile.completedWeekly || 0} Runs` : "0 Runs";
-    
+    if (challengeDetailModalPanel) {
+      challengeDetailModalPanel.classList.remove('border-amber-500/35');
+      challengeDetailModalPanel.classList.add('border-emerald-500/35');
+    }
+    if (challengeDetailTitle) challengeDetailTitle.textContent = 'Weekly Challenge';
+    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = formatWeekLabel(meta.challengeWeekId);
+    if (challengeDetailDesc) {
+      challengeDetailDesc.textContent =
+        'Curated critical called pitches from real MLB matchups. Earn 10 points per correct call.';
+    }
+    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = String(meta.gameCount);
+    if (challengeDetailAbCount) challengeDetailAbCount.textContent = String(totalAbs);
+    if (challengeDetailCompleted) challengeDetailCompleted.textContent = `${completedAbs} / ${totalAbs}`;
+    if (challengeDetailReset) challengeDetailReset.textContent = 'Monday';
+    if (statsGrid) {
+      statsGrid.classList.remove('hidden');
+      const labels = statsGrid.querySelectorAll('.challenge-detail-stats__item span');
+      if (labels[0]) labels[0].textContent = 'Games';
+      if (labels[1]) labels[1].textContent = 'At-bats';
+      if (labels[2]) labels[2].textContent = 'Progress';
+      if (labels[3]) labels[3].textContent = 'Resets';
+    }
+    if (gamesWrap) gamesWrap.classList.remove('hidden');
+
+    if (challengeDetailGamesList) {
+      challengeDetailGamesList.innerHTML = WEEKLY_CHALLENGE_DATA.slice(0, meta.gameCount).map((game, idx) => {
+        const pk = game.gamePk || (meta.gamePks && meta.gamePks[idx]) || '';
+        return `
+          <div class="challenge-detail-game-row">
+            <div>
+              <div class="challenge-detail-game-row__title">${game.title}</div>
+              <div class="challenge-detail-game-row__desc">${game.description || ''}</div>
+            </div>
+            ${pk ? `<span class="challenge-detail-game-row__pk">#${pk}</span>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
     if (btnChallengeDetailPlay) {
+      btnChallengeDetailPlay.textContent = btnStartWeeklyChallenge?.textContent?.includes('Resume')
+        ? 'Resume Challenge'
+        : 'Start Challenge';
       btnChallengeDetailPlay.onclick = (e) => {
         e.stopPropagation();
         hideChallengeDetailModal();
         if (btnStartWeeklyChallenge) btnStartWeeklyChallenge.click();
       };
     }
-
-    if (challengeDetailLeaderboardBody) {
-      const rows = (await getLeaderboardRows('weekly', username)).rows;
-      challengeDetailLeaderboardBody.innerHTML = rows.map(r => {
-        let rankHtml = `#${r.rank}`;
-        if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇</span>`;
-        else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈</span>`;
-        else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉</span>`;
-        
-        return `
-          <tr class="border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}">
-            <td class="p-3">${rankHtml}</td>
-            <td class="p-3 uppercase tracking-wider ${r.isUser ? 'text-purple-400 font-bold' : ''}">${r.name}</td>
-            <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
-            <td class="p-3 text-center font-bold">${r.score}</td>
-          </tr>
-        `;
-      }).join('');
+    if (btnChallengeDetailStandings) {
+      btnChallengeDetailStandings.classList.remove('hidden');
+      btnChallengeDetailStandings.textContent = 'Standings';
+      btnChallengeDetailStandings.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        openStandingsTab({ board: 'weekly', view: 'ranks', periodKey: meta.challengeWeekId });
+      };
+    }
+    if (btnChallengeDetailLastWeek) {
+      btnChallengeDetailLastWeek.classList.remove('hidden');
+      btnChallengeDetailLastWeek.textContent = 'History';
+      btnChallengeDetailLastWeek.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        openStandingsTab({ board: 'weekly', view: 'history' });
+      };
     }
   } else {
-    if (challengeDetailTitle) challengeDetailTitle.textContent = "STREAK CHALLENGE INFO";
-    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = "BORDERLINE PITCH BLITZ";
-    if (challengeDetailDesc) challengeDetailDesc.textContent = "Test your focus against consecutive borderline pitches. Make one incorrect call and the run is over. Playable infinitely!";
-    
-    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = "Controversial Curation";
-    if (challengeDetailBestStreak) challengeDetailBestStreak.textContent = profile ? `${profile.maxStreak || 0} Pitches` : "0 Pitches";
-    if (challengeDetailCompleted) challengeDetailCompleted.textContent = "Infinite Retries";
-    
+    const profile = await getProfile(username);
+    if (challengeDetailModalPanel) {
+      challengeDetailModalPanel.classList.remove('border-emerald-500/35');
+      challengeDetailModalPanel.classList.add('border-amber-500/35');
+    }
+    if (challengeDetailTitle) challengeDetailTitle.textContent = 'Streak Challenge';
+    if (challengeDetailSubtitle) challengeDetailSubtitle.textContent = "Today's borderline pitch run";
+    if (challengeDetailDesc) {
+      challengeDetailDesc.textContent =
+        'Call consecutive borderline pitches correctly. One miss ends the run — replay as often as you like.';
+    }
+    if (challengeDetailGamesCount) challengeDetailGamesCount.textContent = 'Borderline';
+    if (challengeDetailAbCount) challengeDetailAbCount.textContent = profile ? `${profile.maxStreak || 0}` : '0';
+    if (challengeDetailCompleted) challengeDetailCompleted.textContent = document.getElementById('daily-streak-outcome')?.textContent?.replace(/\s*PITCHES/i, '') || '0';
+    if (challengeDetailReset) challengeDetailReset.textContent = 'Daily';
+    if (statsGrid) {
+      statsGrid.classList.remove('hidden');
+      const labels = statsGrid.querySelectorAll('.challenge-detail-stats__item span');
+      if (labels[0]) labels[0].textContent = 'Mode';
+      if (labels[1]) labels[1].textContent = 'All-time best';
+      if (labels[2]) labels[2].textContent = 'Today';
+      if (labels[3]) labels[3].textContent = 'Resets';
+    }
+    if (gamesWrap) gamesWrap.classList.add('hidden');
+
     if (btnChallengeDetailPlay) {
+      btnChallengeDetailPlay.textContent = 'Play Streak';
       btnChallengeDetailPlay.onclick = (e) => {
         e.stopPropagation();
         hideChallengeDetailModal();
         if (btnStartDailyStreak) btnStartDailyStreak.click();
       };
     }
-
-    if (challengeDetailLeaderboardBody) {
-      const rows = (await getLeaderboardRows('daily', username)).rows;
-      challengeDetailLeaderboardBody.innerHTML = rows.map(r => {
-        let rankHtml = `#${r.rank}`;
-        if (r.rank === 1) rankHtml = `<span class="text-yellow-400 font-black">🥇</span>`;
-        else if (r.rank === 2) rankHtml = `<span class="text-gray-400 font-black">🥈</span>`;
-        else if (r.rank === 3) rankHtml = `<span class="text-amber-600 font-black">🥉</span>`;
-        
-        return `
-          <tr class="border-b border-white/5 font-mono-tech text-[11px] ${r.isUser ? 'bg-purple-950/20 text-purple-300 font-bold border-l-2 border-purple-500' : 'text-gray-300'}">
-            <td class="p-3">${rankHtml}</td>
-            <td class="p-3 uppercase tracking-wider ${r.isUser ? 'text-purple-400 font-bold' : ''}">${r.name}</td>
-            <td class="p-3 text-center text-emerald-400">${r.accuracy}</td>
-            <td class="p-3 text-center font-bold text-amber-400">${r.score}</td>
-          </tr>
-        `;
-      }).join('');
+    if (btnChallengeDetailStandings) {
+      btnChallengeDetailStandings.classList.remove('hidden');
+      btnChallengeDetailStandings.textContent = 'Today';
+      btnChallengeDetailStandings.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        openStandingsTab({ board: 'daily', view: 'ranks' });
+      };
+    }
+    if (btnChallengeDetailLastWeek) {
+      btnChallengeDetailLastWeek.classList.remove('hidden');
+      btnChallengeDetailLastWeek.textContent = 'All-time';
+      btnChallengeDetailLastWeek.onclick = (e) => {
+        e.stopPropagation();
+        hideChallengeDetailModal();
+        openStandingsTab({ board: 'daily', view: 'alltime' });
+      };
     }
   }
 }
 
 function hideChallengeDetailModal() {
+  challengeDetailModalOpen = false;
   if (challengeDetailModalOverlay) {
-    challengeDetailModalOverlay.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-    challengeDetailModalOverlay.classList.remove('opacity-100', 'scale-100', 'pointer-events-auto');
+    challengeDetailModalOverlay.classList.add('opacity-0', 'pointer-events-none');
+    challengeDetailModalOverlay.classList.remove('opacity-100', 'pointer-events-auto');
   }
 }
 
@@ -12265,6 +11919,12 @@ async function runAutomatedIntegrationTest() {
         if (btnCreate) {
           btnCreate.click();
           console.log("TEST: Confirm profile creation clicked.");
+          // Wait for transition to PRESS START state and click start
+          await new Promise(r => setTimeout(r, 600));
+          if (btnWelcomeStart) {
+            btnWelcomeStart.click();
+            console.log("TEST: Welcome start clicked after profile creation.");
+          }
         }
       }
     } else {
@@ -12765,7 +12425,7 @@ function getUserXpStats() {
   }
   const normalized = normalizeHandle(username);
   const statsKey = getStatsStorageKey(normalized);
-  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"dnfs":0,"history":[]}');
+  const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   
   let xp = userStats.xp !== undefined ? userStats.xp : 0;
   if (userStats.xp === undefined) {
@@ -12773,14 +12433,11 @@ function getUserXpStats() {
     history.forEach(h => {
       const isWeekly = h.gameName && h.gameName.includes("Weekly");
       const isStreak = h.gameName && h.gameName.includes("Streak");
-      const isDailyCompete = h.gameName && h.gameName.includes("Daily Compete");
       
       if (isWeekly) {
         xp += (h.correctCalls || 0) * 10;
       } else if (isStreak) {
         xp += (h.correctCalls || 0) * 15;
-      } else if (isDailyCompete) {
-        xp += (h.correctCalls || 0) * 12;
       } else {
         xp += (h.correctCalls || 0) * 5;
       }
@@ -12811,7 +12468,7 @@ function populateXpPopoverData() {
   if (popoverHandle) popoverHandle.textContent = username;
   if (popoverTierTitle) popoverTierTitle.textContent = tier.title;
   if (popoverLevelBadge) {
-    applyLevelBadgeElement(popoverLevelBadge, xpProgress.level);
+    popoverLevelBadge.innerHTML = getRankIconHtml(xpProgress.level);
   }
   if (popoverNums) popoverNums.textContent = `${xpProgress.progress.toLocaleString()} / ${XP_PER_LEVEL.toLocaleString()} XP`;
   if (popoverBar) {
@@ -12863,15 +12520,19 @@ function toggleXpDetailsPopover(show) {
     const widget = document.getElementById('hud-profile-xp-widget');
     if (widget) {
       const rect = widget.getBoundingClientRect();
-      if (window.innerWidth < 640) {
+      const layer = document.getElementById('hud-layer');
+      const layerRect = layer ? layer.getBoundingClientRect() : { top: 0, right: window.innerWidth };
+      
+      if (window.innerWidth < 768) {
         popover.style.left = '50%';
-        popover.style.transform = 'translateX(-50%) scale(1)';
-        popover.style.top = `${rect.bottom + window.scrollY + 8}px`;
+        popover.style.right = 'auto';
+        popover.style.transform = 'translate(-50%, 0) scale(1)';
+        popover.style.top = `${rect.bottom - layerRect.top + 8}px`;
       } else {
         popover.style.left = 'auto';
-        popover.style.right = `${window.innerWidth - rect.right}px`;
+        popover.style.right = `${layerRect.right - rect.right}px`;
         popover.style.transform = 'scale(1)';
-        popover.style.top = `${rect.bottom + window.scrollY + 8}px`;
+        popover.style.top = `${rect.bottom - layerRect.top + 8}px`;
       }
     }
     
@@ -13004,39 +12665,54 @@ function triggerConfettiCelebration() {
   }
 }
 
-function showTemporaryLoadingScreen(label, durationMs = 850, callback = null) {
+let appLaunchLoaderSession = 0;
+
+function hideAppLaunchLoader() {
+  const loader = document.getElementById('app-launch-loader');
+  if (!loader) return;
+  loader.style.opacity = '0';
+  loader.style.pointerEvents = 'none';
+  loader.style.display = 'none';
+}
+
+function showTemporaryLoadingScreen(label, minDurationMs = 850, callback = null) {
   const loader = document.getElementById('app-launch-loader');
   const subtext = document.getElementById('loader-subtext');
-  if (!loader) {
-    if (callback) callback();
-    return;
-  }
-  
-  if (subtext) {
-    subtext.textContent = label || "Loading Simulation...";
-  }
-  
-  loader.style.display = 'flex';
-  loader.style.pointerEvents = 'auto';
-  loader.style.opacity = '1';
-  
-  let callbackCalled = false;
-  const runCallback = () => {
-    if (!callbackCalled) {
-      callbackCalled = true;
-      if (callback) callback();
+  const minVisibleMs = Math.max(minDurationMs, 400);
+  const session = ++appLaunchLoaderSession;
+  const startedAt = performance.now();
+
+  if (loader) {
+    if (subtext) {
+      subtext.textContent = label || "Loading Simulation...";
     }
-  };
-  
-  setTimeout(runCallback, 250);
-  
+    loader.style.display = 'flex';
+    loader.style.pointerEvents = 'auto';
+    loader.style.opacity = '1';
+  }
+
+  const maxVisibleMs = Math.max(minVisibleMs + 8000, 10000);
+
+  (async () => {
+    try {
+      if (callback) await callback();
+    } catch (e) {
+      console.error('Loading transition failed:', e);
+    } finally {
+      const elapsed = performance.now() - startedAt;
+      const remaining = Math.max(0, minVisibleMs - elapsed);
+      await new Promise((r) => setTimeout(r, remaining));
+      if (session === appLaunchLoaderSession) {
+        hideAppLaunchLoader();
+      }
+    }
+  })();
+
   setTimeout(() => {
-    loader.style.opacity = '0';
-    loader.style.pointerEvents = 'none';
-    setTimeout(() => {
-      loader.style.display = 'none';
-    }, 600);
-  }, durationMs);
+    if (session === appLaunchLoaderSession) {
+      hideAppLaunchLoader();
+    }
+  }, maxVisibleMs);
 }
 
 function triggerXpSurgeAnimation(amount) {
@@ -13055,7 +12731,7 @@ function triggerXpSurgeAnimation(amount) {
     }
   }
   
-  const centralContainer = document.getElementById('hud-central-xp-container');
+  const centralContainer = document.getElementById('hud-central-xp-container') || document.getElementById('hud-profile-xp-widget');
   if (centralContainer) {
     const rect = centralContainer.getBoundingClientRect();
     const floating = document.createElement('div');

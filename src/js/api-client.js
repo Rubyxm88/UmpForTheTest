@@ -69,6 +69,27 @@ export async function apiSaveStats(stats) {
   return parseResponse(res);
 }
 
+export async function apiFetchLeaderboardPeriods(board) {
+  const params = new URLSearchParams({ board });
+  const res = await fetch(`/api/leaderboard-periods?${params}`, { ...API_FETCH_OPTS });
+  const data = await parseResponse(res);
+  return {
+    periods: data.periods || [],
+    source: data.source === 'live' ? 'live' : data.periods?.length ? 'live' : 'empty',
+  };
+}
+
+export async function apiFetchCrewLeaderboard(metric, username) {
+  const params = new URLSearchParams({ metric, username: username || '' });
+  const res = await fetch(`/api/crew?${params}`, { ...API_FETCH_OPTS });
+  const data = await parseResponse(res);
+  return {
+    rows: data.rows || [],
+    source: data.source === 'live' ? 'live' : data.rows?.length ? 'live' : 'empty',
+    metric: data.metric,
+  };
+}
+
 export async function apiFetchLeaderboard(board, username, period) {
   const params = new URLSearchParams({ board, username: username || '' });
   if (period) params.set('period', period);

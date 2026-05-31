@@ -8,6 +8,7 @@
     "dev:api": "vercel dev",
     "build": "vite build",
     "preview": "vite preview",
+    "weekly-curator": "node scripts/weekly-curator.js",
     "test": "node scratch/run_headless.js"
   },
   "devDependencies": {

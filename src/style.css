@@ -51,6 +51,7 @@ body {
 #team-select-screen.ump-screen,
 #start-screen.ump-screen {
   background: var(--ump-screen-bg) !important;
+  transition: opacity 0.32s cubic-bezier(0.4, 0, 0.2, 1), transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Screen backdrops (unmigrated screens) */
@@ -841,16 +842,38 @@ input[type="range"] {
   }
 }
 
-/* Ensure screens with unified top nav have sufficient top padding to prevent overlap and click intercepting */
+/* Screens sit in #hud-main-view below #main-top-nav — only a small inset, not full nav height */
 #start-screen,
 #team-select-screen,
 #scoreboard-screen {
-  padding-top: calc(5.5rem + var(--ump-safe-top)) !important;
+  padding-top: 0.35rem !important;
+  padding-left: 0.5rem !important;
+  padding-right: 0.5rem !important;
+}
+
+#welcome-screen {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  overflow-y: auto !important;
+  padding: 1.5rem 1rem !important;
+}
+
+#welcome-screen .ump-panel {
+  margin: auto !important;
 }
 
 /* Scroll and layout scaling for overlays on small heights or mobile viewports */
 @media (max-height: 580px), (max-width: 640px) {
-  #welcome-screen,
+  #welcome-screen {
+    justify-content: flex-start !important;
+    padding-top: 2.5rem !important;
+    padding-bottom: 2.5rem !important;
+  }
+  #welcome-screen .ump-panel {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
   #pause-screen {
     justify-content: flex-start !important;
     overflow-y: auto !important;
@@ -862,8 +885,8 @@ input[type="range"] {
   #scoreboard-screen {
     justify-content: flex-start !important;
     overflow-y: auto !important;
-    padding-top: calc(7.5rem + var(--ump-safe-top)) !important;
-    padding-bottom: 2.5rem !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.75rem !important;
   }
   #ab-start-overlay,
   #ab-summary-overlay {
@@ -969,8 +992,13 @@ input[type="range"] {
   }
 }
 
-#welcome-screen h1 {
-  animation: textGlowPulse 4s infinite, glitchText 6s infinite;
+.welcome-logo-container {
+  animation: logoFloat 5s ease-in-out infinite;
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
 }
 
 @keyframes glitchText {
@@ -1089,14 +1117,13 @@ a, button {
 }
 
 /* XP Bar Styling & Shine Animation */
-#hud-user-xp-bar {
-  background: var(--ump-xp-bar-bg-gradient, linear-gradient(90deg, #a855f7 0%, #ec4899 50%, #3b82f6 100%)) !important;
+#hud-user-xp-bar,
+.ump-xp-bar-fill {
+  background: linear-gradient(90deg, var(--retro-stitch) 0%, var(--retro-stitch-dark) 100%) !important;
   background-size: 200% 100% !important;
   position: relative;
   overflow: hidden;
 }
-
-/* HUD XP Bar custom gains removed - handled by unified .ump-xp-bar-fill classes */
 
 /* Hide floating header Home/Settings buttons as they are merged into top Profile HUD */
 #btn-main-menu,
@@ -1177,7 +1204,7 @@ a, button {
 }
 
 .arcade-cabinet-bezel {
-  pointer-events: none;
+  pointer-events: none !important;
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -1222,7 +1249,7 @@ a, button {
 }
 
 .ab-summary-scanlines {
-  pointer-events: none;
+  pointer-events: none !important;
   position: absolute;
   inset: 0;
   z-index: 3;
@@ -1790,7 +1817,7 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-summary-btn-secondary {
   font-family: var(--ump-font-pixel);
   font-size: var(--retro-pixel-sm);
-  line-height: 1.5;
+  line-height: 1.35;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
@@ -1876,11 +1903,149 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-summary-challenge-dock--unified {
   display: flex !important;
   flex-direction: column !important;
-  gap: 0.3rem !important;
-  padding: 0.35rem 0.55rem !important;
+  gap: 0.45rem !important;
+  padding: 0.5rem 0.65rem !important;
   background: linear-gradient(135deg, rgba(45, 107, 66, 0.25), rgba(10, 22, 40, 0.95)) !important;
   border: 1px solid var(--retro-grass) !important;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Weekly / streak challenge dock — stacks on narrow screens */
+.ab-challenge-dock__heading {
+  display: block;
+  color: var(--retro-chalk-dim);
+}
+
+.ab-challenge-dock__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.ab-challenge-dock__progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.ab-challenge-dock__count-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "label pct"
+    "count count";
+  align-items: baseline;
+  column-gap: 0.5rem;
+  row-gap: 0.15rem;
+}
+
+.ab-challenge-dock__count-label {
+  grid-area: label;
+  font-family: var(--ump-font-body);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--retro-chalk-dim);
+}
+
+.ab-challenge-dock__count-value {
+  grid-area: count;
+  font-family: var(--ump-font-body);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--retro-chalk);
+  text-shadow: 0 0 12px rgba(92, 219, 149, 0.25);
+}
+
+.ab-challenge-dock__count-value #ab-start-weekly-total,
+.ab-challenge-dock__count-value #ab-summary-weekly-total {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--retro-chalk-dim);
+}
+
+.ab-challenge-dock__pct {
+  grid-area: pct;
+  justify-self: end;
+  font-family: var(--ump-font-body);
+  font-size: clamp(0.72rem, 3.2vw, 0.82rem);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--retro-ok);
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.ab-challenge-dock__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.65rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(45, 107, 66, 0.45);
+}
+
+.ab-challenge-dock__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  text-align: center;
+  min-width: 0;
+}
+
+.ab-challenge-dock__stat-value {
+  font-family: var(--ump-font-body);
+  font-size: clamp(0.95rem, 4vw, 1.1rem);
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--retro-chalk);
+}
+
+.ab-challenge-dock__stat-value span {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+@media (min-width: 480px) {
+  .ab-challenge-dock__main {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .ab-challenge-dock__progress-block {
+    flex: 1;
+  }
+
+  .ab-challenge-dock__stats {
+    flex: 0 0 auto;
+    grid-template-columns: auto auto;
+    align-content: center;
+    padding-top: 0;
+    padding-left: 0.65rem;
+    border-top: none;
+    border-left: 1px solid rgba(45, 107, 66, 0.45);
+  }
+
+  .ab-challenge-dock__count-row {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "label count pct";
+    align-items: baseline;
+  }
+
+  .ab-challenge-dock__count-value {
+    justify-self: start;
+  }
+
+  .ab-challenge-dock__pct {
+    justify-self: end;
+  }
 }
 
 .player-card-popout {
@@ -1995,11 +2160,25 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 .ab-summary-weekly-bar-bg {
-  height: 0.25rem;
-  background: rgba(2, 6, 23, 0.8);
+  width: 100%;
+  height: 0.5rem;
+  min-height: 8px;
+  background: rgba(2, 6, 23, 0.85);
   border-radius: 9999px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 479px) {
+  .ab-challenge-dock .ab-summary-weekly-bar-bg {
+    height: 0.625rem;
+    min-height: 10px;
+  }
+
+  .ab-challenge-dock__pct {
+    font-size: 0.78rem;
+  }
 }
 
 .ab-summary-weekly-bar-fill {
@@ -2399,6 +2578,17 @@ body.ab-summary-active #hud-keyboard-help {
 #ab-start-overlay {
   background: rgba(6, 14, 24, 0.92) !important;
   backdrop-filter: blur(6px);
+  z-index: 150 !important;
+}
+
+body.ab-start-active #main-top-nav,
+body.ab-start-active #game-status-badge,
+body.ab-start-active #hud-keyboard-help,
+body.ab-start-active #matchup-card,
+body.ab-start-active #nav-context-row {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .ab-start-cabinet {
@@ -2425,7 +2615,7 @@ body.ab-summary-active #hud-keyboard-help {
 .ab-start-scanlines {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: none !important;
   z-index: 2;
   background: repeating-linear-gradient(
     0deg,
@@ -2452,6 +2642,7 @@ body.ab-summary-active #hud-keyboard-help {
   letter-spacing: 0.06em;
   position: relative;
   z-index: 3;
+  pointer-events: none !important;
 }
 
 .countdown-timer-text--hurry {
@@ -2605,21 +2796,59 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 @media (max-width: 640px) {
-  /* Shrink matchup card and photos inside At-Bat start overlay on mobile */
+  #ab-start-overlay {
+    justify-content: center !important;
+    align-items: center !important;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0.5rem max(0.75rem, env(safe-area-inset-bottom)) !important;
+  }
+
+  #ab-start-overlay .ab-start-cabinet {
+    width: 100% !important;
+    max-width: min(100%, calc(100vw - 0.75rem)) !important;
+    max-height: min(96dvh, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 0.5rem)) !important;
+  }
+
   #ab-start-overlay .ab-summary-matchup-card {
-    gap: 0.15rem;
-    padding: 0.3rem 0.2rem;
-  }
-  #ab-start-overlay .ab-summary-player {
     gap: 0.25rem;
+    padding: 0.4rem 0.35rem;
   }
+
+  #ab-start-overlay .ab-summary-player {
+    gap: 0.35rem;
+  }
+
   #ab-start-overlay .ab-summary-player-photo {
-    width: 2rem;
-    height: 2rem;
+    width: 2.75rem;
+    height: 2.75rem;
   }
+
+  #ab-start-overlay .ab-summary-hand-badge {
+    font-size: 0.52rem;
+    padding: 0.05rem 0.28rem;
+  }
+
   #ab-start-overlay .name-marquee-text,
   #ab-start-overlay .name-marquee-dup {
-    font-size: 0.72rem !important;
+    font-size: clamp(0.78rem, 3.4vw, 0.95rem) !important;
+  }
+
+  #ab-start-overlay .ab-start-title {
+    font-size: clamp(0.42rem, 2.8vw, 0.52rem) !important;
+  }
+
+  #ab-start-overlay .ab-start-subtitle,
+  #ab-start-overlay .ab-start-context-panel {
+    font-size: clamp(0.82rem, 3.6vw, 0.95rem);
+  }
+
+  #ab-start-overlay .ab-start-btn--ready {
+    font-size: clamp(0.44rem, 3vw, 0.52rem) !important;
+    min-height: 48px !important;
+  }
+
+  #ab-start-overlay .ab-start-btn--exit {
+    font-size: clamp(0.38rem, 2.6vw, 0.46rem) !important;
+    min-height: 44px !important;
   }
 
   /* Avoid escaped Tailwind selectors (CSS optimizer warnings). */
@@ -2627,6 +2856,7 @@ body.ab-summary-active #hud-keyboard-help {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    padding: 0.45rem 0.5rem 0.5rem !important;
   }
 
   /* Post-AB summary: full-width sheet, no HUD bleed-through */
@@ -2747,8 +2977,9 @@ body.ab-summary-active #hud-keyboard-help {
   }
 
   .ab-summary-review-toggle {
-    padding: 0.45rem 0.6rem;
-    font-size: 0.65rem;
+    padding: 0.5rem 0.45rem;
+    font-size: clamp(0.36rem, 2.5vw, 0.44rem) !important;
+    line-height: 1.3 !important;
     margin-bottom: 0.45rem;
   }
 
@@ -2768,6 +2999,11 @@ body.ab-summary-active #hud-keyboard-help {
     gap: 0.25rem;
   }
 
+  .ab-summary-challenge-dock--unified {
+    padding: 0.45rem 0.5rem !important;
+    gap: 0.4rem !important;
+  }
+
   .ab-summary-challenge-big {
     font-size: 0.95rem;
   }
@@ -2776,12 +3012,17 @@ body.ab-summary-active #hud-keyboard-help {
     gap: 0.25rem;
   }
 
+  /* Pitch chart: stack pitches → zone → legend (side-by-side was crushing the zone map) */
   .ab-summary-chart-layout {
-    grid-template-columns: minmax(0, 34%) minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
   }
 
   .ab-summary-zone-area {
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
   }
 
   .ab-summary-pitch-list {
@@ -2791,22 +3032,33 @@ body.ab-summary-active #hud-keyboard-help {
     overflow-y: hidden;
     max-height: none;
     padding-bottom: 0.15rem;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.2rem;
   }
 
   .ab-summary-pitch-row {
     flex: 0 0 auto;
-    min-width: 5.5rem;
+    min-width: 6.25rem;
+    max-width: 8rem;
+    font-size: 0.72rem;
+    padding: 0.28rem 0.32rem;
+  }
+
+  .ab-summary-pitch-brief {
+    font-size: 0.62rem;
   }
 
   .ab-summary-zone-key {
     flex-direction: row;
     flex-wrap: wrap;
+    justify-content: center;
     min-width: 0;
-    gap: 0.15rem 0.35rem;
+    gap: 0.15rem 0.45rem;
+    padding: 0.15rem 0;
   }
 
   .ab-summary-key-row {
-    font-size: 0.32rem;
+    font-size: 0.28rem;
   }
 
   .ab-summary-footer-bar {
@@ -2814,8 +3066,11 @@ body.ab-summary-active #hud-keyboard-help {
   }
 
   .ab-summary-btn-primary {
-    padding: 0.65rem 0.85rem;
-    font-size: 0.72rem;
+    padding: 0.55rem 0.5rem !important;
+    font-size: clamp(0.34rem, 2.4vw, 0.42rem) !important;
+    line-height: 1.3 !important;
+    letter-spacing: 0.02em;
+    white-space: normal;
   }
 
   .ab-summary-kbd {
@@ -2823,26 +3078,32 @@ body.ab-summary-active #hud-keyboard-help {
   }
 
   .ab-summary-btn-secondary {
-    font-size: 0.58rem;
-    padding: 0.45rem 0.25rem;
+    font-size: clamp(0.32rem, 2.2vw, 0.38rem) !important;
+    padding: 0.4rem 0.2rem !important;
+    line-height: 1.25 !important;
+    letter-spacing: 0.02em;
   }
 
   .ab-summary-chart-card {
     padding: 0.45rem;
   }
 
-  .ab-summary-pitch-list {
-    max-height: 5rem;
-  }
-
   .ab-summary-zone-frame {
-    min-height: 8.5rem;
-    padding: 0.35rem;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
+    max-height: 11rem;
+    padding: 0.4rem;
   }
 
-  #ab-summary-matrix-svg {
-    min-height: 7.5rem;
+  #ab-summary-matrix-svg,
+  #streak-summary-matrix-svg {
+    width: 100%;
+    height: auto;
     max-height: 10rem;
+    min-height: 0;
+    aspect-ratio: 1 / 1;
   }
 
   .ab-summary-pitch-focus {
@@ -3574,12 +3835,31 @@ body.ab-summary-active #hud-keyboard-help {
 
 #hud-profile-xp-widget {
   transition: all 0.2s ease-in-out;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
-#hud-profile-xp-widget:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
+#hud-profile-xp-widget #hud-user-team-logo {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#hud-profile-xp-widget:hover #hud-user-handle {
+  color: #ffffff !important;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+#hud-profile-xp-widget:hover #hud-user-team-logo {
   border-color: var(--retro-gold) !important;
-  box-shadow: 0 0 10px rgba(232, 197, 71, 0.15);
+  box-shadow: 0 0 10px var(--retro-gold);
+}
+
+#hud-profile-xp-widget:hover #hud-user-xp-bar {
+  filter: brightness(1.15);
+}
+
+#hud-user-favorite-badge {
+  display: none !important;
 }
 
 #hud-xp-details-popover {
@@ -3588,7 +3868,7 @@ body.ab-summary-active #hud-keyboard-help {
 }
 
 #hud-xp-details-popover.opacity-100 {
-  transform: translateY(0) scale(1) !important;
+  /* Handled inline by JavaScript to support dynamic centering on mobile */
 }
 
 /* Custom Scrollbar for popover ladder */
@@ -3606,8 +3886,9 @@ body.ab-summary-active #hud-keyboard-help {
   background: rgba(255, 255, 255, 0.25);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   #hud-xp-details-popover {
+    position: absolute !important;
     left: 50% !important;
     right: auto !important;
     transform: translate(-50%, 0) scale(0.95) !important;
@@ -3862,6 +4143,88 @@ body.ab-summary-active #hud-keyboard-help {
 .animate-claim-success {
   animation: claim-success-pulse 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
+
+/* Force hidden overlay children to inherit pointer-events:none for click-through */
+#ab-summary-overlay:not(.opacity-100) *,
+#streak-summary-overlay:not(.opacity-100) *,
+#ab-start-overlay:not(.opacity-100) *,
+#scoreboard-screen:not(.opacity-100) *,
+#confirm-modal-overlay:not(.opacity-100) *,
+#preview-modal-overlay:not(.opacity-100) *,
+#challenge-detail-modal-overlay:not(.opacity-100) * {
+  pointer-events: inherit;
+}
+
+@media (min-width: 768px) {
+  #xp-popover-progress-section {
+    display: none !important;
+  }
+}
+
+/* Manual Claim Button Custom Visual States */
+.bonus-btn-unclaimed {
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 100%) !important;
+  border-color: #f59e0b !important;
+  color: #030712 !important;
+  font-weight: 900 !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  animation: claim-btn-pulse 2s infinite !important;
+}
+.bonus-btn-unclaimed:hover {
+  filter: brightness(1.1) !important;
+  transform: scale(1.03) !important;
+}
+.bonus-btn-unclaimed:active {
+  transform: scale(0.97) !important;
+}
+
+.bonus-btn-claiming {
+  background: rgba(15, 23, 42, 0.8) !important;
+  border-color: rgba(245, 158, 11, 0.2) !important;
+  color: #fbbf24 !important;
+  font-weight: 800 !important;
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+.bonus-btn-claimed {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  color: #34d399 !important;
+  font-weight: 700 !important;
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+@keyframes claim-btn-pulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.65); }
+}
+
+@media (max-width: 480px) {
+  .ump-stat-card {
+    padding: 0.45rem 0.25rem !important;
+  }
+  .ump-stat-card__value {
+    font-size: 1rem !important;
+  }
+}
+
+/* Ensure ab-start-overlay and its interactive children receive pointer events when visible */
+#ab-start-overlay.opacity-100 {
+  pointer-events: auto !important;
+}
+
+#ab-start-overlay.opacity-100 .ab-start-btn,
+#ab-start-overlay.opacity-100 .ab-summary-player,
+#ab-start-overlay.opacity-100 .ab-start-body,
+#ab-start-overlay.opacity-100 .ab-start-cabinet {
+  pointer-events: auto !important;
+}
+
 
 
 

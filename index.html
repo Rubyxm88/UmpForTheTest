@@ -47,7 +47,48 @@
         </div>
         <div class="launch-loader-ring" aria-hidden="true"></div>
       </div>
-      <div style="font-weight: 900; font-size: 16px; color: #f8fafc; letter-spacing: 0.15em; text-transform: uppercase; text-shadow: 0 0 10px rgba(168,85,247,0.5); margin-bottom: 8px;">UMPSIM3000</div>
+      <div class="select-none mb-4 w-44 h-12 flex items-center justify-center animate-pulse">
+        <svg viewBox="0 0 170 44" class="w-full h-full">
+          <defs>
+            <linearGradient id="logo-shield-gold-ld" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#fbbf24" />
+              <stop offset="100%" stop-color="#d97706" />
+            </linearGradient>
+            <linearGradient id="logo-text-gold-ld" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#fef08a" />
+              <stop offset="50%" stop-color="#e8c547" />
+              <stop offset="100%" stop-color="#9a7a1e" />
+            </linearGradient>
+            <linearGradient id="logo-ball-grad-ld" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#ffffff" />
+              <stop offset="70%" stop-color="#f1f5f9" />
+              <stop offset="100%" stop-color="#cbd5e1" />
+            </linearGradient>
+            <filter id="logo-neon-glow-ld" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+          <g transform="translate(2, 2)">
+            <path d="M 20,2 L 37,12 L 37,30 L 20,38 L 3,30 L 3,12 Z" fill="#09101d" stroke="url(#logo-shield-gold-ld)" stroke-width="2" stroke-linejoin="round" />
+            <circle cx="20" cy="20" r="10" fill="url(#logo-ball-grad-ld)" />
+            <path d="M 15,13 Q 20,20 15,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+            <path d="M 25,13 Q 20,20 25,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+            <path d="M 8,11 L 8,8 L 11,8" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-ld)" />
+            <path d="M 29,8 L 32,8 L 32,11" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-ld)" />
+            <path d="M 8,29 L 8,32 L 11,32" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-ld)" />
+            <path d="M 29,32 L 32,32 L 32,29" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-ld)" />
+            <line x1="20" y1="17" x2="20" y2="23" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+            <line x1="17" y1="20" x2="23" y2="20" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+          </g>
+          <text x="48" y="27" font-family="'Outfit', sans-serif" font-weight="900" font-size="16" fill="#f4ecd8" letter-spacing="0.05em">UMP</text>
+          <text x="86" y="27" font-family="'Outfit', sans-serif" font-weight="900" font-size="16" fill="url(#logo-text-gold-ld)" filter="url(#logo-neon-glow-ld)" letter-spacing="0.05em">SIM</text>
+          <text x="122" y="27" font-family="'Share Tech Mono', monospace" font-weight="700" font-size="13" fill="#6eb5e8" letter-spacing="0.05em">3000</text>
+        </svg>
+      </div>
       <div id="loader-subtext" style="font-size: 9px; color: #64748b; letter-spacing: 0.2em; text-transform: uppercase;">Booting Simulation System...</div>
     </div>
 
@@ -72,95 +113,125 @@
       <!-- NEW UNIFIED MAIN TOP NAVIGATION BAR -->
       <div id="main-top-nav" class="ump-hud-bar flex flex-col p-1.5 md:p-3 gap-1 md:gap-2 select-none pointer-events-none transition-all duration-300 opacity-0 hidden z-[60] mx-2 mt-2 md:mx-5 md:mt-5 mb-1">
         <!-- ROW 1: Persistent Telemetry & Navigation (Always visible) -->
-        <div class="w-full flex flex-row flex-wrap md:flex-nowrap justify-between items-center gap-2 md:gap-4">
+        <div class="w-full flex flex-row flex-nowrap justify-between items-center gap-2 md:gap-4">
           <!-- Left: Title / Logo -->
           <div class="flex items-center gap-1.5 flex-shrink-0 select-none order-1">
             <!-- Full Logo (large screens) -->
             <div class="hidden sm:block">
-              <svg viewBox="0 0 160 40" class="h-8 md:h-10">
+              <svg viewBox="0 0 170 44" class="h-8 md:h-10">
                 <defs>
-                  <linearGradient id="logo-gold" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <linearGradient id="logo-shield-gold-nav" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stop-color="#fbbf24" />
                     <stop offset="100%" stop-color="#d97706" />
                   </linearGradient>
-                  <filter id="logo-glow">
-                    <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+                  <linearGradient id="logo-text-gold-nav" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stop-color="#fef08a" />
+                    <stop offset="50%" stop-color="#e8c547" />
+                    <stop offset="100%" stop-color="#9a7a1e" />
+                  </linearGradient>
+                  <linearGradient id="logo-ball-grad-nav" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#ffffff" />
+                    <stop offset="70%" stop-color="#f1f5f9" />
+                    <stop offset="100%" stop-color="#cbd5e1" />
+                  </linearGradient>
+                  <filter id="logo-neon-glow-nav" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
                     <feMerge>
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="SourceGraphic"/>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
                     </feMerge>
                   </filter>
                 </defs>
-                <path d="M 5,5 Q 80,0 155,5 Q 160,20 155,35 Q 80,40 5,35 Q 0,20 5,5 Z" fill="rgba(8,12,22,0.85)" stroke="#fbbf24" stroke-width="1.5" />
-                <path d="M 12,8 Q 80,18 148,8" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="2,2" />
-                <path d="M 12,32 Q 80,22 148,32" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="2,2" />
-                <text x="22" y="26" font-family="'Press Start 2P', monospace" font-size="12" fill="#ffffff" font-weight="bold">UMP</text>
-                <text x="65" y="26" font-family="'Press Start 2P', monospace" font-size="12" fill="url(#logo-gold)" font-weight="bold" filter="url(#logo-glow)">SIM</text>
-                <text x="108" y="26" font-family="'Press Start 2P', monospace" font-size="10" fill="#f8fafc" font-weight="bold">3000</text>
+                <g transform="translate(2, 2)">
+                  <path d="M 20,2 L 37,12 L 37,30 L 20,38 L 3,30 L 3,12 Z" fill="#09101d" stroke="url(#logo-shield-gold-nav)" stroke-width="2" stroke-linejoin="round" />
+                  <circle cx="20" cy="20" r="10" fill="url(#logo-ball-grad-nav)" />
+                  <path d="M 15,13 Q 20,20 15,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                  <path d="M 25,13 Q 20,20 25,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                  <path d="M 8,11 L 8,8 L 11,8" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav)" />
+                  <path d="M 29,8 L 32,8 L 32,11" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav)" />
+                  <path d="M 8,29 L 8,32 L 11,32" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav)" />
+                  <path d="M 29,32 L 32,32 L 32,29" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav)" />
+                  <line x1="20" y1="17" x2="20" y2="23" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+                  <line x1="17" y1="20" x2="23" y2="20" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+                </g>
+                <text x="48" y="27" font-family="'Outfit', sans-serif" font-weight="900" font-size="16" fill="#f4ecd8" letter-spacing="0.05em">UMP</text>
+                <text x="86" y="27" font-family="'Outfit', sans-serif" font-weight="900" font-size="16" fill="url(#logo-text-gold-nav)" filter="url(#logo-neon-glow-nav)" letter-spacing="0.05em">SIM</text>
+                <text x="122" y="27" font-family="'Share Tech Mono', monospace" font-weight="700" font-size="13" fill="#6eb5e8" letter-spacing="0.05em">3000</text>
               </svg>
             </div>
             <!-- Small Logo (mobile screens) -->
             <div class="block sm:hidden">
-              <svg viewBox="0 0 50 40" class="h-6 md:h-8">
+              <svg viewBox="0 0 44 44" class="h-6 w-6">
                 <defs>
-                  <linearGradient id="logo-gold-sm" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <linearGradient id="logo-shield-gold-nav-sm" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stop-color="#fbbf24" />
                     <stop offset="100%" stop-color="#d97706" />
                   </linearGradient>
+                  <linearGradient id="logo-ball-grad-nav-sm" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stop-color="#ffffff" />
+                    <stop offset="70%" stop-color="#f1f5f9" />
+                    <stop offset="100%" stop-color="#cbd5e1" />
+                  </linearGradient>
+                  <filter id="logo-neon-glow-nav-sm" x="-20%" y="-20%" width="140%" height="140%">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
-                <polygon points="25,2 47,10 47,30 25,38 3,30 3,10" fill="rgba(8,12,22,0.85)" stroke="#fbbf24" stroke-width="1.5" />
-                <path d="M 7,12 Q 25,18 43,12" fill="none" stroke="#ef4444" stroke-width="1" stroke-dasharray="1.5,1.5" />
-                <text x="25" y="26" font-family="'Press Start 2P', monospace" font-size="11" fill="#ffffff" font-weight="bold" text-anchor="middle">U<tspan fill="url(#logo-gold-sm)">3K</tspan></text>
+                <g transform="translate(2, 2)">
+                  <path d="M 20,2 L 37,12 L 37,30 L 20,38 L 3,30 L 3,12 Z" fill="#09101d" stroke="url(#logo-shield-gold-nav-sm)" stroke-width="2" stroke-linejoin="round" />
+                  <circle cx="20" cy="20" r="10" fill="url(#logo-ball-grad-nav-sm)" />
+                  <path d="M 15,13 Q 20,20 15,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                  <path d="M 25,13 Q 20,20 25,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                  <path d="M 8,11 L 8,8 L 11,8" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav-sm)" />
+                  <path d="M 29,8 L 32,8 L 32,11" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav-sm)" />
+                  <path d="M 8,29 L 8,32 L 11,32" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav-sm)" />
+                  <path d="M 29,32 L 32,32 L 32,29" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-nav-sm)" />
+                  <line x1="20" y1="17" x2="20" y2="23" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+                  <line x1="17" y1="20" x2="23" y2="20" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+                </g>
               </svg>
             </div>
           </div>
 
-          <!-- Center: Prominent XP Progress Bar (Fills dead space, highly readable) -->
-          <div class="flex w-full md:w-auto md:flex-1 items-center justify-center gap-2 md:gap-3 px-1 md:px-4 max-w-none md:max-w-sm lg:max-w-md mx-auto select-none order-3 md:order-2 mt-2 md:mt-0" id="hud-central-xp-container">
-            <!-- Current level icon/emblem -->
-            <div id="hud-user-xp-icon-left" class="shrink-0">
-              <!-- Dynamically populated SVG Rank Icon -->
-            </div>
+          <!-- Center: Unified Profile & XP Widget (order-2) -->
+          <div id="hud-profile-xp-widget" class="flex-grow flex items-center justify-center gap-2.5 md:gap-3.5 px-1 py-1.5 cursor-pointer pointer-events-auto transition-all duration-200 select-none max-w-lg order-2 min-w-0" title="Click for Crew XP & Rank Details">
+            <!-- Left: Team Logo -->
+            <img id="hud-user-team-logo" src="/generic.svg" class="w-5 h-5 md:w-7 md:h-7 object-contain drop-shadow p-0.5 shrink-0" style="background:rgba(0,0,0,0.4);border-radius:50%;border:1px solid var(--retro-gold-dark);" alt="Team Logo" />
             
-            <div class="flex-grow flex flex-col gap-1">
-              <!-- Progress Bar -->
-              <div class="ump-xp-bar-bg h-1.5 md:h-2.5 w-full rounded-sm overflow-hidden border border-white/10 relative shadow-[0_0_10px_rgba(255,255,255,0.02)]">
-                <div id="hud-user-xp-bar" class="ump-xp-bar-fill h-full rounded-sm bg-gradient-to-r from-[var(--retro-grass-dark)] to-[var(--retro-grass)]" style="width: 0%;"></div>
+            <!-- Content Area: Username/Level (top left), XP Text (top right), XP Bar (bottom) -->
+            <div class="flex flex-col text-left justify-center min-w-0 w-full max-w-[160px] xs:max-w-[200px] sm:max-w-none">
+              <!-- Top Row: Username (left), XP Text & Rank (right) -->
+              <div class="flex items-center justify-between w-full">
+                <!-- Username -->
+                <span id="hud-user-handle" style="font-family:var(--ump-font-body);color:var(--retro-chalk);letter-spacing:0.04em;" class="uppercase truncate text-[18px] sm:text-[22px] md:text-[26px] font-black leading-none mb-0.5 max-w-[70%] sm:max-w-[75%]">GUEST_UMPIRE</span>
+                
+                <!-- XP text & Rank Icon (Right aligned above the end of XP Bar) -->
+                <div class="flex items-center gap-1.5 md:gap-2 shrink-0">
+                  <span id="hud-user-xp-text" class="hidden sm:inline-block font-mono-tech text-[10px] md:text-[11.5px] text-[var(--retro-gold)] font-black uppercase tracking-wider leading-none mb-0.5">0 / 1,000 XP</span>
+                  <div id="hud-user-level-icon" class="shrink-0 scale-95 md:scale-100 origin-right">
+                    <!-- Dynamically populated SVG Rank Icon -->
+                  </div>
+                </div>
               </div>
-              <div class="flex justify-between items-center text-[7px] font-mono-tech text-gray-400 font-bold uppercase tracking-widest leading-none">
-                <span id="hud-user-xp-text">0 / 1,000 XP</span>
-                <span id="hud-central-xp-pct">0% Progress</span>
+
+              <!-- Bottom Row: Progress Bar (Always visible) -->
+              <div class="flex items-center mt-1.5 w-full">
+                <div class="ump-xp-bar-bg h-1 sm:h-1.5 w-full rounded-sm overflow-hidden border border-white/10 relative">
+                  <div id="hud-user-xp-bar" class="ump-xp-bar-fill h-full rounded-sm bg-gradient-to-r from-[var(--retro-stitch-dark)] to-[var(--retro-stitch)]" style="width: 0%;"></div>
+                </div>
               </div>
             </div>
 
-            <!-- Next level indicator -->
-            <div id="hud-user-xp-icon-right" class="shrink-0 opacity-60">
-              <!-- Dynamically populated SVG Rank Icon for Next Level -->
-            </div>
+            <!-- Hidden elements to ensure JavaScript compatibility -->
+            <span id="hud-user-level-tier" class="hidden">ROOKIE UMPIRE</span>
+            <span id="hud-user-favorite-badge" class="hidden">NONE</span>
           </div>
 
-          <!-- Right: User details, XP progress, and System Actions grouped together -->
-          <div class="flex items-center gap-1.5 md:gap-4 ml-auto md:ml-0 flex-shrink-0 order-2 md:order-3">
-            <!-- Interactive Profile Widget -->
-            <div id="hud-profile-xp-widget" class="flex items-center gap-1.5 md:gap-2.5 px-1.5 py-1 md:px-2.5 md:py-1.5 cursor-pointer pointer-events-auto transition-all duration-200 hover:bg-white/5 border border-transparent rounded select-none shrink-0" style="background:rgba(0,0,0,0.35);border:1px solid var(--retro-grass);" title="Click for Crew XP & Rank Details">
-              <!-- Left: Team Logo -->
-              <img id="hud-user-team-logo" src="/generic.svg" class="w-3.5 h-3.5 md:w-5 md:h-5 object-contain drop-shadow p-0.5 shrink-0" style="background:rgba(0,0,0,0.4);border-radius:50%;border:1px solid var(--retro-gold-dark);" alt="Team Logo" />
-              
-              <!-- Center: User details -->
-              <div class="flex flex-col text-left justify-center">
-                <span id="hud-user-handle" style="font-family:var(--ump-font-body);color:var(--retro-chalk);letter-spacing:0.04em;" class="uppercase truncate max-w-[70px] sm:max-w-[85px] md:max-w-[110px] text-[11px] md:text-[14px] font-black leading-none mb-0.5">GUEST_UMPIRE</span>
-                <span id="hud-user-level-tier" class="text-[6px] md:text-[7.5px] font-mono-tech text-[var(--retro-grass)] font-bold uppercase tracking-wider leading-none">ROOKIE UMPIRE</span>
-              </div>
-
-              <!-- Right: Rank Icon Emblem with Level Number -->
-              <div id="hud-user-level-icon" class="shrink-0 ml-1">
-                <!-- Dynamically populated SVG Rank Icon -->
-              </div>
-              
-              <!-- Hidden favorite badge to ensure compatibility -->
-              <span id="hud-user-favorite-badge" class="hidden">NONE</span>
-            </div>
-
+          <!-- Right: System Actions (order-3) -->
+          <div class="flex items-center gap-2 md:gap-4 flex-shrink-0 order-3">
             <!-- Divider -->
             <div class="w-px h-6 bg-white/10 hidden sm:block"></div>
 
@@ -312,7 +383,7 @@
       </div>
 
       <!-- XP & RANK DETAILS POPOVER -->
-      <div id="hud-xp-details-popover" class="fixed z-[70] w-80 glass-panel p-5 rounded-xl border border-[var(--retro-gold-dark)] flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none" style="background:rgba(8, 12, 22, 0.98);box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 20px rgba(232, 197, 71, 0.15); max-height: 80vh; overflow-y: auto;">
+      <div id="hud-xp-details-popover" class="absolute z-[70] w-80 glass-panel p-5 rounded-xl border border-[var(--retro-gold-dark)] flex flex-col gap-4 opacity-0 scale-95 pointer-events-none transition-all duration-300 shadow-2xl select-none" style="background:rgba(8, 12, 22, 0.98);box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 20px rgba(232, 197, 71, 0.15); max-height: 80vh; overflow-y: auto;">
         <!-- Popover Header (Combines title and profile info section for a cleaner layout) -->
         <div class="flex items-center justify-between border-b border-white/10 pb-3">
           <div class="flex items-center gap-2.5">
@@ -327,9 +398,9 @@
         </div>
         
         <!-- Level & XP numbers -->
-        <div class="flex flex-col gap-2">
-          <div class="flex justify-between items-end">
-            <span id="xp-popover-level-badge" class="ump-level-badge ump-level-badge--rookie text-[7px] py-0.5 px-1.5 leading-none font-bold">LVL 1</span>
+        <div class="flex flex-col gap-2" id="xp-popover-progress-section">
+          <div class="flex justify-between items-center">
+            <div id="xp-popover-level-badge" class="shrink-0 scale-100 origin-left"></div>
             <span id="xp-popover-nums" class="text-xs font-mono-tech text-white font-black">0 / 1,000 XP</span>
           </div>
           <div class="ump-xp-bar-bg h-2 w-full rounded-sm overflow-hidden">
@@ -385,25 +456,63 @@
           <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
         </div>
 
-      <!-- SCREEN A: WELCOME SCREEN (UmpSim3000 Arcade Login) -->
-      <div id="welcome-screen" class="ump-screen absolute inset-0 w-full h-full backdrop-blur-md bg-grid-pattern flex flex-col justify-center items-center z-[55] pointer-events-auto transition-opacity duration-500">
+      <div id="welcome-screen" class="ump-screen absolute inset-0 w-full h-full backdrop-blur-md bg-grid-pattern flex flex-col z-[55] pointer-events-auto opacity-100 transition-opacity duration-300">
         <div class="absolute inset-0 bg-scanlines pointer-events-none opacity-15"></div>
         
-        <div class="ump-panel max-w-md w-full p-6 md:p-8 text-center flex flex-col items-center relative overflow-hidden">
-          <div class="ump-pill select-none mb-4">Arcade Edition 1.0</div>
+        <div class="ump-panel w-[92%] xs:w-full max-w-md p-4 xs:p-6 md:p-8 text-center flex flex-col items-center relative overflow-hidden">
           
-          <h1 class="ump-title select-none mt-2">
-            UMP<span class="ump-title-accent">SIM3000</span>
-          </h1>
-          <p class="ump-subtitle mt-2 mb-5">High-Fidelity Umpire Simulation</p>
+          <div class="welcome-logo-container select-none mb-1.5 mt-0 w-24 h-24 xs:w-32 xs:h-32 md:w-44 md:h-44 flex items-center justify-center">
+            <svg viewBox="0 0 160 160" class="w-full h-full">
+              <defs>
+                <linearGradient id="logo-shield-gold-welcome" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#fbbf24" />
+                  <stop offset="100%" stop-color="#d97706" />
+                </linearGradient>
+                <linearGradient id="logo-text-gold-welcome" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#fef08a" />
+                  <stop offset="50%" stop-color="#e8c547" />
+                  <stop offset="100%" stop-color="#9a7a1e" />
+                </linearGradient>
+                <linearGradient id="logo-ball-grad-welcome" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#ffffff" />
+                  <stop offset="70%" stop-color="#f1f5f9" />
+                  <stop offset="100%" stop-color="#cbd5e1" />
+                </linearGradient>
+                <filter id="logo-neon-glow-welcome" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <g transform="translate(44, 12) scale(1.8)">
+                <path d="M 20,2 L 37,12 L 37,30 L 20,38 L 3,30 L 3,12 Z" fill="#09101d" stroke="url(#logo-shield-gold-welcome)" stroke-width="2" stroke-linejoin="round" />
+                <circle cx="20" cy="20" r="10" fill="url(#logo-ball-grad-welcome)" />
+                <path d="M 15,13 Q 20,20 15,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                <path d="M 25,13 Q 20,20 25,27" fill="none" stroke="#c41e3a" stroke-width="1" stroke-linecap="round" />
+                <path d="M 8,11 L 8,8 L 11,8" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-welcome)" />
+                <path d="M 29,8 L 32,8 L 32,11" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-welcome)" />
+                <path d="M 8,29 L 8,32 L 11,32" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-welcome)" />
+                <path d="M 29,32 L 32,32 L 32,29" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-linecap="round" filter="url(#logo-neon-glow-welcome)" />
+                <line x1="20" y1="17" x2="20" y2="23" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+                <line x1="17" y1="20" x2="23" y2="20" stroke="#5cdb95" stroke-width="0.6" stroke-dasharray="1 1" />
+              </g>
+              <text x="80" y="115" font-family="'Outfit', sans-serif" font-weight="900" font-size="22" text-anchor="middle" letter-spacing="0.06em">
+                <tspan fill="#f4ecd8">UMP</tspan><tspan fill="url(#logo-text-gold-welcome)" filter="url(#logo-neon-glow-welcome)">SIM</tspan>
+              </text>
+              <text x="80" y="137" font-family="'Share Tech Mono', monospace" font-weight="700" font-size="16" fill="#6eb5e8" text-anchor="middle" letter-spacing="0.15em">3000</text>
+            </svg>
+          </div>
+          <p class="ump-subtitle mb-2.5 xs:mb-4">High-Fidelity Umpire Simulation</p>
           
-          <div class="ump-marquee mb-6 select-none animate-flash-text">[ Log In to Play ]</div>
+          <div class="ump-marquee mb-2.5 xs:mb-4 select-none animate-flash-text">[ Log In to Play ]</div>
           
-          <div class="flex flex-col gap-4 w-full mb-6 text-left">
+          <div class="flex flex-col gap-2.5 xs:gap-4 w-full mb-3 xs:mb-4 text-left">
             <div id="welcome-login-fields" class="flex flex-col gap-4 w-full">
               <div class="flex flex-col gap-1.5">
                 <label for="login-handle" class="ump-label">Umpire Crew Handle</label>
-                <input type="text" id="login-handle" placeholder="ENTER HANDLE (E.G., UMP_JOE)" class="ump-input pointer-events-auto" maxlength="15" />
+                <input type="text" id="login-handle" placeholder="ENTER HANDLE (E.G., UMP_JOE)" class="ump-input pointer-events-auto" maxlength="12" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label for="login-pin" class="ump-label">Umpire PIN (4-8 Digits)</label>
@@ -453,10 +562,10 @@
                   <span class="text-base shrink-0" aria-hidden="true">🎁</span>
                   <div class="min-w-0">
                     <span class="ump-kicker block mb-0.5 text-[9px] md:text-[10px]">Daily Login Bonus</span>
-                    <span id="welcome-login-bonus-status" class="ump-subtitle text-[11px] xs:text-xs sm:text-sm block truncate">CLAIMED (+100 XP)</span>
+                    <span id="welcome-login-bonus-status" class="ump-subtitle text-[10px] xs:text-xs sm:text-[13px] block truncate">CLAIMED (+100 XP)</span>
                   </div>
                 </div>
-                <span id="welcome-login-bonus-check" class="ump-stat-card__value ump-stat-card__value--ok text-[11px] xs:text-xs sm:text-sm shrink-0 ml-1.5 font-bold select-none">[ CLAIMED ]</span>
+                <button id="welcome-login-bonus-check" type="button" class="px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bg-slate-900 border-white/5 text-gray-400 pointer-events-none">CLAIM NOW</button>
               </div>
 
               <button id="btn-welcome-logout" type="button" class="ump-link mt-2">
@@ -473,7 +582,7 @@
 
 
       <!-- SCREEN B: FAVORITE TEAM SELECT -->
-      <div id="team-select-screen" class="ump-screen absolute inset-0 w-full h-full bg-grid-pattern flex flex-col justify-center items-center z-[54] pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
+      <div id="team-select-screen" class="ump-screen absolute inset-0 w-full h-full bg-grid-pattern flex flex-col justify-center items-center z-[54] pointer-events-none opacity-0 scale-95 transition-all duration-300 overflow-y-auto">
         <div class="ump-panel max-w-2xl w-full p-6 md:p-8 flex flex-col relative overflow-hidden">
           <div class="text-center mb-6">
             <h2 class="ump-title ump-title--sm">Select Favorite Team</h2>
@@ -496,18 +605,34 @@
       </div>
 
       <!-- SCREEN C: MAIN DASHBOARD MENU HUB -->
-      <div id="start-screen" class="ump-screen absolute inset-0 w-full h-full bg-grid-pattern flex flex-col items-center z-50 pointer-events-auto transition-opacity duration-500 overflow-y-scroll scrollbar-thin">
+      <div id="start-screen" class="ump-screen absolute inset-0 w-full h-full bg-grid-pattern flex flex-col items-center min-h-0 z-50 pointer-events-auto transition-opacity duration-300 overflow-y-auto scrollbar-thin">
         
         <!-- Spacer left for fixed top nav -->
 
-        <div class="ump-panel ump-panel--flush w-full max-w-4xl flex flex-col overflow-hidden min-h-[min(680px,calc(100dvh-6rem))] border-t border-white/10 rounded-2xl">
+        <div class="ump-panel ump-panel--flush w-full max-w-4xl flex flex-col overflow-hidden min-h-0 flex-1 border-t border-white/10 rounded-2xl">
 
           <!-- Main Menu Tabs Header -->
           <div class="border-b border-white/10 p-3.5 bg-slate-950/40 flex justify-center w-full select-none">
-            <div id="dashboard-nav-tabs" class="flex max-w-sm w-full" role="tablist" aria-label="Dashboard sections" style="background:rgba(0,0,0,0.35);border:2px solid var(--retro-grass);">
-              <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active !py-1.5 text-[10px] md:text-xs">Play</button>
-              <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab !py-1.5 text-[10px] md:text-xs">Standings</button>
-              <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab !py-1.5 text-[10px] md:text-xs">Profile</button>
+            <div id="dashboard-nav-tabs" class="ump-tab-bar w-full" role="tablist" aria-label="Dashboard sections">
+              <button id="tab-btn-play" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>Play</span>
+              </button>
+              <button id="tab-btn-leaderboard" type="button" role="tab" aria-selected="false" class="ump-tab">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <span>Standings</span>
+              </button>
+              <button id="tab-btn-stats" type="button" role="tab" aria-selected="false" class="ump-tab">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                </svg>
+                <span>Profile</span>
+              </button>
             </div>
           </div>
 
@@ -518,7 +643,7 @@
               
               <!-- Challenges Hub (Featured Cards) -->
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div id="weekly-challenge-card" class="ump-card border-emerald-500/35 hover:border-emerald-400/50 shadow-[0_0_15px_rgba(16,185,129,0.08)] hover:shadow-[0_0_20px_rgba(16,185,129,0.18)]">
+                <div id="weekly-challenge-card" class="ump-card ump-card--elevated ump-card--static border-emerald-500/35">
                   <span class="absolute top-0 right-0 px-2.5 py-1 bg-emerald-600 text-white text-[8px] font-mono-tech uppercase tracking-widest border-b border-l border-emerald-500/30 rounded-bl-lg pointer-events-none z-10">Featured</span>
                   <div>
                     <h3 class="ump-card__title text-xs md:text-sm text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-2">
@@ -537,9 +662,12 @@
                     <div class="ump-progress">
                       <div id="weekly-challenge-progress-bar" class="ump-progress__fill" style="width: 0%"></div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
-                      <button id="btn-start-weekly-challenge" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 border-emerald-500/50 text-white ump-btn--sm pointer-events-auto">Start Challenge</button>
-                      <button id="btn-info-weekly-challenge" type="button" class="ump-btn ump-btn--ghost ump-btn--sm pointer-events-auto">More Info</button>
+                    <p id="weekly-challenge-rank-snippet" class="ump-card__meta mt-2 hidden"></p>
+                    <div class="flex items-center gap-2 mt-3">
+                      <button id="btn-start-weekly-challenge" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 border-emerald-500/50 text-white ump-btn--sm pointer-events-auto flex-1 min-w-0">Start Challenge</button>
+                      <button id="btn-info-weekly-challenge" type="button" class="ump-icon-btn pointer-events-auto" title="Details" aria-label="Weekly challenge details">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M12 10v6M12 7h.01"/></svg>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -608,32 +736,34 @@
             </div>
 
             <!-- Tab Content: LEADERBOARDS -->
-            <div id="tab-content-leaderboard" class="w-full hidden flex-col">
-              <div class="flex justify-between items-center mb-4">
-                <span id="leaderboard-division-title" class="text-xs font-bold uppercase tracking-widest text-emerald-400 font-mono-tech">Umpire Crew Standings</span>
-                <div class="flex gap-2">
-                  <button id="leader-btn-weekly" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold uppercase rounded-md text-white cursor-pointer">Weekly Challenge</button>
-                  <button id="leader-btn-daily" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">Daily Streak</button>
-                  <button id="leader-btn-alltime" class="px-3 py-1 bg-gray-800 text-[10px] font-bold uppercase rounded-md text-gray-400 hover:text-white cursor-pointer">Team Standings</button>
+            <div id="tab-content-leaderboard" class="w-full hidden flex-col min-h-0 flex-1">
+              <div class="standings-shell">
+                <div class="standings-toolbar">
+                  <div class="ump-tab-bar standings-board-bar" role="tablist" aria-label="Leaderboard type">
+                    <button id="leader-btn-weekly" type="button" role="tab" aria-selected="true" class="ump-tab ump-tab--active"><span>Weekly</span></button>
+                    <button id="leader-btn-daily" type="button" role="tab" aria-selected="false" class="ump-tab"><span>Streak</span></button>
+                    <button id="leader-btn-crew" type="button" role="tab" aria-selected="false" class="ump-tab"><span>Crew</span></button>
+                  </div>
+                  <div id="standings-context-bar" class="standings-context-bar">
+                    <button id="btn-standings-back" type="button" class="standings-context-bar__back hidden">← Back</button>
+                    <span id="standings-context-label" class="standings-context-bar__label">This week</span>
+                    <button id="btn-standings-history" type="button" class="standings-context-bar__action hidden">History</button>
+                  </div>
+                  <div id="standings-crew-seg" class="standings-seg hidden" role="group" aria-label="Crew Chief sort">
+                    <button type="button" data-crew-metric="rank" class="standings-seg__btn standings-seg__btn--active">Level</button>
+                    <button type="button" data-crew-metric="wins" class="standings-seg__btn">Wins</button>
+                    <button type="button" data-crew-metric="streak" class="standings-seg__btn">Best Streak</button>
+                  </div>
                 </div>
-              </div>
-              
-              <!-- Leaderboard Table -->
-              <div class="w-full rounded-lg border border-white/10 glass-panel-light overflow-hidden">
-                <table class="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[10px] text-gray-400 uppercase tracking-widest">
-                      <th class="p-3">Rank</th>
-                      <th class="p-3">Crew Chief</th>
-                      <th class="p-3">Team</th>
-                      <th class="p-3 text-center">Accuracy</th>
-                      <th class="p-3 text-center">Score / Streak</th>
-                    </tr>
-                  </thead>
-                  <tbody id="leaderboard-table-body">
-                    <!-- Rows populated dynamically in game.js -->
-                  </tbody>
-                </table>
+                <div id="leaderboard-list" class="standings-list" role="list" aria-live="polite"></div>
+                <div id="standings-xp-popover" class="standings-xp-popover hidden" role="dialog" aria-hidden="true" aria-label="Umpire level details">
+                  <button type="button" id="standings-xp-popover-close" class="standings-xp-popover__close" aria-label="Close">✕</button>
+                  <div id="standings-xp-popover-badge" class="standings-xp-popover__badge"></div>
+                  <div id="standings-xp-popover-handle" class="standings-xp-popover__handle">UMPIRE</div>
+                  <div id="standings-xp-popover-tier" class="standings-xp-popover__tier">Rookie Umpire</div>
+                  <div id="standings-xp-popover-level" class="standings-xp-popover__level">Level 1</div>
+                  <div id="standings-xp-popover-xp" class="standings-xp-popover__xp">0 XP</div>
+                </div>
               </div>
             </div>
 
@@ -666,19 +796,15 @@
                     </div>
                   </div>
                   
-                  <!-- Total XP and division statistics -->
-                  <div class="grid grid-cols-3 gap-1 sm:gap-2 mt-1 text-center bg-black/25 p-1.5 sm:p-2 rounded-lg border border-white/5 select-none">
+                  <!-- Total XP and favorite team -->
+                  <div class="grid grid-cols-2 gap-1 sm:gap-2 mt-1 text-center bg-black/25 p-1.5 sm:p-2 rounded-lg border border-white/5 select-none">
                     <div class="flex flex-col justify-center py-1">
                       <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Lifetime XP</span>
                       <span id="profile-total-xp" class="text-xs font-bold text-[var(--ump-color-accent)] font-mono-tech mt-0.5">0 XP</span>
                     </div>
-                    <div class="flex flex-col justify-center py-1 border-x border-white/5">
+                    <div class="flex flex-col justify-center py-1 border-l border-white/5">
                       <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold">Fav Team</span>
                       <span id="profile-fav-team-display" class="text-xs font-bold text-white font-mono-tech mt-0.5 truncate px-1">NONE</span>
-                    </div>
-                    <div class="flex flex-col justify-center py-1">
-                      <span class="text-[11px] text-gray-500 font-mono-tech uppercase tracking-widest font-bold font-semibold text-[var(--ump-color-danger)]">Disconnects</span>
-                      <span id="stats-dnfs" class="text-xs font-bold text-[var(--ump-color-danger)] font-mono-tech mt-0.5">0</span>
                     </div>
                   </div>
                 </div>
@@ -1170,8 +1296,8 @@
       </div>
 
       <!-- SCREEN G: UP-TO-BAT MATCHUP PREVIEW OVERLAY (Untimed Walk-up card) -->
-      <div id="ab-start-overlay" class="absolute inset-0 w-full h-full flex flex-col justify-center items-center p-3 md:p-4 z-40 pointer-events-none opacity-0 transition-all duration-300">
-        <div class="max-w-2xl w-full ab-start-cabinet flex flex-col pointer-events-auto relative overflow-hidden transform scale-95 transition-all duration-300">
+      <div id="ab-start-overlay" class="fixed inset-0 w-screen h-screen flex flex-col justify-center items-center p-3 md:p-4 z-[150] pointer-events-none opacity-0 transition-all duration-300">
+        <div class="w-full ab-start-cabinet flex flex-col relative overflow-hidden transform scale-95 transition-all duration-300">
           <!-- Arcade bezel stitches -->
           <div class="arcade-cabinet-bezel" aria-hidden="true">
             <span class="arcade-stitch arcade-stitch--tl"></span>
@@ -1189,37 +1315,30 @@
           <p id="ab-start-subtitle" class="ab-start-subtitle">AB 1 OF 200</p>
           
           <!-- Weekly Challenge Progression Dock (Unified pre/post style) -->
-          <div id="ab-start-weekly-challenge-details" class="ab-summary-challenge-dock--unified hidden mb-3 rounded-lg overflow-hidden text-left">
-            <!-- Row 1: Labels -->
-            <div class="flex justify-between items-center w-full">
-              <span class="ab-summary-challenge-label text-slate-400 whitespace-nowrap">WEEKLY CHALLENGE</span>
-              <div class="flex gap-3 text-right">
-                <span class="ab-summary-challenge-stat-label w-20 text-center">ACCURACY</span>
-                <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
+          <div id="ab-start-weekly-challenge-details" class="ab-summary-challenge-dock--unified ab-challenge-dock hidden mb-3 rounded-lg text-left">
+            <span class="ab-summary-challenge-label ab-challenge-dock__heading">Weekly Challenge</span>
+            <div class="ab-challenge-dock__main">
+              <div class="ab-challenge-dock__progress-block">
+                <div class="ab-challenge-dock__count-row">
+                  <span class="ab-challenge-dock__count-label">Completed</span>
+                  <span class="ab-challenge-dock__count-value">
+                    <span id="ab-start-weekly-count">0</span><span id="ab-start-weekly-total"> / 200</span>
+                  </span>
+                  <span id="ab-start-weekly-pct" class="ab-challenge-dock__pct">0% Complete</span>
+                </div>
+                <div class="ab-summary-weekly-bar-bg">
+                  <div id="ab-start-weekly-progress-bar" class="ab-summary-weekly-bar-fill" style="width: 0%"></div>
+                </div>
               </div>
-            </div>
-            
-            <!-- Row 2: Values -->
-            <div class="flex justify-between items-center w-full mt-0.5">
-              <!-- Left: Count and Percent -->
-              <div class="flex items-center gap-1.5 font-mono-tech whitespace-nowrap flex-shrink-0">
-                <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide mr-0.5">Completed:</span>
-                <span id="ab-start-weekly-count" class="text-lg font-black text-white">0</span>
-                <span id="ab-start-weekly-total" class="text-xs text-slate-400">/ 200</span>
-                <span id="ab-start-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
-              </div>
-              
-              <!-- Right: Accuracy and Rank Values -->
-              <div class="flex gap-3 text-right items-baseline font-mono-tech">
-                <span id="ab-start-weekly-accuracy-text" class="text-sm font-black text-white w-20 text-center whitespace-nowrap">--</span>
-                <span id="ab-start-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
-              </div>
-            </div>
-
-            <!-- Row 3: Full-width Progress Bar -->
-            <div class="w-full mt-1">
-              <div class="ab-summary-weekly-bar-bg w-full h-2.5 bg-slate-950 rounded-full overflow-hidden">
-                <div id="ab-start-weekly-progress-bar" class="ab-summary-weekly-bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
+              <div class="ab-challenge-dock__stats" aria-label="Weekly challenge standings">
+                <div class="ab-challenge-dock__stat">
+                  <span class="ab-summary-challenge-stat-label">Accuracy</span>
+                  <span id="ab-start-weekly-accuracy-text" class="ab-challenge-dock__stat-value">--</span>
+                </div>
+                <div class="ab-challenge-dock__stat">
+                  <span class="ab-summary-challenge-stat-label">Rank</span>
+                  <span id="ab-start-leaderboard-snippet" class="ab-challenge-dock__stat-value">--</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1299,7 +1418,7 @@
 
       <!-- SCREEN L: POST-AT-BAT SUMMARY OVERLAY -->
       <div id="ab-summary-overlay" class="fixed inset-0 w-screen h-screen z-[150] pointer-events-none opacity-0 transition-all duration-300">
-        <div class="ab-summary-panel arcade-cabinet pointer-events-auto transform scale-95 transition-all duration-300">
+        <div class="ab-summary-panel arcade-cabinet transform scale-95 transition-all duration-300">
           <div class="arcade-cabinet-bezel" aria-hidden="true">
             <span class="arcade-stitch arcade-stitch--tl"></span>
             <span class="arcade-stitch arcade-stitch--tr"></span>
@@ -1446,37 +1565,30 @@
           </div>
 
           <footer class="ab-summary-footer-bar">
-            <div id="ab-summary-weekly-challenge-details" class="ab-summary-challenge-dock--unified hidden">
-              <!-- Row 1: Labels -->
-              <div class="flex justify-between items-center w-full">
-                <span class="ab-summary-challenge-label text-slate-400 whitespace-nowrap">WEEKLY CHALLENGE</span>
-                <div class="flex gap-3 text-right">
-                  <span class="ab-summary-challenge-stat-label w-20 text-center">ACCURACY</span>
-                  <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
+            <div id="ab-summary-weekly-challenge-details" class="ab-summary-challenge-dock--unified ab-challenge-dock hidden">
+              <span class="ab-summary-challenge-label ab-challenge-dock__heading">Weekly Challenge</span>
+              <div class="ab-challenge-dock__main">
+                <div class="ab-challenge-dock__progress-block">
+                  <div class="ab-challenge-dock__count-row">
+                    <span class="ab-challenge-dock__count-label">Completed</span>
+                    <span class="ab-challenge-dock__count-value">
+                      <span id="ab-summary-weekly-count">0</span><span id="ab-summary-weekly-total"> / 200</span>
+                    </span>
+                    <span id="ab-summary-weekly-pct" class="ab-challenge-dock__pct">0% Complete</span>
+                  </div>
+                  <div class="ab-summary-weekly-bar-bg">
+                    <div id="ab-summary-weekly-progress-bar" class="ab-summary-weekly-bar-fill" style="width: 0%"></div>
+                  </div>
                 </div>
-              </div>
-              
-              <!-- Row 2: Values -->
-              <div class="flex justify-between items-center w-full mt-0.5">
-                <!-- Left: Count and Percent -->
-                <div class="flex items-center gap-1.5 font-mono-tech whitespace-nowrap flex-shrink-0">
-                  <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide mr-0.5">Completed:</span>
-                  <span id="ab-summary-weekly-count" class="text-lg font-black text-white">0</span>
-                  <span id="ab-summary-weekly-total" class="text-xs text-slate-400">/ 200</span>
-                  <span id="ab-summary-weekly-pct" class="text-[10px] text-emerald-400 font-bold ml-1">0% Complete</span>
-                </div>
-                
-                <!-- Right: Accuracy and Rank Values -->
-                <div class="flex gap-3 text-right items-baseline font-mono-tech">
-                  <span id="ab-summary-weekly-accuracy-text" class="text-sm font-black text-white w-20 text-center whitespace-nowrap">--</span>
-                  <span id="ab-summary-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
-                </div>
-              </div>
-
-              <!-- Row 3: Full-width Progress Bar -->
-              <div class="w-full mt-1">
-                <div class="ab-summary-weekly-bar-bg w-full h-2.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div id="ab-summary-weekly-progress-bar" class="ab-summary-weekly-bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
+                <div class="ab-challenge-dock__stats" aria-label="Weekly challenge standings">
+                  <div class="ab-challenge-dock__stat">
+                    <span class="ab-summary-challenge-stat-label">Accuracy</span>
+                    <span id="ab-summary-weekly-accuracy-text" class="ab-challenge-dock__stat-value">--</span>
+                  </div>
+                  <div class="ab-challenge-dock__stat">
+                    <span class="ab-summary-challenge-stat-label">Rank</span>
+                    <span id="ab-summary-leaderboard-snippet" class="ab-challenge-dock__stat-value">--</span>
+                  </div>
                 </div>
               </div>
               <span id="ab-summary-weekly-progress-text" class="sr-only">0 / 200</span>
@@ -1498,7 +1610,7 @@
 
       <!-- SCREEN S: POST-STREAK SUMMARY OVERLAY -->
       <div id="streak-summary-overlay" class="fixed inset-0 w-screen h-screen z-[150] pointer-events-none opacity-0 transition-all duration-300">
-        <div class="streak-summary-panel arcade-cabinet pointer-events-auto transform scale-95 transition-all duration-300">
+        <div class="streak-summary-panel arcade-cabinet transform scale-95 transition-all duration-300">
           <div class="arcade-cabinet-bezel" aria-hidden="true">
             <span class="arcade-stitch arcade-stitch--tl"></span>
             <span class="arcade-stitch arcade-stitch--tr"></span>
@@ -1670,7 +1782,7 @@
 
       <!-- SCREEN M: HIGH-FIDELITY INTERACTIVE UMPIRE SCORECARD -->
       <div id="scoreboard-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
-        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col pointer-events-auto relative overflow-hidden">
+        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col relative overflow-hidden">
           <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/10 blur-3xl"></div>
           
           <!-- Summary Header -->
@@ -1940,61 +2052,35 @@
         </div>
       </div>
 
-      <div id="challenge-detail-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/95 backdrop-blur-md flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300 overflow-y-auto p-4 md:p-6">
-        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-3xl border-2 border-emerald-500/35 flex flex-col shadow-neon-box-glow relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-emerald-500/5 blur-3xl"></div>
-          
-          <!-- Header -->
-          <div class="flex justify-between items-center border-b border-white/10 pb-4 mb-4 select-none">
-            <div class="flex flex-col text-left">
-              <h3 id="challenge-detail-title" class="text-lg font-black text-emerald-400 font-mono-tech uppercase tracking-widest leading-none">Weekly Challenge Info</h3>
-              <span id="challenge-detail-subtitle" class="text-xs text-gray-500 font-mono-tech mt-1">LEADERBOARDS & STATUS</span>
+      <div id="challenge-detail-modal-overlay" class="ump-modal-overlay fixed inset-0 w-full h-full bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-[200] opacity-0 pointer-events-none transition-all duration-200 p-4">
+        <div id="challenge-detail-modal-panel" class="challenge-detail-modal glass-panel border-emerald-500/35 flex flex-col relative overflow-hidden w-full max-w-lg max-h-[min(90vh,640px)]">
+          <div class="challenge-detail-modal__head">
+            <div>
+              <h3 id="challenge-detail-title" class="challenge-detail-modal__title">Weekly Challenge</h3>
+              <p id="challenge-detail-subtitle" class="challenge-detail-modal__subtitle">2026 · Week 22</p>
             </div>
-            <button id="btn-challenge-detail-close" class="text-gray-400 hover:text-white cursor-pointer transition-colors p-2 text-sm font-mono-tech uppercase font-bold">✕ Close</button>
+            <button id="btn-challenge-detail-close" type="button" class="challenge-detail-modal__close" aria-label="Close">✕</button>
           </div>
-
-          <!-- Content split -->
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[350px]">
-            <!-- Left Side: Challenge details list & stats -->
-            <div class="md:col-span-5 flex flex-col justify-between border-b md:border-b-0 md:border-r border-white/10 pb-6 md:pb-0 md:pr-6 gap-4 select-none text-left">
-              <div class="flex flex-col gap-3">
-                <span class="text-[9px] font-mono-tech text-emerald-400 font-extrabold uppercase tracking-widest">Challenge Metrics</span>
-                <p id="challenge-detail-desc" class="text-xs text-gray-300 leading-relaxed">
-                  Analyze pitch-by-pitch datasets sourced directly from controversial called strikes and balls.
-                </p>
-                <div class="p-3.5 bg-slate-900/60 rounded-xl border border-white/5 flex flex-col gap-2 font-mono-tech text-[10px] text-gray-400">
-                  <div class="flex justify-between"><span>Active Matchup Logs:</span><span id="challenge-detail-games-count" class="text-white font-bold">--</span></div>
-                  <div class="flex justify-between"><span>Your Best Streak:</span><span id="challenge-detail-best-streak" class="text-white font-bold">--</span></div>
-                  <div class="flex justify-between"><span>Completed Runs:</span><span id="challenge-detail-completed" class="text-white font-bold">--</span></div>
-                </div>
-              </div>
-              <button id="btn-challenge-detail-play" class="w-full py-4 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg hover:scale-[1.02] pointer-events-auto">
-                Play Now
-              </button>
+          <div class="challenge-detail-modal__scroll">
+            <p id="challenge-detail-desc" class="challenge-detail-modal__desc">Earn 10 points per correct call on curated MLB at-bats. Resets every Monday.</p>
+            <div id="challenge-detail-stats" class="challenge-detail-stats">
+              <div class="challenge-detail-stats__item"><span>Games</span><strong id="challenge-detail-games-count">5</strong></div>
+              <div class="challenge-detail-stats__item"><span>At-bats</span><strong id="challenge-detail-ab-count">200</strong></div>
+              <div class="challenge-detail-stats__item"><span>Progress</span><strong id="challenge-detail-completed">0 / 200</strong></div>
+              <div class="challenge-detail-stats__item"><span>Resets</span><strong id="challenge-detail-reset">Monday</strong></div>
             </div>
-
-            <!-- Right Side: Challenge Standings / Leaderboard -->
-            <div class="md:col-span-7 flex flex-col select-none text-left">
-              <span class="text-[9px] font-mono-tech text-blue-400 font-extrabold uppercase tracking-widest">Challenge Standings</span>
-              <h4 class="text-sm font-black text-white uppercase mt-1 mb-3">Global Leaderboard</h4>
-              
-              <div class="flex-1 overflow-y-auto max-h-[250px] border border-white/5 bg-slate-950/40 rounded-xl">
-                <table class="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[9px] text-gray-400 uppercase tracking-widest">
-                      <th class="p-3">Rank</th>
-                      <th class="p-3">Crew Chief</th>
-                      <th class="p-3 text-center">Accuracy / Streak</th>
-                    </tr>
-                  </thead>
-                  <tbody id="challenge-detail-leaderboard-body">
-                    <!-- Loaded dynamically -->
-                  </tbody>
-                </table>
-              </div>
+            <div id="challenge-detail-games-wrap" class="challenge-detail-games">
+              <span class="challenge-detail-games__label">This week's playlist</span>
+              <div id="challenge-detail-games-list" class="challenge-detail-games__list"></div>
             </div>
           </div>
-
+          <div class="challenge-detail-modal__foot">
+            <button id="btn-challenge-detail-play" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-500/50 text-white w-full pointer-events-auto">Start Challenge</button>
+            <div class="challenge-detail-modal__links">
+              <button id="btn-challenge-detail-standings" type="button" class="challenge-detail-modal__link pointer-events-auto">Standings</button>
+              <button id="btn-challenge-detail-last-week" type="button" class="challenge-detail-modal__link pointer-events-auto">History</button>
+            </div>
+          </div>
         </div>
       </div>
 
