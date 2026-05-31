@@ -2003,6 +2003,7 @@ function loginUserSession(handleVal) {
         insertCoinText.classList.add('text-emerald-400');
         insertCoinText.classList.remove('text-yellow-400');
       }
+      refreshWelcomeStatsFromCloud();
     }, 300);
   } else {
     if (activeFavoriteTeam) {
@@ -3345,12 +3346,9 @@ function attachEvents() {
         playMenuTransitionSound();
 
         if (!isBonusClaimed) {
-          // Silent and instant claim so they don't miss out on transition
-          localStorage.setItem(loginBonusKey, 'claimed');
-          awardXP(100);
-          showFloatingXP(100, "DAILY LOGIN BONUS! +100 XP");
+          await performDailyClaimAndTransition(username);
         }
-        
+
         if (activeFavoriteTeam) {
           transitionToState(STATES.START);
         } else {
@@ -3955,99 +3953,122 @@ async function performDailyClaimAndTransition(username) {
   const welcomeXpBar = document.getElementById('welcome-resume-xp-bar');
   const welcomeXpText = document.getElementById('welcome-resume-xp-text');
   const welcomeLevel = document.getElementById('welcome-resume-level');
-  const welcomeStartBtn = document.getElementById('btn-welcome-start');
   const bonusContainer = document.getElementById('welcome-login-bonus-container');
 
-  // 1. Visual Claim feedback
-  if (bonusContainer) {
-    bonusContainer.classList.add('animate-claim-success');
-  }
-  if (bonusStatus) {
-    bonusStatus.textContent = "CLAIMING...";
-  }
-  if (bonusCheck) {
-    bonusCheck.textContent = "CLAIMING...";
-    bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claiming";
-    bonusCheck.setAttribute('disabled', 'true');
-    bonusCheck.style.pointerEvents = 'none';
-  }
-
-  // Fetch current stats before claim
   const statsKey = getStatsStorageKey(username);
   const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   const oldXp = userStats.xp || 0;
   const oldProgress = getXpProgressInLevel(oldXp);
 
-  // Set the bonus as claimed in local storage
   const today = new Date().toLocaleDateString();
   const loginBonusKey = `daily_login_bonus_${username}_${today}`;
-  localStorage.setItem(loginBonusKey, 'claimed');
 
-  // Play coin sound
-  playCoinSound();
-
-  // Delay slightly for the visual feedback of "CLAIMING"
-  await new Promise(resolve => setTimeout(resolve, 200));
-
-  // 2. Award XP & update texts
-  await awardXP(100); 
-  showFloatingXP(100, "DAILY LOGIN BONUS! +100 XP");
-
-  // Fetch new stats after claim
-  const newStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
-  const newXp = newStats.xp || 0;
-  const newProgress = getXpProgressInLevel(newXp);
-
-  if (bonusStatus) {
-    bonusStatus.textContent = "CLAIMED (+100 XP)";
-  }
+  if (bonusContainer) bonusContainer.classList.add('animate-claim-success');
+  if (bonusStatus) bonusStatus.textContent = 'CLAIMING...';
   if (bonusCheck) {
-    bonusCheck.textContent = "CLAIMED";
-    bonusCheck.className = "px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed";
+    bonusCheck.textContent = 'CLAIMING...';
+    bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claiming';
     bonusCheck.setAttribute('disabled', 'true');
     bonusCheck.style.pointerEvents = 'none';
   }
 
-  // 3. Animate XP bar on welcome screen
+  playCoinSound();
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  try {
+    localStorage.setItem(loginBonusKey, 'claimed');
+    await awardXP(100);
+    showFloatingXP(100, 'DAILY LOGIN BONUS! +100 XP');
+  } catch (err) {
+    console.error('Daily login bonus claim failed:', err);
+    localStorage.removeItem(loginBonusKey);
+    if (bonusStatus) bonusStatus.textContent = 'CLAIM FAILED — TAP TO RETRY';
+    if (bonusCheck) {
+      bonusCheck.textContent = 'CLAIM NOW';
+      bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-unclaimed';
+      bonusCheck.removeAttribute('disabled');
+      bonusCheck.style.pointerEvents = 'auto';
+    }
+    if (toastMessage) {
+      toastMessage.innerHTML = '<span class="text-red-300 font-bold font-mono-tech">BONUS CLAIM FAILED — TRY AGAIN</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 2800);
+    }
+    return;
+  }
+
+  const newStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
+  const newXp = newStats.xp || 0;
+  const newProgress = getXpProgressInLevel(newXp);
+
+  if (bonusStatus) bonusStatus.textContent = 'CLAIMED (+100 XP)';
+  if (bonusCheck) {
+    bonusCheck.textContent = 'CLAIMED';
+    bonusCheck.className = 'px-2.5 py-1 text-[9px] sm:text-[10px] font-mono-tech font-extrabold uppercase tracking-widest rounded border transition-all pointer-events-auto shrink-0 ml-2 select-none min-h-[30px] flex items-center justify-center bonus-btn-claimed';
+    bonusCheck.setAttribute('disabled', 'true');
+    bonusCheck.style.pointerEvents = 'none';
+  }
+
   if (newProgress.level > oldProgress.level) {
-    // Fill to 100%
     setXpBarPercent(welcomeXpBar, 100, true);
-    if (welcomeXpText) welcomeXpText.textContent = `1,000 / 1,000 XP`;
-    
-    // Wait for the bar to fill (1s transition + buffer)
-    await new Promise(resolve => setTimeout(resolve, 1100));
-    
-    // Reset to 0% immediately (no transition)
+    if (welcomeXpText) welcomeXpText.textContent = `${XP_PER_LEVEL} / ${XP_PER_LEVEL} XP`;
+    await new Promise((resolve) => setTimeout(resolve, 1100));
     if (welcomeXpBar) {
       welcomeXpBar.style.transition = 'none';
       welcomeXpBar.style.width = '0%';
     }
     if (welcomeLevel) applyLevelBadgeElement(welcomeLevel, newProgress.level);
-    if (welcomeXpText) welcomeXpText.textContent = `0 / 1,000 XP`;
-    
-    // Force layout repaint
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Animate to new progress pct
+    if (welcomeXpText) welcomeXpText.textContent = `0 / ${XP_PER_LEVEL} XP`;
+    await new Promise((resolve) => setTimeout(resolve, 50));
     setXpBarPercent(welcomeXpBar, newProgress.pct, true);
     if (welcomeXpText) welcomeXpText.textContent = `${newProgress.progress} / ${XP_PER_LEVEL} XP`;
   } else {
-    // Normal progress bar fill
     setXpBarPercent(welcomeXpBar, newProgress.pct, true);
     if (welcomeXpText) welcomeXpText.textContent = `${newProgress.progress} / ${XP_PER_LEVEL} XP`;
   }
 
-  // Clean up pulse animation on container after visual completion
   setTimeout(() => {
-    if (bonusContainer) {
-      bonusContainer.classList.remove('animate-claim-success');
-    }
+    if (bonusContainer) bonusContainer.classList.remove('animate-claim-success');
   }, 1200);
 }
 
 /**
  * Updates welcome screen depending on active session state (credentials login vs resume session)
  */
+async function refreshWelcomeStatsFromCloud() {
+  const storedUser = localStorage.getItem('ump_username');
+  if (!storedUser) return;
+
+  try {
+    const stats = await getGlobalUserStats(storedUser);
+    const xp = stats.xp !== undefined ? stats.xp : 0;
+    const xpProgress = getXpProgressInLevel(xp);
+
+    const welcomeLevel = document.getElementById('welcome-resume-level');
+    const welcomeXpText = document.getElementById('welcome-resume-xp-text');
+    const welcomeXpBar = document.getElementById('welcome-resume-xp-bar');
+    const welcomeAccuracy = document.getElementById('welcome-resume-accuracy');
+    const welcomeStreak = document.getElementById('welcome-resume-streak');
+
+    if (welcomeLevel) applyLevelBadgeElement(welcomeLevel, xpProgress.level);
+    if (welcomeXpText) welcomeXpText.textContent = `${xpProgress.progress} / ${XP_PER_LEVEL} XP`;
+    setXpBarPercent(welcomeXpBar, xpProgress.pct, false);
+    if (welcomeAccuracy) {
+      welcomeAccuracy.textContent =
+        stats.overallAccuracy !== null && stats.overallAccuracy !== undefined
+          ? `${stats.overallAccuracy}%`
+          : '--';
+    }
+    if (welcomeStreak) welcomeStreak.textContent = `${stats.maxStreak || 0} Pitches`;
+  } catch (e) {
+    console.warn('Could not refresh welcome stats from cloud:', e);
+  }
+}
+
 function updateWelcomeScreenState() {
   const storedUser = localStorage.getItem('ump_username');
   const loginFields = document.getElementById('welcome-login-fields');
@@ -4142,6 +4163,7 @@ function updateWelcomeScreenState() {
       insertCoinText.classList.add('text-emerald-400');
       insertCoinText.classList.remove('text-yellow-400');
     }
+    refreshWelcomeStatsFromCloud();
   } else {
     if (loginFields) loginFields.classList.remove('hidden');
     if (resumeContainer) {
@@ -6931,6 +6953,8 @@ function applyStandingsTabOptions(options = {}) {
  * Starts a weekly challenge game playlist
  */
 function startWeeklyChallengeGame(gameIdx) {
+  if (!requireLoggedInUser()) return;
+  try {
   gameMode = 'weekly_challenge';
   activeGameIndex = gameIdx;
   isGamePaused = false;
@@ -6983,8 +7007,23 @@ function startWeeklyChallengeGame(gameIdx) {
   
   weeklyPlaylistABs = gameABs;
   activeWeeklyAbIndex = 0;
-  
+
+  if (!weeklyPlaylistABs.length) {
+    throw new Error('Selected game has no at-bats');
+  }
   loadWeeklyAtBat(activeWeeklyAbIndex);
+  } catch (err) {
+    console.error('Failed to start weekly game:', err);
+    if (toastMessage) {
+      toastMessage.innerHTML = '<span class="text-red-300 font-bold font-mono-tech">WEEKLY GAME FAILED TO START</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 3200);
+    }
+  }
 }
 
 let allStreakAtBatsPool = [];
@@ -7066,6 +7105,7 @@ function extractAllAtBatsForStreak() {
  */
 function startDailyStreakChallenge(isResume = false) {
   if (!isResume && !requireLoggedInUser()) return;
+  try {
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   updateDailyStreakStatusUI();
 
@@ -7081,7 +7121,10 @@ function startDailyStreakChallenge(isResume = false) {
     if (allStreakAtBatsPool.length === 0) {
       extractAllAtBatsForStreak();
     }
-    
+    if (allStreakAtBatsPool.length === 0) {
+      throw new Error('No at-bats available for streak challenge');
+    }
+
     // Fisher-Yates shuffle
     const shuffledABs = [...allStreakAtBatsPool];
     for (let i = shuffledABs.length - 1; i > 0; i--) {
@@ -7112,6 +7155,18 @@ function startDailyStreakChallenge(isResume = false) {
     reconstructActiveAtBatState();
     transitionToState(STATES.IDLE);
   }
+  } catch (err) {
+    console.error('Failed to start streak challenge:', err);
+    if (toastMessage) {
+      toastMessage.innerHTML = '<span class="text-red-300 font-bold font-mono-tech">STREAK CHALLENGE FAILED TO START</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 3200);
+    }
+  }
 }
 
 function loadStreakAtBat(abIdx, isResume = false) {
@@ -7127,7 +7182,10 @@ function loadStreakAtBat(abIdx, isResume = false) {
 
   activeStreakAbIndex = abIdx;
   const abData = streakPlaylistABs[activeStreakAbIndex];
-  pitchesList = abData.pitches;
+  pitchesList = abData?.pitches || [];
+  if (!abData || pitchesList.length === 0) {
+    throw new Error('Streak challenge at-bat has no pitch data');
+  }
 
   if (!isResume) {
     activeAbEnded = false;
@@ -9704,6 +9762,7 @@ function extractAtBatsFromWeeklyData() {
 
 async function startWeeklyChallenge() {
   if (!requireLoggedInUser()) return;
+  try {
   hideChallengeDetailModal();
   gameMode = 'weekly_challenge';
   cancelAutoPlayPitch();
@@ -9800,7 +9859,22 @@ async function startWeeklyChallenge() {
     }
   }
   
+  if (!weeklyPlaylistABs.length) {
+    throw new Error('Weekly challenge playlist is empty');
+  }
   loadWeeklyAtBat(activeWeeklyAbIndex, restored);
+  } catch (err) {
+    console.error('Failed to start weekly challenge:', err);
+    if (toastMessage) {
+      toastMessage.innerHTML = '<span class="text-red-300 font-bold font-mono-tech">WEEKLY CHALLENGE FAILED TO START</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 3200);
+    }
+  }
 }
 
 function getPlayerTeam(name) {
@@ -9870,8 +9944,10 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   
   activeWeeklyAbIndex = abIdx;
   const abData = weeklyPlaylistABs[activeWeeklyAbIndex];
-  
   pitchesList = getAbPitches(abData);
+  if (!abData || pitchesList.length === 0) {
+    throw new Error('Weekly challenge at-bat has no pitch data');
+  }
   if (!isResume) {
     activeAbEnded = false;
     currentPitchIndex = 0;
@@ -11220,7 +11296,9 @@ function getStandingsHandleLabel(name) {
 }
 
 function getStandingsRowLevel(row) {
-  if (row.xp) return getLevelFromXp(row.xp);
+  if (row.xp !== undefined && row.xp !== null && Number.isFinite(Number(row.xp))) {
+    return getLevelFromXp(Number(row.xp));
+  }
   if (activeStandingsBoard === 'crew' && activeCrewMetric === 'rank' && row.score_raw) {
     return Math.max(1, Number(row.score_raw) || 1);
   }
@@ -11228,7 +11306,9 @@ function getStandingsRowLevel(row) {
 }
 
 function getStandingsRowXp(row, level) {
-  if (row.xp) return row.xp;
+  if (row.xp !== undefined && row.xp !== null && Number.isFinite(Number(row.xp))) {
+    return Number(row.xp);
+  }
   if (activeStandingsBoard === 'crew' && activeCrewMetric === 'rank' && row.score_raw) {
     return Math.max(0, (level - 1) * XP_PER_LEVEL + Math.floor(XP_PER_LEVEL * 0.4));
   }
@@ -12651,6 +12731,61 @@ function showTemporaryLoadingScreen(label, minDurationMs = 850, callback = null)
       hideAppLaunchLoader();
     }
   }, maxVisibleMs);
+}
+
+function generateDailyStreakPitches() {
+  const merged = [...getObfuscatedPitches(), ...ORIOLES_GAME_DATA];
+  for (let i = merged.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [merged[i], merged[j]] = [merged[j], merged[i]];
+  }
+  return merged;
+}
+
+async function awardXP(amount) {
+  const username = localStorage.getItem('ump_username');
+  if (!username || !amount) return;
+
+  const stats = await getGlobalUserStats(username);
+  const oldXp = stats.xp || 0;
+  const oldLevel = getLevelFromXp(oldXp);
+  stats.xp = oldXp + amount;
+  const newLevel = getLevelFromXp(stats.xp);
+  stats.level = newLevel;
+
+  await saveGlobalUserStats(username, stats);
+  updateProfileStatsUI();
+  triggerXpSurgeAnimation(amount);
+
+  if (newLevel > oldLevel) {
+    showLevelUpCelebration(newLevel, oldLevel);
+  }
+}
+
+function showFloatingXP(amount, customText) {
+  const el = document.createElement('div');
+  el.textContent = customText || `+${amount} XP`;
+
+  if (customText) {
+    el.className = 'fixed text-yellow-300 font-mono-tech font-black text-2xl md:text-3xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_15px_rgba(234,179,8,0.9)]';
+  } else {
+    el.className = 'fixed text-emerald-400 font-mono-tech font-black text-xl md:text-2xl z-[300] pointer-events-none transition-all duration-1000 transform -translate-x-1/2 text-center drop-shadow-[0_0_12px_rgba(16,185,129,0.8)]';
+  }
+
+  el.style.left = '50%';
+  el.style.top = '52%';
+  el.style.opacity = '1';
+  document.body.appendChild(el);
+  el.offsetHeight;
+
+  requestAnimationFrame(() => {
+    el.style.top = '32%';
+    el.style.opacity = '0';
+  });
+
+  setTimeout(() => {
+    el.remove();
+  }, 1000);
 }
 
 function triggerXpSurgeAnimation(amount) {
