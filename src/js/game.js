@@ -2806,13 +2806,14 @@ function attachEvents() {
     btnStartDailyStreak.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
-      startDailyStreakChallenge();
+      await startDailyStreakChallenge();
     });
   }
 
   const streakChallengeCard = document.getElementById('streak-challenge-card');
   if (streakChallengeCard) {
     streakChallengeCard.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
       initAudio();
       openChallengeDetailModal('streak');
     });
@@ -6850,6 +6851,11 @@ async function goToMainMenu() {
     updateDailyStreakStatusUI();
     
     if (inningCard) inningCard.classList.add('hidden');
+
+    if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
+      saveChallengeSessionToLocal();
+      await saveGameProgress();
+    }
     
     pitchesList = [];
     currentPitchIndex = 0;
@@ -7103,11 +7109,12 @@ function extractAllAtBatsForStreak() {
 /**
  * Starts a Daily Streak challenge session
  */
-function startDailyStreakChallenge(isResume = false) {
+async function startDailyStreakChallenge(isResume = false) {
   if (!isResume && !requireLoggedInUser()) return;
   try {
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   updateDailyStreakStatusUI();
+  hideChallengeDetailModal();
 
   gameMode = 'daily_streak';
   isGamePaused = false;
@@ -7117,7 +7124,36 @@ function startDailyStreakChallenge(isResume = false) {
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
   
-  if (!isResume) {
+  let restored = false;
+
+  if (!isResume && username && username !== 'GUEST_UMPIRE') {
+    try {
+      const session = await getActiveSession(username);
+      if (session?.gameMode === 'daily_streak' && session.streakPlaylistABs?.length) {
+        streakPlaylistABs = session.streakPlaylistABs;
+        activeStreakAbIndex = session.activeStreakAbIndex || 0;
+        streakPitchHistory = session.streakPitchHistory || [];
+        restoreChallengePitchState(session);
+        restored = true;
+      }
+    } catch (e) {
+      console.error('Failed to restore streak session from IndexedDB:', e);
+    }
+
+    if (!restored) {
+      const savedData = readSavedChallengeData(username);
+      const active = savedData?.activeChallenge;
+      if (active?.gameMode === 'daily_streak' && savedData.streakPlaylistABs?.length) {
+        streakPlaylistABs = savedData.streakPlaylistABs;
+        activeStreakAbIndex = savedData.activeStreakAbIndex || active.activeStreakAbIndex || 0;
+        streakPitchHistory = active.streakPitchHistory || [];
+        restoreChallengePitchState(active);
+        restored = true;
+      }
+    }
+  }
+
+  if (!isResume && !restored) {
     if (allStreakAtBatsPool.length === 0) {
       extractAllAtBatsForStreak();
     }
@@ -7149,12 +7185,13 @@ function startDailyStreakChallenge(isResume = false) {
     totalSessionBB = 0;
     totalSessionH = 0;
     totalSessionOuts = 0;
-
-    loadStreakAtBat(activeStreakAbIndex);
-  } else {
+  } else if (isResume) {
     reconstructActiveAtBatState();
     transitionToState(STATES.IDLE);
+    return;
   }
+
+  loadStreakAtBat(activeStreakAbIndex, restored);
   } catch (err) {
     console.error('Failed to start streak challenge:', err);
     if (toastMessage) {
@@ -7195,7 +7232,13 @@ function loadStreakAtBat(abIdx, isResume = false) {
     abBalls = 0;
     abStrikes = 0;
   } else {
-    reconstructActiveAtBatState();
+    if (pitchHistory.length > 0) {
+      applyPitchHistoryToPitchesList();
+    } else {
+      reconstructActiveAtBatState();
+    }
+    
+    // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
     if (checkReconstructedAbCompleted()) {
       console.log("Resumed Streak At-Bat is completed. Loading intermission/summary directly.");
       cancelAutoPlayPitch();
@@ -7888,6 +7931,17 @@ async function showStreakSummaryScreen() {
 
     submitGlobalScore('daily', username, favoriteTeam, `${accuracy}%`, `${correctCount} Streak`, correctCount);
 
+    try {
+      await clearActiveSession(username);
+      const saved = readSavedChallengeData(username);
+      if (saved?.activeChallenge?.gameMode === 'daily_streak') {
+        saved.activeChallenge = null;
+        localStorage.setItem(getChallengeStorageKey(username), JSON.stringify(saved));
+      }
+    } catch (err) {
+      console.warn('Failed to clear completed streak session:', err);
+    }
+
     if (streakSummaryBestStreak) {
       streakSummaryBestStreak.textContent = `${Math.max(localStats.maxStreak || 0, correctCount)} Pitches`;
     }
@@ -8519,7 +8573,13 @@ function saveChallengeSessionToLocal() {
   const data = {
     completedABsCount,
     weeklyPlaylistABs: sanitizedPlaylist,
+    streakPlaylistABs: streakPlaylistABs?.length ? streakPlaylistABs.map((ab) => {
+      const cleanAb = { ...ab };
+      if (cleanAb.pitches) cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
+      return cleanAb;
+    }) : [],
     activeWeeklyAbIndex,
+    activeStreakAbIndex,
     activeGameIndex,
     gamePk: activeMlbGamePk,
     profileStats: {
@@ -8532,19 +8592,21 @@ function saveChallengeSessionToLocal() {
     data.activeChallenge = {
       gameMode,
       activeWeeklyAbIndex,
+      activeStreakAbIndex,
       activeGameIndex,
       activeDailyDate,
       currentPitchIndex,
       abBalls,
       abStrikes,
       pitchHistory: sanitizedHistory,
+      streakPitchHistory: sanitizeHistory(streakPitchHistory),
       historyLength: pitchHistory.length
     };
   } else {
     data.activeChallenge = null;
   }
   
-  let key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+  let key = getChallengeStorageKey(username);
   if (gameMode === 'mlb_game' && activeMlbGamePk) {
     key = username
       ? `pitch_ump_mlb_game_mvp_${username.toUpperCase()}_mlb_${activeMlbGamePk}`
@@ -8569,6 +8631,73 @@ function saveChallengeSessionToLocal() {
       console.error("Failed to fetch global user stats:", err);
     });
   }
+}
+
+function getChallengeStorageKey(username = localStorage.getItem('ump_username')) {
+  return username
+    ? `pitch_ump_challenge_mvp_${username.toUpperCase()}`
+    : 'pitch_ump_challenge_mvp_guest';
+}
+
+function readSavedChallengeData(username = localStorage.getItem('ump_username')) {
+  const raw = localStorage.getItem(getChallengeStorageKey(username));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function readSavedActiveChallenge(expectedGameMode) {
+  const data = readSavedChallengeData();
+  const active = data?.activeChallenge;
+  if (!active || active.gameMode !== expectedGameMode) return null;
+  return active;
+}
+
+function applyPitchHistoryToPitchesList() {
+  if (!pitchesList?.length || !pitchHistory?.length) return;
+  pitchHistory.forEach((item, idx) => {
+    const pitch = pitchesList[idx];
+    if (!pitch) return;
+    pitch.userCall = item.userCall;
+    pitch.absCall = item.absCall;
+    pitch.realCall = item.realCall;
+    pitch.userCorrect = item.userCorrect;
+    pitch.realCorrect = item.realCorrect;
+    pitch.isSwingPlay = !!item.isSwingPlay;
+    if (item.swingOutcome) pitch.swingOutcome = item.swingOutcome;
+    if (item.swingHitType) pitch.swingHitType = item.swingHitType;
+    if (item.pitchData) pitch.pitchTrajectory = item.pitchData.pitchTrajectory || pitch.pitchTrajectory;
+  });
+}
+
+function restoreChallengePitchState(activeChallenge) {
+  if (!activeChallenge) return;
+  currentPitchIndex = activeChallenge.currentPitchIndex || 0;
+  abBalls = activeChallenge.abBalls || 0;
+  abStrikes = activeChallenge.abStrikes || 0;
+  pitchHistory = activeChallenge.pitchHistory || [];
+  applyPitchHistoryToPitchesList();
+}
+
+function hasWeeklyChallengeResumeProgress() {
+  if (weeklyPlaylistABs.some((ab) => ab.completed)) return true;
+  if (activeWeeklyAbIndex > 0) return true;
+  const active = readSavedActiveChallenge('weekly_challenge');
+  if (active && (active.currentPitchIndex > 0 || (active.pitchHistory?.length || 0) > 0)) {
+    return true;
+  }
+  return gameMode === 'weekly_challenge' && (currentPitchIndex > 0 || pitchHistory.length > 0);
+}
+
+function hasStreakChallengeResumeProgress() {
+  const active = readSavedActiveChallenge('daily_streak');
+  if (active && (active.currentPitchIndex > 0 || (active.pitchHistory?.length || 0) > 0 || (active.streakPitchHistory?.length || 0) > 0)) {
+    return true;
+  }
+  return gameMode === 'daily_streak' && !isSessionOver && (currentPitchIndex > 0 || pitchHistory.length > 0 || streakPitchHistory.length > 0);
 }
 
 function reconstructActiveAtBatState() {
@@ -8682,21 +8811,30 @@ async function loadSavedSessionFromLocal() {
     const session = await getActiveSession(username);
     if (session) {
       console.log("Restoring active session from IndexedDB...");
-      gameMode = session.gameMode;
-      activeWeeklyAbIndex = session.activeWeeklyAbIndex;
-      currentPitchIndex = session.currentPitchIndex;
-      abBalls = session.abBalls;
-      abStrikes = session.abStrikes;
-      pitchHistory = session.pitchHistory || [];
-      weeklyPlaylistABs = session.weeklyPlaylistABs || [];
-      if (session.streakPlaylistABs?.length) streakPlaylistABs = session.streakPlaylistABs;
-      if (session.activeStreakAbIndex !== undefined) activeStreakAbIndex = session.activeStreakAbIndex;
+      if (session.weeklyPlaylistABs?.length) {
+        weeklyPlaylistABs = session.weeklyPlaylistABs;
+        if (session.gameMode === 'weekly_challenge') {
+          activeWeeklyAbIndex = session.activeWeeklyAbIndex ?? activeWeeklyAbIndex;
+        }
+      }
+      if (session.streakPlaylistABs?.length) {
+        streakPlaylistABs = session.streakPlaylistABs;
+        if (session.gameMode === 'daily_streak') {
+          activeStreakAbIndex = session.activeStreakAbIndex ?? activeStreakAbIndex;
+          streakPitchHistory = session.streakPitchHistory || streakPitchHistory;
+        }
+      }
+      if (session.gameMode === 'weekly_challenge' || session.gameMode === 'daily_streak' || session.gameMode === 'mlb_game') {
+        gameMode = session.gameMode;
+        currentPitchIndex = session.currentPitchIndex ?? 0;
+        abBalls = session.abBalls ?? 0;
+        abStrikes = session.abStrikes ?? 0;
+        pitchHistory = session.pitchHistory || [];
+        if (session.pitchesList) pitchesList = session.pitchesList;
+      }
       activeDailyDate = session.activeDailyDate;
       activeDailyTeam = session.activeDailyTeam;
       
-      if (session.pitchesList) {
-        pitchesList = session.pitchesList;
-      }
       if (session.totalPitchesCount !== undefined) totalPitchesCount = session.totalPitchesCount;
       if (session.totalBattersFaced !== undefined) totalBattersFaced = session.totalBattersFaced;
       if (session.totalSessionK !== undefined) totalSessionK = session.totalSessionK;
@@ -8708,19 +8846,23 @@ async function loadSavedSessionFromLocal() {
     console.error("Failed to restore session from IndexedDB", e);
   }
   
-  const weeklyKey = `pitch_ump_challenge_mvp_${username.toUpperCase()}`;
+  const weeklyKey = getChallengeStorageKey(username);
   const rawWeekly = localStorage.getItem(weeklyKey);
   if (rawWeekly) {
     try {
       const data = JSON.parse(rawWeekly);
       if (data.completedABsCount) completedABsCount = data.completedABsCount;
-      if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
       if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
       if (data.weeklyPlaylistABs && data.weeklyPlaylistABs.length > 0) {
         weeklyPlaylistABs = data.weeklyPlaylistABs;
-      } else {
+      } else if (!weeklyPlaylistABs.length) {
         weeklyPlaylistABs = extractAtBatsFromWeeklyData();
       }
+      if (data.streakPlaylistABs?.length) {
+        streakPlaylistABs = data.streakPlaylistABs;
+      }
+      if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
+      if (data.activeStreakAbIndex !== undefined) activeStreakAbIndex = data.activeStreakAbIndex;
     } catch (e) {
       console.error(e);
       weeklyPlaylistABs = extractAtBatsFromWeeklyData();
@@ -8935,7 +9077,7 @@ function updateChallengeProgressUI() {
   }
   
   if (btnStartWeeklyChallenge) {
-    const hasProgress = activeWeeklyAbIndex > 0 || currentPitchIndex > 0 || pitchHistory.length > 0;
+    const hasProgress = hasWeeklyChallengeResumeProgress();
     if (hasProgress && activeWeeklyAbIndex < total) {
       btnStartWeeklyChallenge.textContent = "Resume Challenge";
     } else {
@@ -9800,10 +9942,7 @@ async function startWeeklyChallenge() {
         console.log("Resuming weekly challenge from IndexedDB active session...");
         weeklyPlaylistABs = session.weeklyPlaylistABs;
         activeWeeklyAbIndex = session.activeWeeklyAbIndex;
-        currentPitchIndex = session.currentPitchIndex;
-        abBalls = session.abBalls;
-        abStrikes = session.abStrikes;
-        pitchHistory = session.pitchHistory || [];
+        restoreChallengePitchState(session);
         restored = true;
       }
     } catch (e) {
@@ -9812,7 +9951,7 @@ async function startWeeklyChallenge() {
   }
   
   if (!restored) {
-    const key = username ? `pitch_ump_challenge_mvp_${username.toUpperCase()}` : 'pitch_ump_challenge_mvp_guest';
+    const key = getChallengeStorageKey(username);
     const rawSession = localStorage.getItem(key);
     let savedPlaylist = null;
     let savedAbIndex = 0;
@@ -9846,6 +9985,11 @@ async function startWeeklyChallenge() {
             console.log("Invalidating saved weekly playlist: teammate matchups or data version mismatch detected.");
             localStorage.removeItem(key);
           }
+        }
+
+        if (savedPlaylist && savedData.activeChallenge?.gameMode === 'weekly_challenge') {
+          restoreChallengePitchState(savedData.activeChallenge);
+          restored = true;
         }
       } catch (e) {
         console.error("Failed to restore weekly playlist", e);
@@ -9959,7 +10103,11 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
     abBalls = 0;
     abStrikes = 0;
   } else {
-    reconstructActiveAtBatState();
+    if (pitchHistory.length > 0) {
+      applyPitchHistoryToPitchesList();
+    } else {
+      reconstructActiveAtBatState();
+    }
     
     // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
     if (checkReconstructedAbCompleted()) {
@@ -10192,7 +10340,7 @@ async function updateDailyStreakStatusUI() {
   if (btn) {
     btn.removeAttribute('disabled');
     btn.className = "ump-btn bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border-amber-500/50 text-white ump-btn--sm pointer-events-auto";
-    btn.textContent = "Play Streak";
+    btn.textContent = hasStreakChallengeResumeProgress() ? "Resume Streak" : "Play Streak";
   }
   if (rankEl && username !== 'GUEST_UMPIRE') {
     rankEl.textContent = "FETCHING...";
@@ -11829,7 +11977,7 @@ async function openChallengeDetailModal(type) {
     }
 
     if (btnChallengeDetailPlay) {
-      btnChallengeDetailPlay.textContent = btnStartWeeklyChallenge?.textContent?.includes('Resume')
+      btnChallengeDetailPlay.textContent = hasWeeklyChallengeResumeProgress()
         ? 'Resume Challenge'
         : 'Start Challenge';
       btnChallengeDetailPlay.onclick = (e) => {
@@ -11883,7 +12031,7 @@ async function openChallengeDetailModal(type) {
     if (gamesWrap) gamesWrap.classList.add('hidden');
 
     if (btnChallengeDetailPlay) {
-      btnChallengeDetailPlay.textContent = 'Play Streak';
+      btnChallengeDetailPlay.textContent = hasStreakChallengeResumeProgress() ? 'Resume Streak' : 'Play Streak';
       btnChallengeDetailPlay.onclick = (e) => {
         e.stopPropagation();
         hideChallengeDetailModal();
@@ -12343,6 +12491,80 @@ function getScrollParent(node) {
   return getScrollParent(node.parentNode);
 }
 
+function getPopoutClipBounds(element) {
+  const parent = getScrollParent(element) || document.body;
+  const margin = 12;
+  if (parent === document.body) {
+    return {
+      top: margin,
+      bottom: window.innerHeight - margin,
+      left: margin,
+      right: window.innerWidth - margin,
+    };
+  }
+  const rect = parent.getBoundingClientRect();
+  return {
+    top: rect.top + margin,
+    bottom: rect.bottom - margin,
+    left: rect.left + margin,
+    right: rect.right - margin,
+  };
+}
+
+function adjustPlayerStatsPopoutPosition(popout, element) {
+  const bounds = getPopoutClipBounds(element);
+  const elementRect = element.getBoundingClientRect();
+
+  popout.style.maxHeight = '';
+  popout.style.overflowY = '';
+  popout.style.transform = '';
+  popout.style.marginTop = '';
+
+  let rect = popout.getBoundingClientRect();
+
+  if (rect.bottom > bounds.bottom) {
+    popout.style.top = 'auto';
+    popout.style.bottom = '0';
+    rect = popout.getBoundingClientRect();
+  }
+
+  if (rect.top < bounds.top) {
+    popout.style.bottom = 'auto';
+    popout.style.top = '100%';
+    popout.style.marginTop = '4px';
+    rect = popout.getBoundingClientRect();
+  }
+
+  if (rect.bottom > bounds.bottom) {
+    const available = bounds.bottom - Math.max(bounds.top, rect.top);
+    if (available > 0) {
+      popout.style.maxHeight = `${available}px`;
+      popout.style.overflowY = 'auto';
+    }
+    rect = popout.getBoundingClientRect();
+  }
+
+  if (rect.top < bounds.top) {
+    popout.style.bottom = 'auto';
+    popout.style.marginTop = '';
+    popout.style.top = `${bounds.top - elementRect.top}px`;
+    const available = bounds.bottom - bounds.top;
+    popout.style.maxHeight = `${available}px`;
+    popout.style.overflowY = 'auto';
+    rect = popout.getBoundingClientRect();
+  }
+
+  let translateX = 0;
+  if (rect.left < bounds.left) {
+    translateX = bounds.left - rect.left;
+  } else if (rect.right > bounds.right) {
+    translateX = bounds.right - rect.right;
+  }
+  if (translateX !== 0) {
+    popout.style.transform = `translateX(${translateX}px)`;
+  }
+}
+
 function showPlayerStatsPopout(element, name, role, hand) {
   if (!element || !name || name === '--') return;
 
@@ -12399,14 +12621,7 @@ function showPlayerStatsPopout(element, name, role, hand) {
   popout.innerHTML = statsHtml;
   element.appendChild(popout);
 
-  // Dynamic positioning to prevent overflow below parent scrolling context
-  const parent = getScrollParent(element) || document.body;
-  const parentBottom = parent === document.body ? window.innerHeight : parent.getBoundingClientRect().bottom;
-  const popoutRect = popout.getBoundingClientRect();
-  if (popoutRect.bottom > parentBottom - 12) {
-    popout.style.top = 'auto';
-    popout.style.bottom = '0';
-  }
+  adjustPlayerStatsPopoutPosition(popout, element);
 
   // Setup click listener for the close button
   const closeBtn = popout.querySelector('.btn-close-popout');
@@ -12747,6 +12962,19 @@ async function saveGameProgress() {
     abBalls,
     abStrikes,
     pitchHistory: pitchHistory.map((h) => ({
+      pitchNum: h.pitchNum,
+      pitchType: h.pitchType,
+      speedMph: h.speedMph,
+      userCall: h.userCall,
+      absCall: h.absCall,
+      realCall: h.realCall,
+      userCorrect: h.userCorrect,
+      realCorrect: h.realCorrect,
+      isSwingPlay: h.isSwingPlay,
+      swingOutcome: h.swingOutcome,
+      swingHitType: h.swingHitType,
+    })),
+    streakPitchHistory: streakPitchHistory.map((h) => ({
       pitchNum: h.pitchNum,
       pitchType: h.pitchType,
       speedMph: h.speedMph,
