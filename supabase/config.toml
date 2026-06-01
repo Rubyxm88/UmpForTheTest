@@ -1,0 +1,13 @@
+# UmpSim3000 — link with: npx supabase link --project-ref wrtwqfvicftxpduukzwm
+# Apply pending SQL: npm run supabase:migrate
+
+project_id = "wrtwqfvicftxpduukzwm"
+
+[db]
+major_version = 15
+
+[api]
+enabled = true
+
+[db.migrations]
+enabled = true

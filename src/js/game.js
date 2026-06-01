@@ -11,6 +11,13 @@ import {
   getIsoWeekKey,
   formatWeekLabel,
 } from './challenge-utils.js';
+import {
+  hydrateWeeklyChallengeFromApi,
+  activeWeeklyBundleId,
+  readStoredWeeklyRevision,
+  writeStoredWeeklyRevision,
+  getStoredWeeklyRevisionKey,
+} from './weekly-challenge-live.js';
 import { DAILY_CHALLENGE_DATA } from '../data/daily_challenge.js';
 import { CLOSE_CHALLENGE_DATA } from '../data/close_challenge.js';
 import {
@@ -2495,6 +2502,12 @@ function initProfileSettingsUI() {
  * Initialize all DOM queries and attach event listeners
  */
 export async function startGameSession() {
+  const liveWeekly = await hydrateWeeklyChallengeFromApi(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  if (liveWeekly.applied) {
+    console.log(
+      `Weekly challenge loaded from ${liveWeekly.source}: ${liveWeekly.label || liveWeekly.bundleId} (${liveWeekly.weekId})`
+    );
+  }
   if (WEEKLY_CHALLENGE_DATA.length < 6) {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
@@ -9764,6 +9777,24 @@ function getMondayDateString(d = new Date()) {
   return monday.toISOString().slice(0, 10);
 }
 
+async function resetWeeklyChallengeClientProgress(username) {
+  const userSuffix = username ? username.toUpperCase() : 'GUEST';
+  localStorage.removeItem(`pitch_ump_challenge_mvp_${userSuffix}`);
+  localStorage.removeItem('pitch_ump_challenge_mvp_guest');
+
+  if (username) {
+    try {
+      await clearActiveSession(username);
+    } catch (e) {
+      console.error('Failed to clear active weekly session on revision change:', e);
+    }
+  }
+  completedABsCount = [0, 0, 0, 0, 0];
+  activeWeeklyAbIndex = 0;
+  activeGameIndex = 0;
+  weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+}
+
 async function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
   weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
@@ -9778,27 +9809,20 @@ async function loadSavedSessionFromLocal() {
   if (weeklySchedule?.assignments && !weekAssignment?.bundleId) {
     console.warn(`No weekly challenge assigned for calendar week ${calendarWeekId} in schedule.`);
   }
-  const storedWeek = localStorage.getItem('ump_weekly_challenge_week');
+  const revisionKey = getStoredWeeklyRevisionKey(currentWeekId, activeWeeklyBundleId);
+  const storedRevision = readStoredWeeklyRevision();
   let weeklyWeekJustReset = false;
-  if (storedWeek !== currentWeekId) {
-    console.log('Weekly challenge week changed! Stored:', storedWeek, 'Current:', currentWeekId, 'Resetting weekly challenge progress.');
-    const userSuffix = username ? username.toUpperCase() : 'GUEST';
-    localStorage.removeItem(`pitch_ump_challenge_mvp_${userSuffix}`);
-    localStorage.removeItem('pitch_ump_challenge_mvp_guest');
-    
-    if (username) {
-      try {
-        await clearActiveSession(username);
-      } catch (e) {
-        console.error("Failed to clear active weekly session on week change:", e);
-      }
-    }
-    completedABsCount = [0, 0, 0, 0, 0];
-    activeWeeklyAbIndex = 0;
-    activeGameIndex = 0;
-    weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+  if (storedRevision !== revisionKey) {
+    console.log(
+      'Weekly challenge revision changed — resetting progress.',
+      'was:',
+      storedRevision || '(none)',
+      'now:',
+      revisionKey
+    );
+    await resetWeeklyChallengeClientProgress(username);
+    writeStoredWeeklyRevision(currentWeekId, activeWeeklyBundleId);
     weeklyWeekJustReset = true;
-    localStorage.setItem('ump_weekly_challenge_week', currentWeekId);
   }
 
   if (!username) {
@@ -10231,6 +10255,12 @@ function updateChallengeProgressUI() {
     weeklyChallengeProgressBar.style.width = `${Math.min(100, percent)}%`;
   }
   syncWeeklyChallengeTargetLabels(total);
+
+  const weekLabelEl = document.getElementById('weekly-challenge-week-label');
+  if (weekLabelEl) {
+    const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+    weekLabelEl.textContent = formatWeekLabel(meta.challengeWeekId);
+  }
   
   const totalBadge = document.getElementById('weekly-challenge-total-badge');
   if (totalBadge) {

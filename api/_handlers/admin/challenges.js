@@ -23,6 +23,7 @@ import {
   deployBundleToLiveApp,
   LIVE_BUNDLE_PATH,
 } from '../../../scripts/lib/weekly-schedule.mjs';
+import { getStorageMode } from '../../../scripts/lib/weekly-storage.mjs';
 
 function readGenerationConfig() {
   try {
@@ -66,6 +67,20 @@ async function handlePost(body) {
       deploy = deployBundleToLiveApp(bundle);
     }
 
+    const storageMode = getStorageMode();
+    let message;
+    if (!isCurrent) {
+      message = `Assigned to ${weekId}.`;
+    } else if (deploy?.published) {
+      message = 'Assigned, leaderboard reset, and live app file updated.';
+    } else if (storageMode === 'supabase') {
+      message =
+        'Assigned and leaderboard reset. Players load this bundle from /api/weekly-challenge on their next visit (no git deploy required).';
+    } else {
+      message =
+        'Assigned and leaderboard reset. Live file unchanged (read-only deploy) — sync via CI or local deploy.';
+    }
+
     return {
       ok: true,
       action,
@@ -75,11 +90,7 @@ async function handlePost(body) {
       reassigned,
       leaderboardReset,
       deploy,
-      message: isCurrent
-        ? deploy?.published
-          ? 'Assigned, leaderboard reset, and live app file updated.'
-          : 'Assigned and leaderboard reset. Live file unchanged (read-only deploy) — sync via CI or local deploy.'
-        : `Assigned to ${weekId}.`,
+      message,
     };
   }
 

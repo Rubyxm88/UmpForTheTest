@@ -206,15 +206,32 @@ export async function buildAdminDashboard() {
 
   const storageMode = getStorageMode();
 
+  let currentPlaylist = null;
+  const currentSlot = enriched.find((s) => s.weekId === currentIsoWeek);
+  if (currentSlot?.assignment?.bundleId) {
+    try {
+      const fullBundle = await loadBundle(currentSlot.assignment.bundleId);
+      if (fullBundle) currentPlaylist = summarizeBundleForAdmin(fullBundle);
+    } catch {
+      currentPlaylist = null;
+    }
+  }
+
+  const upcomingSlots = enriched.filter((s) => s.period === 'future' && s.bundle).slice(0, 5);
+
   return {
     currentIsoWeek,
     timeline: enriched,
     schedule,
     catalog,
     live,
+    currentSlot,
+    currentPlaylist,
+    upcomingSlots,
     writable: canWriteFilesystem(),
     storageMode,
     canPersistBundles: storageMode !== 'none',
+    playersLoadViaApi: storageMode === 'supabase',
   };
 }
 

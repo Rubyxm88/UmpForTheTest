@@ -103,15 +103,37 @@ Auth, leaderboards, and `/admin` login will fail until you use `dev:full`, `dev:
 | `/api/leaderboard` | GET | `?board=weekly&username=HANDLE` |
 | `/api/leaderboard` | POST | Submit score (authenticated) |
 
-## 4. Migrations
+## 4. Migrations & production connector
 
-SQL lives in `supabase/migrations/`. The initial schema was applied to your remote project via the Supabase MCP.
+SQL lives in `supabase/migrations/`. Remote **UmpSim3000** already has these applied; use the scripts below for new environments or drift checks.
 
-To link the CLI later:
+| Command | Purpose |
+|---------|---------|
+| `npm run supabase:migrate` | Verify required tables exist (uses `.env.local` service key) |
+| `npm run supabase:migrate -- --push` | Apply pending SQL via Supabase CLI (`db push`) |
+| `npm run vercel:env` | Copy `SUPABASE_URL` + service key to Vercel **production** and **preview** |
+| `npm run vercel:supabase` | Confirm Vercel production has both env vars |
+| `npm run connect:prod` | Schema check → Vercel env → verify → probe `/api/weekly-challenge` |
+
+**One-shot (recommended after pulling repo):**
 
 ```bash
+cp .env.example .env.local
+# paste SUPABASE_SERVICE_ROLE_KEY
+npm run connect:prod
+npx vercel deploy --prod
+```
+
+Link the CLI for `db push`:
+
+```bash
+npx supabase login
 npx supabase link --project-ref wrtwqfvicftxpduukzwm
 ```
+
+Config: `supabase/config.toml` (`project_id = wrtwqfvicftxpduukzwm`).
+
+**Do not** use `vercel integration add supabase` for this project — it provisions a **new** database. Use manual env vars only (Hobby-friendly).
 
 ## 5. Weekly challenge admin (required on Vercel)
 
@@ -121,6 +143,8 @@ Production admin cannot write to `src/data/` (read-only filesystem). Apply migra
 - `weekly_challenge_assignments` — which ISO week uses which bundle
 
 With `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set on Vercel, **Build full bundle** and **Assign** persist to Supabase. Reassigning the current week resets `leaderboard_entries` for that `period_key`.
+
+Players load the assigned bundle at runtime via `GET /api/weekly-challenge` (no git deploy required on Vercel). The bundled `src/data/weekly_challenge.js` remains the offline fallback when Supabase is unset or no week is assigned.
 
 Local dev still mirrors bundles to `src/data/weekly_bundles/` when the filesystem is writable.
 
