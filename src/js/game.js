@@ -265,6 +265,7 @@ let abStartCountdownInterval = null;
 let btnAbSummaryHome;
 let abPitchCounter;
 let btnStartWeeklyChallenge, weeklyChallengeProgressText, weeklyChallengeProgressBar;
+let weeklyStartButtonIdleLabel = '';
 let activeDailyDate = "";
 let activeMlbGamePk = null;
 
@@ -3644,7 +3645,12 @@ function attachEvents() {
     btnStartWeeklyChallenge.addEventListener('click', async (e) => {
       e.stopPropagation();
       initAudio();
-      await startWeeklyChallenge();
+      setWeeklyChallengeStartLoading(true);
+      try {
+        await startWeeklyChallenge();
+      } finally {
+        setWeeklyChallengeStartLoading(false);
+      }
     });
   }
 
@@ -6695,38 +6701,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false, startOpts = {
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs && weeklyPlaylistABs.length > 0) {
     if (startWeeklyDetails) {
       startWeeklyDetails.classList.remove('hidden');
-      
-      const totalCount = getWeeklyChallengeTargetAtBats();
-      const completedCount = weeklyPlaylistABs.filter(ab => ab.completed).length;
-      
-      const countEl = document.getElementById('ab-start-weekly-count');
-      const totalEl = document.getElementById('ab-start-weekly-total');
-      const pctEl = document.getElementById('ab-start-weekly-pct');
-      const accuracyEl = document.getElementById('ab-start-weekly-accuracy-text');
-      const leaderboardEl = document.getElementById('ab-start-leaderboard-snippet');
-      const progressBarEl = document.getElementById('ab-start-weekly-progress-bar');
-      
-      if (countEl) countEl.textContent = String(completedCount);
-      if (totalEl) totalEl.textContent = `/ ${totalCount}`;
-      
-      const percent = Math.round((completedCount / totalCount) * 100);
-      if (pctEl) pctEl.textContent = `${percent}% Complete`;
-      
-      let overallCorrect = 0;
-      let overallTotal = 0;
-      weeklyPlaylistABs.forEach((ab) => {
-        if (ab.completed) {
-          overallCorrect += ab.userCorrectCount || 0;
-          overallTotal += ab.userTotalCount || 0;
-        }
-      });
-      const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
-      if (accuracyEl) accuracyEl.textContent = `${overallAccuracy}%`;
-      
-      if (progressBarEl) {
-        progressBarEl.style.width = `${percent}%`;
-      }
-      
+      applyWeeklyChallengeProgressToDom();
       const username = localStorage.getItem('ump_username') || 'Player';
       updateAbStartLeaderboardSnippet(username);
     }
@@ -9605,8 +9580,8 @@ async function showAtBatSummaryScreen(outcomeText) {
       abSummaryWeeklyChallengeDetails.classList.remove('hidden');
     }
 
-    const completedCount = activeWeeklyAbIndex + 1;
     const totalCount = getWeeklyChallengeTargetAtBats();
+    const completedCount = Math.min(activeWeeklyAbIndex + 1, totalCount);
     const prevPercent = Math.round((activeWeeklyAbIndex / totalCount) * 100);
     const newPercent = Math.round((completedCount / totalCount) * 100);
 
@@ -9633,6 +9608,12 @@ async function showAtBatSummaryScreen(outcomeText) {
     const overallAccuracy = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
     const prevAccuracy = prevTotal > 0 ? Math.round((prevCorrect / prevTotal) * 100) : null;
 
+    applyWeeklyChallengeProgressToDom({
+      ...getWeeklyChallengeProgressSnapshot(),
+      completedCount,
+      totalCount,
+      percent: newPercent,
+    });
     if (abSummaryWeeklyCount) abSummaryWeeklyCount.textContent = String(completedCount);
     if (abSummaryWeeklyTotal) abSummaryWeeklyTotal.textContent = `/ ${totalCount}`;
     if (abSummaryWeeklyAccuracyText) {
@@ -10348,6 +10329,10 @@ async function persistWeeklyChallengeProgress() {
     void pushWeeklyChallengeProgressToCloud(username);
   }
   void saveGameProgress();
+  applyWeeklyChallengeProgressToDom();
+  if (pauseChallengeDock && gameMode === 'weekly_challenge') {
+    updatePauseChallengeTracker();
+  }
 }
 
 /**
@@ -10360,12 +10345,21 @@ async function resolveWeeklyChallengeResume(rawABs, username) {
 
   const localData = readSavedChallengeData(username);
   let cloudData = null;
+  let session = null;
   if (username) {
-    try {
-      const stats = await getGlobalUserStats(username);
-      cloudData = stats?.challengeProgress;
-    } catch (e) {
-      console.warn('Failed to load weekly challenge progress from cloud:', e);
+    const [cloudResult, sessionResult] = await Promise.allSettled([
+      getGlobalUserStats(username),
+      getActiveSession(username),
+    ]);
+    if (cloudResult.status === 'fulfilled') {
+      cloudData = cloudResult.value?.challengeProgress;
+    } else {
+      console.warn('Failed to load weekly challenge progress from cloud:', cloudResult.reason);
+    }
+    if (sessionResult.status === 'fulfilled') {
+      session = sessionResult.value;
+    } else {
+      console.warn('Failed to read weekly challenge session from browser storage:', sessionResult.reason);
     }
   }
 
@@ -10382,19 +10376,12 @@ async function resolveWeeklyChallengeResume(rawABs, username) {
   let savedPlaylist = savedBundle?.weeklyPlaylistABs?.length ? savedBundle.weeklyPlaylistABs : null;
   let preferredIndex = savedBundle?.activeWeeklyAbIndex;
 
-  if (username) {
-    try {
-      const session = await getActiveSession(username);
-      if (session?.weeklyPlaylistABs?.length) {
-        savedPlaylist = savedPlaylist
-          ? mergeWeeklyPlaylistProgress(savedPlaylist, session.weeklyPlaylistABs)
-          : session.weeklyPlaylistABs;
-        if (session.activeWeeklyAbIndex != null) {
-          preferredIndex = session.activeWeeklyAbIndex;
-        }
-      }
-    } catch (e) {
-      console.error('Failed to read weekly challenge session from IndexedDB:', e);
+  if (session?.weeklyPlaylistABs?.length) {
+    savedPlaylist = savedPlaylist
+      ? mergeWeeklyPlaylistProgress(savedPlaylist, session.weeklyPlaylistABs)
+      : session.weeklyPlaylistABs;
+    if (session.activeWeeklyAbIndex != null) {
+      preferredIndex = session.activeWeeklyAbIndex;
     }
   }
 
@@ -10619,7 +10606,6 @@ async function loadSavedSessionFromLocal() {
   try {
     const session = await getActiveSession(username);
     if (session && !weeklyWeekJustReset) {
-      console.log("Restoring active session from IndexedDB...");
       if (session.weeklyPlaylistABs?.length) {
         const freshWeekly = extractAtBatsFromWeeklyData();
         weeklyPlaylistABs = mergeWeeklyPlaylistProgress(freshWeekly, session.weeklyPlaylistABs);
@@ -10749,7 +10735,7 @@ function getWeeklyChallengeCompletedStats() {
   let overallCorrect = 0;
   let overallTotal = 0;
   let completedCount = 0;
-  const totalCount = weeklyPlaylistABs?.length || 0;
+  const totalCount = getWeeklyChallengeTargetAtBats();
 
   weeklyPlaylistABs?.forEach((ab) => {
     if (ab.completed) {
@@ -10776,6 +10762,87 @@ function getWeeklyChallengeCompletedStats() {
   };
 }
 
+function getWeeklyChallengeProgressSnapshot() {
+  const stats = getWeeklyChallengeCompletedStats();
+  return {
+    ...stats,
+    currentAbNum: Math.min(activeWeeklyAbIndex + 1, stats.totalCount || 1),
+  };
+}
+
+function setWeeklyChallengeStartLoading(loading) {
+  if (!btnStartWeeklyChallenge) return;
+  const card = document.getElementById('weekly-challenge-card');
+  btnStartWeeklyChallenge.disabled = loading;
+  btnStartWeeklyChallenge.setAttribute('aria-busy', loading ? 'true' : 'false');
+  btnStartWeeklyChallenge.classList.toggle('ump-btn--busy', loading);
+  if (card) card.classList.toggle('weekly-challenge-card--loading', loading);
+  if (loading) {
+    if (!weeklyStartButtonIdleLabel) {
+      weeklyStartButtonIdleLabel = btnStartWeeklyChallenge.textContent || 'Start Challenge';
+    }
+    btnStartWeeklyChallenge.textContent = 'Loading…';
+  } else if (weeklyStartButtonIdleLabel) {
+    btnStartWeeklyChallenge.textContent = weeklyStartButtonIdleLabel;
+    weeklyStartButtonIdleLabel = '';
+  }
+}
+
+/** Single source of truth for weekly progress across main menu, AB start, AB summary, pause, and detail modal. */
+function applyWeeklyChallengeProgressToDom(snapshot = getWeeklyChallengeProgressSnapshot()) {
+  const { completedCount, totalCount, percent, sessionAccuracy } = snapshot;
+
+  if (weeklyChallengeProgressText) {
+    weeklyChallengeProgressText.textContent = `${completedCount} / ${totalCount} At-Bats`;
+  }
+  if (weeklyChallengeProgressBar) {
+    weeklyChallengeProgressBar.style.width = `${Math.min(100, percent)}%`;
+  }
+
+  const countEl = document.getElementById('ab-start-weekly-count');
+  const totalEl = document.getElementById('ab-start-weekly-total');
+  const pctEl = document.getElementById('ab-start-weekly-pct');
+  const accuracyEl = document.getElementById('ab-start-weekly-accuracy-text');
+  const progressBarEl = document.getElementById('ab-start-weekly-progress-bar');
+  if (countEl) countEl.textContent = String(completedCount);
+  if (totalEl) totalEl.textContent = `/ ${totalCount}`;
+  if (pctEl) pctEl.textContent = `${percent}% Complete`;
+  if (accuracyEl && sessionAccuracy !== null) {
+    accuracyEl.textContent = `${sessionAccuracy}%`;
+  }
+  if (progressBarEl) progressBarEl.style.width = `${percent}%`;
+
+  if (abSummaryWeeklyCount) abSummaryWeeklyCount.textContent = String(completedCount);
+  if (abSummaryWeeklyTotal) abSummaryWeeklyTotal.textContent = `/ ${totalCount}`;
+  if (abSummaryWeeklyProgressText) {
+    abSummaryWeeklyProgressText.textContent = `${completedCount} / ${totalCount} at-bats`;
+  }
+  if (abSummaryWeeklyProgressBar) {
+    abSummaryWeeklyProgressBar.style.width = `${percent}%`;
+  }
+
+  if (challengeDetailModalOpen && challengeDetailCompleted) {
+    challengeDetailCompleted.textContent = `${completedCount} / ${totalCount}`;
+  }
+
+  syncWeeklyChallengeTargetLabels(totalCount);
+}
+
+async function syncWeeklyChallengeProgressDisplays() {
+  if (
+    currentState === STATES.START ||
+    currentState === STATES.WELCOME ||
+    currentState === STATES.TEAM_SELECT
+  ) {
+    await refreshWeeklyChallengeBundleIfNeeded();
+    await syncWeeklyPlaylistForMenuDisplay();
+  }
+  applyWeeklyChallengeProgressToDom();
+  if (gameMode === 'weekly_challenge') {
+    updatePauseChallengeTracker();
+  }
+}
+
 async function updatePauseChallengeRank(username, mode) {
   if (!pauseChallengeRank || !username) return;
   pauseChallengeRank.textContent = '…';
@@ -10799,7 +10866,8 @@ async function updatePauseChallengeRank(username, mode) {
 
 function getPauseCurrentAbText() {
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs?.length) {
-    return `${activeWeeklyAbIndex + 1} of ${weeklyPlaylistABs.length}`;
+    const total = getWeeklyChallengeTargetAtBats();
+    return `${Math.min(activeWeeklyAbIndex + 1, total)} of ${total}`;
   }
   if (gameMode === 'daily_streak') {
     return `${activeStreakAbIndex + 1}`;
@@ -10827,7 +10895,7 @@ function updatePauseChallengeTracker() {
   }
 
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs?.length) {
-    const stats = getWeeklyChallengeCompletedStats();
+    const stats = getWeeklyChallengeProgressSnapshot();
     if (pauseChallengeDockHeading) pauseChallengeDockHeading.textContent = 'Weekly Challenge';
     if (pauseChallengeCountLabel) pauseChallengeCountLabel.textContent = 'Completed ABs';
     if (pauseChallengeCount) pauseChallengeCount.textContent = String(stats.completedCount);
@@ -11065,21 +11133,9 @@ function resumeGameFromPause() {
 }
 
 async function updateChallengeProgressUI() {
-  if (
-    currentState === STATES.START ||
-    currentState === STATES.WELCOME ||
-    currentState === STATES.TEAM_SELECT
-  ) {
-    await refreshWeeklyChallengeBundleIfNeeded();
-    await syncWeeklyPlaylistForMenuDisplay();
-  }
+  await syncWeeklyChallengeProgressDisplays();
   const total = getWeeklyChallengeTargetAtBats();
-  const { completedCount, percent } = getWeeklyChallengeCompletedStats();
-  if (weeklyChallengeProgressText && weeklyChallengeProgressBar) {
-    weeklyChallengeProgressText.textContent = `${completedCount} / ${total} At-Bats`;
-    weeklyChallengeProgressBar.style.width = `${Math.min(100, percent)}%`;
-  }
-  syncWeeklyChallengeTargetLabels(total);
+  const { completedCount } = getWeeklyChallengeCompletedStats();
 
   const weekLabelEl = document.getElementById('weekly-challenge-week-label');
   if (weekLabelEl) {
@@ -11092,13 +11148,11 @@ async function updateChallengeProgressUI() {
     totalBadge.textContent = `${total} TOTAL ABs`;
   }
   
-  if (btnStartWeeklyChallenge) {
+  if (btnStartWeeklyChallenge && !btnStartWeeklyChallenge.classList.contains('ump-btn--busy')) {
     const hasProgress = hasWeeklyChallengeResumeProgress();
-    if (hasProgress && completedCount < total) {
-      btnStartWeeklyChallenge.textContent = "Resume Challenge";
-    } else {
-      btnStartWeeklyChallenge.textContent = "Start Challenge";
-    }
+    const label = hasProgress && completedCount < total ? 'Resume Challenge' : 'Start Challenge';
+    btnStartWeeklyChallenge.textContent = label;
+    weeklyStartButtonIdleLabel = label;
   }
 
   updateWeeklyChallengeRankSnippet();
@@ -12179,6 +12233,9 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   };
 
   transitionToState(STATES.IDLE, { deferNavUpdate: true });
+  if (gameMode === 'weekly_challenge') {
+    applyWeeklyChallengeProgressToDom();
+  }
   // #region agent log
   agentDebugLog('game.js:loadWeeklyAtBat:enterGameplay', 'showing ab start overlay', {
     abIdx,
@@ -13998,6 +14055,10 @@ async function openChallengeDetailModal(type) {
   if (challengeDetailModalOverlay) {
     challengeDetailModalOverlay.classList.remove('opacity-0', 'pointer-events-none');
     challengeDetailModalOverlay.classList.add('opacity-100', 'pointer-events-auto');
+  }
+
+  if (type === 'weekly') {
+    await syncWeeklyChallengeProgressDisplays();
   }
 
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
