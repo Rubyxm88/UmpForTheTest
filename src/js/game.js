@@ -10314,16 +10314,13 @@ function mergeWeeklyAbEntry(freshAb, savedAb) {
 
   const calledCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay).length;
   const correctCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay && p.userCorrect).length;
-  const allPitchesCalled =
-    mergedPitches.length > 0 && mergedPitches.every((p) => p.userCall !== undefined);
   const mergedAb = { ...freshAb, pitches: mergedPitches };
-  const naturallyFinished =
-    allPitchesCalled && checkWeeklyAbIsFinished(mergedAb, mergedPitches);
+  const naturallyFinished = checkWeeklyAbIsFinished(mergedAb, mergedPitches);
 
   return {
     ...freshAb,
     pitches: mergedPitches,
-    completed: !!savedAb.completed && naturallyFinished,
+    completed: !!savedAb.completed || naturallyFinished,
     userCorrectCount: savedAb.userCorrectCount ?? correctCount,
     userTotalCount: savedAb.userTotalCount ?? calledCount,
     gameIndex: freshAb.gameIndex ?? savedAb.gameIndex,
@@ -10358,11 +10355,10 @@ function mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist) {
 }
 
 function isWeeklyAbFullyComplete(ab, pitches = getAbPitches(ab)) {
+  if (ab.completed) return true;
   if (!pitches.length) return true;
   if (weeklyAbHasMidPitchProgress(ab)) return false;
-  if (ab.completed && checkWeeklyAbIsFinished(ab, pitches)) return true;
-  const allCalled = pitches.every((p) => p.userCall !== undefined);
-  return allCalled && checkWeeklyAbIsFinished(ab, pitches);
+  return checkWeeklyAbIsFinished(ab, pitches);
 }
 
 /** Resume at the first incomplete at-bat in playlist order (linear weekly challenge). */
@@ -10591,11 +10587,7 @@ async function persistWeeklyChallengeProgress() {
   const username = localStorage.getItem('ump_username');
   if (username) {
     const cloudPush = pushWeeklyChallengeProgressToCloud(username);
-    if (isWeeklyChallengeRunComplete(weeklyPlaylistABs)) {
-      await cloudPush;
-    } else {
-      void cloudPush;
-    }
+    void cloudPush;
   }
   void saveGameProgress();
   applyWeeklyChallengeProgressToDom();
@@ -13717,7 +13709,91 @@ function highlightPitchInSummary(index) {
 }
 
 async function getLeaderboardRows(board, username, period) {
-  return apiFetchLeaderboard(board, username, period);
+  const result = await apiFetchLeaderboard(board, username, period);
+  if (!username) return result;
+
+  const normalizedUser = username.toUpperCase();
+  const existingUserRow = result.rows?.find(r => r.handle?.toUpperCase() === normalizedUser || r.isUser);
+
+  if (board === 'weekly') {
+    const isComplete = isWeeklyChallengeRunComplete(weeklyPlaylistABs);
+    if (isComplete) {
+      const stats = getWeeklyChallengeCompletedStats();
+      const localScoreRaw = stats.overallCorrect * 10;
+      const localAcc = stats.overallAccuracy;
+      const localScoreText = `${localScoreRaw} PTS`;
+
+      if (!existingUserRow || (existingUserRow.scoreRaw || 0) < localScoreRaw) {
+        let rows = [...(result.rows || [])];
+        if (existingUserRow) {
+          rows = rows.filter(r => r !== existingUserRow);
+        }
+
+        const newRow = {
+          isUser: true,
+          handle: username,
+          team: activeFavoriteTeam || 'None',
+          accuracy: `${localAcc}%`,
+          scoreText: localScoreText,
+          scoreRaw: localScoreRaw,
+          rank: 1,
+        };
+
+        rows.push(newRow);
+        rows.sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
+
+        let currentRank = 1;
+        for (let i = 0; i < rows.length; i++) {
+          if (i > 0 && rows[i].scoreRaw !== rows[i - 1].scoreRaw) {
+            currentRank = i + 1;
+          }
+          rows[i].rank = currentRank;
+          if (rows[i].handle?.toUpperCase() === normalizedUser) {
+            rows[i].isUser = true;
+          }
+        }
+        result.rows = rows;
+      }
+    }
+  } else if (board === 'daily') {
+    const profile = readLocalUserStats(username) || {};
+    const localMaxStreak = profile.maxStreak || 0;
+    if (localMaxStreak > 0) {
+      if (!existingUserRow || (existingUserRow.scoreRaw || 0) < localMaxStreak) {
+        let rows = [...(result.rows || [])];
+        if (existingUserRow) {
+          rows = rows.filter(r => r !== existingUserRow);
+        }
+
+        const newRow = {
+          isUser: true,
+          handle: username,
+          team: activeFavoriteTeam || 'None',
+          accuracy: existingUserRow?.accuracy || '100%',
+          scoreText: `${localMaxStreak} STREAK`,
+          scoreRaw: localMaxStreak,
+          rank: 1,
+        };
+
+        rows.push(newRow);
+        rows.sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
+
+        let currentRank = 1;
+        for (let i = 0; i < rows.length; i++) {
+          if (i > 0 && rows[i].scoreRaw !== rows[i - 1].scoreRaw) {
+            currentRank = i + 1;
+          }
+          rows[i].rank = currentRank;
+          if (rows[i].handle?.toUpperCase() === normalizedUser) {
+            rows[i].isUser = true;
+          }
+        }
+        result.rows = rows;
+      }
+    }
+  }
+
+  return result;
 }
 
 async function getCrewLeaderboardRows(metric, username) {
@@ -14633,15 +14709,32 @@ async function runAutomatedIntegrationTest() {
       btnWelcomeStart.click();
       console.log("TEST: Welcome start clicked.");
       
-      // Wait for login confirm box if handle is new
-      await new Promise(r => setTimeout(r, 600));
+      // Wait for login confirm box or transition to start state (up to 3 seconds)
+      let checkWait = 30;
+      while (
+        (!loginConfirmBox || loginConfirmBox.classList.contains('hidden')) &&
+        currentState !== STATES.START &&
+        checkWait > 0
+      ) {
+        await new Promise(r => setTimeout(r, 100));
+        checkWait--;
+      }
+      
       if (loginConfirmBox && !loginConfirmBox.classList.contains('hidden')) {
         const btnCreate = document.getElementById('btn-login-confirm-create');
         if (btnCreate) {
           btnCreate.click();
           console.log("TEST: Confirm profile creation clicked.");
           // Wait for transition to PRESS START state and click start
-          await new Promise(r => setTimeout(r, 600));
+          let createWait = 30;
+          while (
+            (!loginConfirmBox || !loginConfirmBox.classList.contains('hidden')) &&
+            currentState !== STATES.START &&
+            createWait > 0
+          ) {
+            await new Promise(r => setTimeout(r, 100));
+            createWait--;
+          }
           if (btnWelcomeStart) {
             btnWelcomeStart.click();
             console.log("TEST: Welcome start clicked after profile creation.");

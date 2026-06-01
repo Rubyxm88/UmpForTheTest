@@ -1885,60 +1885,71 @@
 
       <!-- SCREEN M: HIGH-FIDELITY INTERACTIVE UMPIRE SCORECARD -->
       <div id="scoreboard-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
-        <div class="max-w-3xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl"></div>
-          <div class="absolute -bottom-32 -right-32 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl"></div>
+        <div class="ab-summary-panel arcade-cabinet transform scale-95 transition-all duration-300 max-w-xl w-full">
+          <div class="arcade-cabinet-bezel" aria-hidden="true">
+            <span class="arcade-stitch arcade-stitch--tl"></span>
+            <span class="arcade-stitch arcade-stitch--tr"></span>
+            <span class="arcade-stitch arcade-stitch--bl"></span>
+            <span class="arcade-stitch arcade-stitch--br"></span>
+          </div>
+          <div class="ab-summary-marquee" aria-hidden="true">
+            <span class="ab-summary-marquee-icon">⚾</span>
+            <span class="ab-summary-marquee-text" id="final-title">CHALLENGE COMPLETE</span>
+            <span class="ab-summary-marquee-icon">⚾</span>
+          </div>
+          <div class="ab-summary-scanlines" aria-hidden="true"></div>
           
-          <!-- Summary Header -->
-          <div class="text-center mb-6">
-            <span id="final-kicker" class="px-3.5 py-1 text-xs font-semibold uppercase tracking-widest bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full shadow-lg">Challenge Complete</span>
-            <h2 id="final-title" class="text-3xl md:text-4xl font-black uppercase mt-3 tracking-wide leading-none font-mono-tech bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">CHALLENGE COMPLETED</h2>
-            <p id="final-eval-rating" class="text-gray-400 text-xs font-mono-tech tracking-wider mt-1.5 uppercase">OFFICIAL PERFORMANCE REPORT</p>
+          <div class="ab-summary-panel-scroll">
+            <!-- Summary Header -->
+            <div class="text-center mb-4 mt-2">
+              <span id="final-kicker" class="ab-summary-outcome-badge">Challenge Complete</span>
+              <p id="final-eval-rating" class="ab-summary-subtitle">OFFICIAL PERFORMANCE REPORT</p>
+            </div>
+
+            <!-- Main Stats Grid -->
+            <div class="grid grid-cols-2 gap-3 mb-4">
+              <div class="ab-summary-stat">
+                <span class="ab-summary-stat-label">Your Accuracy</span>
+                <span id="final-user-accuracy" class="ab-summary-stat-value ab-summary-stat-value--green font-black">0%</span>
+                <span id="final-user-stats" class="text-[9px] text-gray-400 font-mono-tech uppercase block mt-1">--</span>
+              </div>
+              <div class="ab-summary-stat">
+                <span class="ab-summary-stat-label">MLB Ump Accuracy</span>
+                <span id="final-ump-accuracy" class="ab-summary-stat-value ab-summary-stat-value--purple font-black">0%</span>
+                <span id="final-ump-stats" class="text-[9px] text-gray-400 font-mono-tech uppercase block mt-1">--</span>
+              </div>
+              <div class="ab-summary-stat">
+                <span class="ab-summary-stat-label">Pitches Called</span>
+                <span id="final-pitches-count" class="ab-summary-stat-value ab-summary-stat-value--blue font-black">0</span>
+                <span class="text-[9px] text-gray-400 font-mono-tech uppercase block mt-1">Total Takes</span>
+              </div>
+              <div class="ab-summary-stat">
+                <span class="ab-summary-stat-label">Rank Standing</span>
+                <span id="final-leaderboard-rank" class="ab-summary-stat-value ab-summary-stat-value--green font-black">--</span>
+                <span id="final-leaderboard-score" class="text-[9px] text-gray-400 font-mono-tech uppercase block mt-1">Syncing...</span>
+              </div>
+            </div>
+
+            <!-- Description / Narrative -->
+            <div id="final-eval-desc" class="text-xs text-gray-300 leading-relaxed font-sans p-3 bg-black/40 border border-white/5 rounded text-center mb-4">
+              Completed challenge diagnostic data is calculated.
+            </div>
+
+            <!-- Games Breakdown Section -->
+            <div class="w-full mb-2">
+              <h3 class="text-xs font-mono-tech text-gray-400 uppercase tracking-widest mb-2 text-left pl-1">Games Overview</h3>
+              <div id="challenge-games-list" class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
           </div>
 
-          <!-- Main Stats Grid -->
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Your Accuracy</span>
-              <span id="final-user-accuracy" class="text-4xl font-black text-emerald-400 font-mono-tech mt-1 block">0%</span>
-              <span id="final-user-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
-            </div>
-            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Real MLB Ump Accuracy</span>
-              <span id="final-ump-accuracy" class="text-4xl font-black text-purple-400 font-mono-tech mt-1 block">0%</span>
-              <span id="final-ump-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
-            </div>
-            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Pitches Called</span>
-              <span id="final-pitches-count" class="text-4xl font-black text-blue-400 font-mono-tech mt-1 block">0</span>
-              <span class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">Total Takes</span>
-            </div>
-            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Rank Standing</span>
-              <span id="final-leaderboard-rank" class="text-4xl font-black text-amber-400 font-mono-tech mt-1 block">--</span>
-              <span id="final-leaderboard-score" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">Syncing...</span>
-            </div>
-          </div>
-
-          <!-- Description / Narrative -->
-          <div id="final-eval-desc" class="text-xs text-gray-300 leading-relaxed font-sans glass-panel-light p-4 rounded-xl border border-white/5 text-center mb-6">
-            Completed challenge diagnostic data is calculated.
-          </div>
-
-          <!-- Games Breakdown Section -->
-          <div class="w-full mb-6">
-            <h3 class="text-xs font-mono-tech text-gray-400 uppercase tracking-widest mb-3 text-left pl-1">Games Overview</h3>
-            <div id="challenge-games-list" class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1">
-              <!-- Rendered dynamically -->
-            </div>
-          </div>
-
-          <!-- Actions footer -->
-          <div class="flex flex-col sm:flex-row gap-3 mt-auto">
-            <button id="btn-scoreboard-home" class="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg transition-all cursor-pointer">
+          <!-- Actions footer bar -->
+          <div class="ab-summary-footer-bar flex flex-col gap-2">
+            <button id="btn-scoreboard-home" class="ab-start-btn ab-start-btn--ready w-full py-2 px-4 uppercase text-center block text-xs cursor-pointer">
               Exit Challenge
             </button>
-            <button id="btn-scoreboard-leaderboard" class="py-3 px-6 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg transition-all cursor-pointer">
+            <button id="btn-scoreboard-leaderboard" class="ab-start-btn ab-start-btn--exit w-full py-2 px-4 uppercase text-center block text-xs cursor-pointer">
               View Leaderboards
             </button>
           </div>
