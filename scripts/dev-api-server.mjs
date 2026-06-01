@@ -74,13 +74,13 @@ async function resolveRoute(pathname) {
     }
   }
 
-  // api/admin/[...path].js
+  // api/admin.js — all /api/admin/*
   if (segments[0] === 'admin' && segments.length >= 2) {
-    const file = join(root, 'api', 'admin', '[...path].js');
+    const file = join(root, 'api', 'admin.js');
     if (existsSync(file)) {
       const handler = await importHandler(file);
       if (handler) {
-        const route = { handler, routeQuery: { path: segments.slice(1) } };
+        const route = { handler, routeQuery: { route: segments[1] } };
         handlerCache.set(pathname, route);
         return route;
       }

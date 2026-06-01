@@ -4,6 +4,7 @@
   "rewrites": [
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/", "destination": "/admin.html" },
+    { "source": "/api/admin/:path*", "destination": "/api/admin?route=:path*" },
     { "source": "/api/streak-pool", "destination": "/api/streak" },
     { "source": "/api/streak-telemetry", "destination": "/api/streak" },
     { "source": "/api/leaderboard-periods", "destination": "/api/leaderboard?view=periods" },
