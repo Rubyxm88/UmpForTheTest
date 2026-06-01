@@ -33,13 +33,93 @@ export function getSupabaseAdmin() {
   return adminClient;
 }
 
-export function rowToClientStats(row) {
+const LEADERBOARD_BOARD_PRIORITY = { alltime: 0, weekly: 1, daily: 2 };
+
+/** Parse "67", 67, or "67%" into an integer percent. */
+export function parseAccuracyValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && !Number.isNaN(value)) return Math.round(value);
+  const str = String(value).trim();
+  if (!str) return null;
+  const match = str.match(/(\d+(?:\.\d+)?)/);
+  return match ? Math.round(Number(match[1])) : null;
+}
+
+/** Best accuracy from leaderboard rows (prefers all-time, then weekly, then daily). */
+export function pickLeaderboardAccuracy(entries) {
+  if (!entries?.length) return null;
+  let best = null;
+  let bestPriority = 99;
+  for (const entry of entries) {
+    const acc = parseAccuracyValue(entry.accuracy);
+    if (acc == null) continue;
+    const priority = LEADERBOARD_BOARD_PRIORITY[entry.board] ?? 99;
+    if (priority < bestPriority) {
+      best = acc;
+      bestPriority = priority;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolve display accuracy from column, stats_json, session history, or leaderboard.
+ */
+export function deriveOverallAccuracy(row, leaderboardAccuracy = null) {
+  if (!row) {
+    if (leaderboardAccuracy != null) {
+      return { value: leaderboardAccuracy, source: 'leaderboard' };
+    }
+    return { value: null, source: null };
+  }
+
+  const json = row.stats_json && typeof row.stats_json === 'object' ? row.stats_json : {};
+
+  for (const candidate of [row.overall_accuracy, json.overallAccuracy]) {
+    const parsed = parseAccuracyValue(candidate);
+    if (parsed != null) return { value: parsed, source: 'stored' };
+  }
+
+  const history = json.history;
+  if (Array.isArray(history) && history.length) {
+    let correct = 0;
+    let total = 0;
+    for (const session of history) {
+      correct += Number(session.correctCalls) || 0;
+      total += Number(session.totalCalls) || 0;
+    }
+    if (total > 0) {
+      return { value: Math.round((correct / total) * 100), source: 'history' };
+    }
+  }
+
+  const bestWeekly = json.bestWeeklyRecord;
+  if (bestWeekly && typeof bestWeekly === 'object') {
+    const fromBest = parseAccuracyValue(bestWeekly.accuracy);
+    if (fromBest != null) return { value: fromBest, source: 'history' };
+  }
+
+  if (leaderboardAccuracy != null) {
+    return { value: leaderboardAccuracy, source: 'leaderboard' };
+  }
+
+  return { value: null, source: null };
+}
+
+export function rowToClientStats(row, leaderboardEntries = null) {
   if (!row) return null;
   const json = row.stats_json && typeof row.stats_json === 'object' ? row.stats_json : {};
+  const lbAcc = pickLeaderboardAccuracy(leaderboardEntries);
+  const { value: overallAccuracy, source: accuracySource } = deriveOverallAccuracy(
+    row,
+    lbAcc
+  );
+
   return {
     ...json,
     xp: row.xp ?? json.xp ?? 0,
-    overallAccuracy: row.overall_accuracy ?? json.overallAccuracy ?? null,
+    overallAccuracy,
+    accuracySource,
     maxStreak: row.max_streak ?? json.maxStreak ?? 0,
     completedWeekly: row.completed_weekly ?? json.completedWeekly ?? 0,
     dnfs: row.dnfs ?? json.dnfs ?? 0,
@@ -70,6 +150,10 @@ export function clientStatsToRow(handle, stats) {
       recentPitches: safe.recentPitches ?? [],
       totalPitchesCalled: safe.totalPitchesCalled ?? 0,
       bestWeeklyRecord: safe.bestWeeklyRecord ?? null,
+      overallAccuracy:
+        safe.overallAccuracy === null || safe.overallAccuracy === undefined
+          ? null
+          : Number(safe.overallAccuracy),
     },
   };
 }

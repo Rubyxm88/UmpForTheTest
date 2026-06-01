@@ -1393,12 +1393,6 @@
     max-width: 13.5rem;
     margin-left: auto;
   }
-
-  .mlb-games-browse__status {
-    flex: 1 1 auto;
-    min-width: 6rem;
-    text-align: right;
-  }
 }
 
 .mlb-games-browse__quick-row {
@@ -1435,7 +1429,7 @@
 }
 
 .mlb-games-browse__status {
-  flex: 1 1 100%;
+  width: 100%;
   min-height: 1.1rem;
   margin: 0;
   text-align: center;

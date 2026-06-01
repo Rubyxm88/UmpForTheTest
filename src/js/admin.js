@@ -53,8 +53,26 @@ function formatDate(iso) {
 }
 
 function formatPct(n) {
-  if (n === null || n === undefined || Number.isNaN(Number(n))) return '—';
+  if (n === null || n === undefined) return '—';
+  if (typeof n === 'string') {
+    const trimmed = n.trim();
+    if (!trimmed) return '—';
+    if (trimmed.includes('%')) return trimmed;
+    const parsed = Number(trimmed);
+    if (!Number.isNaN(parsed)) return `${Math.round(parsed)}%`;
+    return trimmed;
+  }
+  if (Number.isNaN(Number(n))) return '—';
   return `${Math.round(Number(n))}%`;
+}
+
+function accuracySourceLabel(source) {
+  const labels = {
+    stored: 'saved stats',
+    history: 'session history',
+    leaderboard: 'leaderboard',
+  };
+  return labels[source] || '';
 }
 
 function formatBoard(board) {
@@ -177,10 +195,10 @@ document.querySelectorAll('[data-admin-tab]').forEach((btn) => {
 function renderUsersSummary(rows) {
   if (!usersSummary) return;
   const totalXp = rows.reduce((sum, u) => sum + (u.stats?.xp ?? 0), 0);
-  const withAccuracy = rows.filter((u) => u.stats?.overall_accuracy != null);
+  const withAccuracy = rows.filter((u) => u.stats?.overallAccuracy != null);
   const avgAccuracy = withAccuracy.length
     ? Math.round(
-        withAccuracy.reduce((sum, u) => sum + Number(u.stats.overall_accuracy), 0) /
+        withAccuracy.reduce((sum, u) => sum + Number(u.stats.overallAccuracy), 0) /
           withAccuracy.length
       )
     : null;
@@ -233,8 +251,8 @@ function renderUsers(filter = '') {
             <td><strong>${escapeHtml(u.handle)}</strong></td>
             <td>${escapeHtml(u.favoriteTeam || 'none')}</td>
             <td>${(s.xp ?? 0).toLocaleString()}</td>
-            <td>${formatPct(s.overall_accuracy)}</td>
-            <td>${s.max_streak ?? 0}</td>
+            <td>${formatPct(s.overallAccuracy)}</td>
+            <td>${s.maxStreak ?? 0}</td>
             <td class="admin-table__muted">${formatDate(u.createdAt)}</td>
           </tr>`;
           })
@@ -275,16 +293,20 @@ function renderUserDetail(data) {
     ? Object.keys(stats.dailyHistory).length
     : 0;
 
+  const accuracyHint = stats.accuracySource
+    ? `<span class="admin-table__muted admin-accuracy-source">from ${accuracySourceLabel(stats.accuracySource)}</span>`
+    : '';
+
   const leaderboardRows = entries.length
     ? entries
         .map(
           (e) => `
         <tr>
           <td>${escapeHtml(formatBoard(e.board))}</td>
-          <td>${escapeHtml(e.period_key)}</td>
-          <td>${escapeHtml(e.score_text || e.score_raw)}</td>
-          <td>${escapeHtml(e.accuracy ?? '—')}</td>
-          <td class="admin-table__muted">${formatDate(e.submitted_at)}</td>
+          <td>${escapeHtml(e.periodKey ?? e.period_key ?? '—')}</td>
+          <td>${escapeHtml(e.scoreText ?? e.score_text ?? e.scoreRaw ?? e.score_raw ?? '—')}</td>
+          <td>${formatPct(e.accuracy)}</td>
+          <td class="admin-table__muted">${formatDate(e.submittedAt ?? e.submitted_at)}</td>
         </tr>`
         )
         .join('')
@@ -310,7 +332,7 @@ function renderUserDetail(data) {
         </div>
         <div class="admin-kpi">
           <span class="admin-kpi__label">Accuracy</span>
-          <span class="admin-kpi__value">${formatPct(stats.overallAccuracy)}</span>
+          <span class="admin-kpi__value">${formatPct(stats.overallAccuracy)}${accuracyHint}</span>
         </div>
         <div class="admin-kpi">
           <span class="admin-kpi__label">Max streak</span>

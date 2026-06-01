@@ -16,6 +16,14 @@ import {
   rememberMlbPlayContext,
   returnToMlbGamePicker,
 } from './mlb-games.js';
+import {
+  pickNextStreakAb,
+  streakCorrectCount as computeStreakCorrectCount,
+  getStreakDateKey,
+  streakRunSeed,
+  getAbById,
+  STREAK_POOL_META,
+} from './streak-rotation.js';
 import { clearPreviewState, collapsePreviewGameDetails } from './mlb-games-preview.js';
 import { formatMlbAbOutcomeText, MLB_GAME_FEED_PARSE_VERSION, fetchMlbPlayerProfile } from './mlb-api.js';
 import { applyMlbPitchPlaybackState } from './mlb-playback.js';
@@ -267,6 +275,11 @@ let activeWeeklyAbIndex = 0;
 let streakPlaylistABs = [];
 let activeStreakAbIndex = 0;
 let streakPitchHistory = [];
+let streakSessionUsedIds = new Set();
+let streakDaySeenIds = new Set();
+let streakRunSeedValue = 0;
+let streakFlowEpoch = 0;
+let currentStreakAbMeta = null;
 let isTransitioningToSummary = false;
 let cachedAbOutcomeText = "";
 let summaryTimeout = null;
@@ -400,7 +413,7 @@ let matchupCard, cardPitcherName, cardPitcherHand, cardBatterName, cardBatterHan
 let streakSummaryOverlay, streakSummaryTitle, streakSummarySubtitle;
 let streakSummaryPitcherImg, streakSummaryPitcherLogo, streakSummaryPitcherHandBadge, streakSummaryPitcherName;
 let streakSummaryBatterImg, streakSummaryBatterLogo, streakSummaryBatterHandBadge, streakSummaryBatterName;
-let streakSummaryFinalStreak, streakSummaryAccuracy, streakSummaryFraction;
+let streakSummaryFinalStreak, streakSummaryAccuracy, streakSummaryFraction, streakSummaryUmpAccuracy, streakSummaryUmpFraction;
 let streakSummaryXpLevel, streakSummaryXpEarned, streakSummaryXpProgress, streakSummaryXpTotal, streakSummaryXpBar;
 let btnStreakSummaryToggleReview, streakSummaryReview, streakSummaryPitchList, streakSummaryPitchDetails;
 let streakSummaryZoneFrame, streakSummaryZoneDistance, streakSummaryMatrixSvg;
@@ -409,6 +422,9 @@ let streakSummaryBlurb, streakSummaryBestStreak, streakSummaryLeaderboardSnippet
 let btnStreakSummaryAdvance, streakSummaryFilmLink, streakSummaryScorecardLink, btnStreakSummaryHome;
 let streakSummaryReviewExpanded = false;
 let streakSummarySelectedPitchIndex = null;
+let streakTransitionOverlay, streakTransitionOutcome, streakTransitionCurrent;
+let streakTransitionTodayBest, streakTransitionAlltimeBest, streakTransitionRank;
+let streakTransitionNextHint, btnStreakTransitionContinue;
 
 // Player Card Modal variables
 let playerCardModalOverlay, btnClosePlayerModal, playerModalImg, playerModalTeamLogo;
@@ -2504,6 +2520,8 @@ function cacheDOM() {
   streakSummaryFinalStreak = document.getElementById('streak-summary-final-streak');
   streakSummaryAccuracy = document.getElementById('streak-summary-accuracy');
   streakSummaryFraction = document.getElementById('streak-summary-fraction');
+  streakSummaryUmpAccuracy = document.getElementById('streak-summary-ump-accuracy');
+  streakSummaryUmpFraction = document.getElementById('streak-summary-ump-fraction');
   streakSummaryXpLevel = document.getElementById('streak-summary-xp-level');
   streakSummaryXpEarned = document.getElementById('streak-summary-xp-earned');
   streakSummaryXpProgress = document.getElementById('streak-summary-xp-progress');
@@ -2526,6 +2544,15 @@ function cacheDOM() {
   streakSummaryScorecardLink = document.getElementById('streak-summary-scorecard-link');
   btnStreakSummaryHome = document.getElementById('btn-streak-summary-home');
   streakSummaryZoneFrame = document.getElementById('streak-summary-zone-frame');
+
+  streakTransitionOverlay = document.getElementById('streak-transition-overlay');
+  streakTransitionOutcome = document.getElementById('streak-transition-outcome');
+  streakTransitionCurrent = document.getElementById('streak-transition-current');
+  streakTransitionTodayBest = document.getElementById('streak-transition-today-best');
+  streakTransitionAlltimeBest = document.getElementById('streak-transition-alltime-best');
+  streakTransitionRank = document.getElementById('streak-transition-rank');
+  streakTransitionNextHint = document.getElementById('streak-transition-next-hint');
+  btnStreakTransitionContinue = document.getElementById('btn-streak-transition-continue');
 
   pauseScreen = document.getElementById('pause-screen');
   btnResumeGame = document.getElementById('btn-resume-game');
@@ -2772,6 +2799,13 @@ function cacheDOM() {
     });
   }
 
+  if (btnStreakTransitionContinue) {
+    btnStreakTransitionContinue.addEventListener('click', () => {
+      initAudio();
+      continueStreakFromTransition();
+    });
+  }
+
   const streakSummaryPitcherCard = document.getElementById('streak-summary-pitcher-card');
   if (streakSummaryPitcherCard) {
     streakSummaryPitcherCard.style.cursor = 'pointer';
@@ -2797,6 +2831,16 @@ function cacheDOM() {
       if (nameEl) {
         showPlayerStatsPopout(streakSummaryBatterCard, nameEl.textContent.trim(), 'BATTER', handEl ? handEl.textContent.trim() : 'R');
       }
+    });
+  }
+
+  if (streakSummaryOverlay) {
+    streakSummaryOverlay.addEventListener('pointerdown', (e) => {
+      const popout = document.querySelector('.player-card-popout');
+      if (!popout) return;
+      const trigger = popout.closest('.ab-summary-player');
+      if (trigger?.contains(e.target) || popout.contains(e.target)) return;
+      closeAllPlayerStatsPopouts();
     });
   }
 
@@ -3053,8 +3097,9 @@ function attachEvents() {
   if (btnMainMenu) {
     btnMainMenu.addEventListener('click', async () => {
       if (gameMode === 'daily_streak' && !isSessionOver) {
-        const confirmed = await showCustomConfirm("This will end your current streak run! Are you sure you want to exit?");
+        const confirmed = await showCustomConfirm("Leaving forfeits this streak run. Exit anyway?");
         if (!confirmed) return;
+        await forfeitStreakRun();
       }
       goToMainMenu();
     });
@@ -3165,8 +3210,9 @@ function attachEvents() {
         return;
       }
       if (gameMode === 'daily_streak' && !isSessionOver) {
-        const confirmed = await showCustomConfirm("This will end your current streak run! Are you sure you want to exit?");
+        const confirmed = await showCustomConfirm("Leaving forfeits this streak run. Exit anyway?");
         if (!confirmed) return;
+        await forfeitStreakRun();
       }
       initAudio();
       isGamePaused = false;
@@ -3279,8 +3325,9 @@ function attachEvents() {
         return;
       }
       if (gameMode === 'daily_streak' && !isSessionOver) {
-        const confirmed = await showCustomConfirm("This will end your current streak run! Are you sure you want to exit?");
+        const confirmed = await showCustomConfirm("Leaving forfeits this streak run. Exit anyway?");
         if (!confirmed) return;
+        await forfeitStreakRun();
       }
       initAudio();
       setAbStartOverlayActive(false);
@@ -3890,7 +3937,7 @@ function attachEvents() {
       // If player card popout is open, close it first
       const activePopout = document.querySelector('.player-card-popout');
       if (activePopout) {
-        activePopout.remove();
+        closeAllPlayerStatsPopouts();
         return;
       }
       // If ump scorecard is open, close it first
@@ -3917,6 +3964,16 @@ function attachEvents() {
       if (e.key === ' ') {
         e.preventDefault();
         advanceNextAtBat();
+      }
+      return;
+    }
+
+    // Check if Streak transition is open
+    if (streakTransitionOverlay && streakTransitionOverlay.classList.contains('opacity-100')) {
+      if (e.key === ' ') {
+        e.preventDefault();
+        initAudio();
+        continueStreakFromTransition();
       }
       return;
     }
@@ -4533,8 +4590,10 @@ function transitionToState(newState, options = {}) {
           currentPitchIndex = 0;
         } else if (gameMode === 'daily_streak') {
           if (inningCard) inningCard.classList.add('hidden');
-          pitchesList = generateDailyStreakPitches();
-          currentPitchIndex = 0;
+          if (pitchesList.length === 0 && currentStreakAbMeta?.pitches?.length) {
+            pitchesList = currentStreakAbMeta.pitches;
+          }
+          currentPitchIndex = Math.min(currentPitchIndex, Math.max(0, pitchesList.length - 1));
         }
       }
       
@@ -4561,7 +4620,8 @@ function transitionToState(newState, options = {}) {
         const total = weeklyPlaylistABs.length || 16;
         pitchCounterText.textContent = `WEEKLY CHALLENGE | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
       } else if (gameMode === 'daily_streak') {
-        pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
+        const streakLen = computeStreakCorrectCount(streakPitchHistory);
+        pitchCounterText.textContent = `STREAK: ${streakLen} | PITCH ${currentPitchIndex + 1}`;
       } else if (gameMode === 'mlb_game') {
         pitchCounterText.textContent = `PITCH ${currentPitchIndex + 1} OF ${pitchesList.length}`;
       } else {
@@ -4787,6 +4847,13 @@ function transitionToState(newState, options = {}) {
       
       // Update count and check if AB ended
       const abEnded = updateCountAndCheckABEnd(userHistoryItem);
+
+      if (gameMode === 'daily_streak' && !userHistoryItem.isSwingPlay && !userHistoryItem.userCorrect) {
+        isSessionOver = true;
+        activeAbEnded = true;
+        showABOutcomeToast("STREAK ENDED! MISSED CALL");
+        updateDailyStreakStatusUI();
+      }
       
       // Save game progress after each called pitch decision
       saveGameProgress();
@@ -4831,14 +4898,25 @@ function transitionToState(newState, options = {}) {
         populatePitchDetailBug();
         
         if (abEnded) {
-          // If the at-bat ended, bypass the float bar and show summary immediately after a 1.2s delay
           hideQuickPreviewPanel();
-          if (summaryTimeout) clearTimeout(summaryTimeout);
-          isTransitioningToSummary = true;
-          cachedAbOutcomeText = lastAbOutcomeText; // Cache the outcome text
-          summaryTimeout = setTimeout(() => {
-            finishAtBatAndShowSummary();
-          }, 1200);
+          cachedAbOutcomeText = lastAbOutcomeText;
+          if (gameMode === 'daily_streak') {
+            const revealMs = 1200;
+            if (isSessionOver) {
+              scheduleStreakPostPitchFlow(() => showStreakSummaryScreen(), revealMs);
+            } else {
+              scheduleStreakPostPitchFlow(() => finishAtBatAndShowSummary(), revealMs);
+            }
+          } else {
+            if (summaryTimeout) clearTimeout(summaryTimeout);
+            isTransitioningToSummary = true;
+            summaryTimeout = setTimeout(() => {
+              finishAtBatAndShowSummary();
+            }, 1200);
+          }
+        } else if (gameMode === 'daily_streak' && isSessionOver) {
+          hideQuickPreviewPanel();
+          scheduleStreakPostPitchFlow(() => showStreakSummaryScreen(), minPreviewMs);
         } else {
           // If the at-bat did NOT end, show the quick preview controls panel floating at bottom
           if (quickPreviewControls) {
@@ -4957,14 +5035,24 @@ function transitionToState(newState, options = {}) {
             startQuickReviewAutoAdvance(2000);
           } else if (abEnded) {
             hideQuickPreviewPanel();
-            if (summaryTimeout) clearTimeout(summaryTimeout);
-            isTransitioningToSummary = true;
             cachedAbOutcomeText = lastAbOutcomeText;
-            // Short fixed delay after last-pitch review — not full replay duration again
             const summaryRevealMs = (rateOfPlay === 'updated' && !isCorrect) ? 2000 : 1200;
-            summaryTimeout = setTimeout(() => {
-              finishAtBatAndShowSummary();
-            }, summaryRevealMs);
+            if (gameMode === 'daily_streak') {
+              if (isSessionOver) {
+                scheduleStreakPostPitchFlow(() => showStreakSummaryScreen(), summaryRevealMs);
+              } else {
+                scheduleStreakPostPitchFlow(() => finishAtBatAndShowSummary(), summaryRevealMs);
+              }
+            } else {
+              if (summaryTimeout) clearTimeout(summaryTimeout);
+              isTransitioningToSummary = true;
+              summaryTimeout = setTimeout(() => {
+                finishAtBatAndShowSummary();
+              }, summaryRevealMs);
+            }
+          } else if (gameMode === 'daily_streak' && isSessionOver) {
+            hideQuickPreviewPanel();
+            scheduleStreakPostPitchFlow(() => showStreakSummaryScreen(), effectiveMinPreviewMs);
           } else {
             if (rateOfPlay !== 'updated' || isCorrect) {
               showQuickPreviewDock();
@@ -5708,13 +5796,46 @@ function updateCountAndCheckABEnd(historyItem) {
   return abEnded;
 }
 
-/**
- * After the final pitch of an at-bat, show the post-AB summary overlay.
- * Does not require ABS_REVIEW state (safe for delayed timeouts).
- */
-function finishAtBatAndShowSummary() {
-  if (!activeAbEnded) return;
+function getStreakDaySeenStorageKey() {
+  const username = localStorage.getItem('ump_username') || 'GUEST';
+  return `streak_day_seen_${getStreakDateKey()}_${username.toUpperCase()}`;
+}
 
+function getStreakDayAttemptStorageKey() {
+  const username = localStorage.getItem('ump_username') || 'GUEST';
+  return `streak_day_attempt_${getStreakDateKey()}_${username.toUpperCase()}`;
+}
+
+function loadStreakDaySeenIdsFromStorage() {
+  try {
+    const raw = localStorage.getItem(getStreakDaySeenStorageKey());
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistStreakDaySeenIds() {
+  localStorage.setItem(getStreakDaySeenStorageKey(), JSON.stringify([...streakDaySeenIds]));
+}
+
+function recordStreakDaySeenIds(ids) {
+  if (!ids?.size) return;
+  ids.forEach((id) => streakDaySeenIds.add(id));
+  persistStreakDaySeenIds();
+}
+
+function initNewStreakRunSeed() {
+  const username = localStorage.getItem('ump_username') || 'GUEST';
+  const dateKey = getStreakDateKey();
+  const attemptKey = getStreakDayAttemptStorageKey();
+  const attemptNo = (parseInt(localStorage.getItem(attemptKey) || '0', 10) || 0) + 1;
+  localStorage.setItem(attemptKey, String(attemptNo));
+  streakRunSeedValue = streakRunSeed(dateKey, username, attemptNo);
+  streakDaySeenIds = loadStreakDaySeenIdsFromStorage();
+}
+
+function cancelPendingStreakFlowTimers() {
   if (autoPlayTimeout) {
     clearTimeout(autoPlayTimeout);
     autoPlayTimeout = null;
@@ -5723,7 +5844,61 @@ function finishAtBatAndShowSummary() {
     clearTimeout(summaryTimeout);
     summaryTimeout = null;
   }
+  if (quickContinueInterval) {
+    clearInterval(quickContinueInterval);
+    quickContinueInterval = null;
+  }
   isTransitioningToSummary = false;
+}
+
+function syncStreakSessionOverFromHistory() {
+  if (gameMode !== 'daily_streak') return false;
+  const called = streakPitchHistory.filter((x) => !x.isSwingPlay);
+  const last = called[called.length - 1];
+  if (last && !last.userCorrect) {
+    isSessionOver = true;
+    activeAbEnded = true;
+    return true;
+  }
+  return false;
+}
+
+function isStreakBetweenAbMenuVisible() {
+  return abStartOverlay && abStartOverlay.classList.contains('opacity-100');
+}
+
+function scheduleStreakPostPitchFlow(fn, delayMs) {
+  const epoch = streakFlowEpoch;
+  if (summaryTimeout) clearTimeout(summaryTimeout);
+  isTransitioningToSummary = true;
+  summaryTimeout = setTimeout(() => {
+    summaryTimeout = null;
+    isTransitioningToSummary = false;
+    if (epoch !== streakFlowEpoch) return;
+    if (gameMode !== 'daily_streak') return;
+    if (isStreakBetweenAbMenuVisible() && !isSessionOver) return;
+    fn();
+  }, delayMs);
+}
+
+/**
+ * After the final pitch of an at-bat, show the post-AB summary overlay.
+ * Does not require ABS_REVIEW state (safe for delayed timeouts).
+ */
+function finishAtBatAndShowSummary(flowEpoch) {
+  if (flowEpoch !== undefined && flowEpoch !== streakFlowEpoch) return;
+
+  syncStreakSessionOverFromHistory();
+
+  if (gameMode === 'daily_streak' && isSessionOver) {
+    cancelPendingStreakFlowTimers();
+    showStreakSummaryScreen();
+    return;
+  }
+
+  if (!activeAbEnded) return;
+
+  cancelPendingStreakFlowTimers();
 
   hideQuickPreviewPanel();
   showReviewPanel(false);
@@ -5745,8 +5920,8 @@ function finishAtBatAndShowSummary() {
     return;
   }
 
-  if (gameMode === 'daily_streak' && isSessionOver) {
-    showStreakSummaryScreen();
+  if (gameMode === 'daily_streak') {
+    advanceStreakToNextAtBat();
     return;
   }
 
@@ -5848,29 +6023,33 @@ function advanceGameFlow(immediate = false) {
     saveGameProgress();
     
     if (immediate) {
-      if (summaryTimeout) {
-        clearTimeout(summaryTimeout);
-        summaryTimeout = null;
-      }
-      isTransitioningToSummary = false;
+      cancelPendingStreakFlowTimers();
       if (gameMode === 'daily_streak' && isSessionOver) {
         showStreakSummaryScreen();
+      } else if (gameMode === 'daily_streak') {
+        advanceStreakToNextAtBat();
       } else {
         showAtBatSummaryScreen(lastAbOutcomeText);
       }
     } else {
-      isTransitioningToSummary = true;
-      cachedAbOutcomeText = lastAbOutcomeText; // Cache the outcome text
-      if (summaryTimeout) clearTimeout(summaryTimeout);
-      summaryTimeout = setTimeout(() => {
-        summaryTimeout = null;
-        isTransitioningToSummary = false;
-        if (gameMode === 'daily_streak' && isSessionOver) {
-          showStreakSummaryScreen();
-        } else {
+      cachedAbOutcomeText = lastAbOutcomeText;
+      if (gameMode === 'daily_streak') {
+        scheduleStreakPostPitchFlow(() => {
+          if (isSessionOver) {
+            showStreakSummaryScreen();
+          } else {
+            advanceStreakToNextAtBat();
+          }
+        }, 600);
+      } else {
+        isTransitioningToSummary = true;
+        if (summaryTimeout) clearTimeout(summaryTimeout);
+        summaryTimeout = setTimeout(() => {
+          summaryTimeout = null;
+          isTransitioningToSummary = false;
           showAtBatSummaryScreen(lastAbOutcomeText);
-        }
-      }, 600);
+        }, 600);
+      }
     }
   } else {
     if (isGameOver) {
@@ -5915,11 +6094,8 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     return;
   }
 
-  // Cancel any running auto-play
-  if (autoPlayTimeout) {
-    clearTimeout(autoPlayTimeout);
-    autoPlayTimeout = null;
-  }
+  // Cancel any running auto-play or stale post-pitch timers
+  cancelPendingStreakFlowTimers();
 
   // Populate matchup info
   const pitch = pitchesList[currentPitchIndex] || currentPitch;
@@ -6044,6 +6220,20 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
   }
 
   const startWeeklyDetails = document.getElementById('ab-start-weekly-challenge-details');
+  const startStreakDetails = document.getElementById('ab-start-streak-details');
+  const streakCurrentEl = document.getElementById('ab-start-streak-current');
+  const streakTodayEl = document.getElementById('ab-start-streak-today-best');
+  const streakAlltimeEl = document.getElementById('ab-start-streak-alltime-best');
+  const streakRankEl = document.getElementById('ab-start-streak-rank');
+  const streakDifficultyWrap = document.getElementById('ab-start-streak-difficulty');
+  const streakLastOutcomeEl = document.getElementById('ab-start-streak-last-outcome');
+
+  // Always hard-hide the irrelevant dock (both exist in DOM).
+  if (startWeeklyDetails) startWeeklyDetails.classList.toggle('hidden', gameMode !== 'weekly_challenge');
+  if (startStreakDetails) startStreakDetails.classList.toggle('hidden', gameMode !== 'daily_streak');
+  if (streakDifficultyWrap) streakDifficultyWrap.classList.toggle('hidden', gameMode !== 'daily_streak');
+  if (streakLastOutcomeEl && gameMode !== 'daily_streak') streakLastOutcomeEl.classList.add('hidden');
+
   if (gameMode === 'weekly_challenge' && weeklyPlaylistABs && weeklyPlaylistABs.length > 0) {
     if (startWeeklyDetails) {
       startWeeklyDetails.classList.remove('hidden');
@@ -6089,12 +6279,53 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     if (startWeeklyDetails) {
       startWeeklyDetails.classList.add('hidden');
     }
+    if (startStreakDetails && gameMode !== 'daily_streak') {
+      startStreakDetails.classList.add('hidden');
+    }
     if (startSubtitle) {
       startSubtitle.classList.remove('hidden');
       if (gameMode === 'daily_streak') {
+        startSubtitle.classList.add('hidden');
+
         const called = streakPitchHistory.filter(x => !x.isSwingPlay);
         const correct = called.filter(x => x.userCorrect).length;
-        startSubtitle.textContent = `Current Streak: ${correct} Pitch${correct !== 1 ? 'es' : ''}`;
+
+        if (startStreakDetails) startStreakDetails.classList.remove('hidden');
+        if (streakCurrentEl) streakCurrentEl.textContent = String(correct);
+        if (streakDifficultyWrap) {
+          streakDifficultyWrap.classList.remove('hidden');
+          updateAbStartStreakDifficultyUi(currentStreakAbMeta);
+        }
+        if (streakLastOutcomeEl) {
+          if (lastAbOutcomeText && streakSessionUsedIds.size > 1) {
+            streakLastOutcomeEl.textContent = lastAbOutcomeText;
+            streakLastOutcomeEl.classList.remove('hidden');
+          } else {
+            streakLastOutcomeEl.textContent = '';
+            streakLastOutcomeEl.classList.add('hidden');
+          }
+        }
+
+        const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
+        const statsKey = getStatsStorageKey(username);
+        const stats = JSON.parse(localStorage.getItem(statsKey) || '{"maxStreak":0,"streakHistory":{}}');
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayBest = (stats.streakHistory && stats.streakHistory[todayStr]) || 0;
+        if (streakTodayEl) streakTodayEl.textContent = String(Math.max(todayBest, correct));
+        if (streakAlltimeEl) streakAlltimeEl.textContent = String(Math.max(stats.maxStreak || 0, correct));
+        if (streakRankEl) {
+          streakRankEl.textContent = username !== 'GUEST_UMPIRE' ? '…' : '—';
+          if (username !== 'GUEST_UMPIRE') {
+            getLeaderboardRows('daily', username)
+              .then(({ rows }) => {
+                const me = rows.find((r) => r.isUser);
+                streakRankEl.textContent = me ? `#${me.rank}` : '—';
+              })
+              .catch(() => {
+                streakRankEl.textContent = '—';
+              });
+          }
+        }
       } else {
         startSubtitle.textContent = 'Make the call';
       }
@@ -6115,6 +6346,9 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
       startTitle.textContent = isResume ? 'At-bat in progress' : 'Upcoming at-bat';
     }
   }
+
+  // Mode-specific body class for sizing/styling
+  document.body.classList.toggle('streak-mode', gameMode === 'daily_streak');
 
   // Show overlay with transition
   setAbStartOverlayActive(true);
@@ -6398,7 +6632,7 @@ function updateLiveScoreboard() {
     const prefix = 'WEEKLY CHALLENGE';
     pitchCounterText.textContent = `${prefix} | AB ${activeWeeklyAbIndex + 1} OF ${total}`;
   } else if (gameMode === 'daily_streak') {
-    pitchCounterText.textContent = `STREAK: ${pitchHistory.length} | PITCH ${currentPitchIndex + 1}`;
+    pitchCounterText.textContent = `STREAK: ${computeStreakCorrectCount(streakPitchHistory)} | PITCH ${currentPitchIndex + 1}`;
   } else {
     pitchCounterText.textContent = `PITCH ${totalPitchesCount + 1} | OUTS ${inningOuts}`;
   }
@@ -6993,6 +7227,10 @@ function getInningOrdinal(inn) {
 
 async function goToMainMenu() {
   playMenuTransitionSound();
+  hideStreakTransitionScreen();
+  if (streakSummaryOverlay && isOverlayShowing(streakSummaryOverlay)) {
+    await fadeOverlayOut(streakSummaryOverlay);
+  }
   if (abStartOverlay && isOverlayShowing(abStartOverlay)) {
     setAbStartOverlayActive(false);
     await fadeOverlayOut(abStartOverlay);
@@ -7312,34 +7550,6 @@ function groupPitchesIntoAtBats(pitches) {
   return abs;
 }
 
-function extractAllAtBatsForStreak() {
-  allStreakAtBatsPool = [];
-
-  // Group weekly challenge pitches
-  if (typeof WEEKLY_CHALLENGE_DATA !== 'undefined' && Array.isArray(WEEKLY_CHALLENGE_DATA)) {
-    WEEKLY_CHALLENGE_DATA.forEach(game => {
-      if (game && Array.isArray(game.pitches)) {
-        allStreakAtBatsPool.push(...groupPitchesIntoAtBats(game.pitches));
-      }
-    });
-  }
-
-  // Group daily challenge pitches
-  if (typeof DAILY_CHALLENGE_DATA !== 'undefined') {
-    const dailyPitches = DAILY_CHALLENGE_DATA.pitches || (Array.isArray(DAILY_CHALLENGE_DATA) ? DAILY_CHALLENGE_DATA : []);
-    if (Array.isArray(dailyPitches)) {
-      allStreakAtBatsPool.push(...groupPitchesIntoAtBats(dailyPitches));
-    }
-  }
-
-  // Group Orioles game pitches
-  if (typeof ORIOLES_GAME_DATA !== 'undefined' && Array.isArray(ORIOLES_GAME_DATA)) {
-    allStreakAtBatsPool.push(...groupPitchesIntoAtBats(ORIOLES_GAME_DATA));
-  }
-
-  console.log(`Extracted ${allStreakAtBatsPool.length} At-Bats for Streak pool.`);
-}
-
 /**
  * Starts a Daily Streak challenge session
  */
@@ -7349,6 +7559,14 @@ async function startDailyStreakChallenge(isResume = false) {
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   updateDailyStreakStatusUI();
   hideChallengeDetailModal();
+  hideStreakTransitionScreen();
+  if (abSummaryOverlay) {
+    abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+  }
+  cancelAutoPlayPitch();
+  streakFlowEpoch++;
+  cancelPendingStreakFlowTimers();
 
   gameMode = 'daily_streak';
   isGamePaused = false;
@@ -7357,16 +7575,23 @@ async function startDailyStreakChallenge(isResume = false) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
   }
+
+  if (!STREAK_POOL_META?.totalAbs) {
+    throw new Error('Streak pool not built — run npm run streak-refresh');
+  }
   
   let restored = false;
 
   if (!isResume && username && username !== 'GUEST_UMPIRE') {
     try {
       const session = await getActiveSession(username);
-      if (session?.gameMode === 'daily_streak' && session.streakPlaylistABs?.length) {
-        streakPlaylistABs = session.streakPlaylistABs;
-        activeStreakAbIndex = session.activeStreakAbIndex || 0;
+      if (session?.gameMode === 'daily_streak' && (session.currentStreakAbMeta || session.streakPitchHistory?.length)) {
         streakPitchHistory = session.streakPitchHistory || [];
+        streakSessionUsedIds = new Set(session.streakSessionUsedIds || []);
+        currentStreakAbMeta = session.currentStreakAbMeta || null;
+        activeStreakAbIndex = session.activeStreakAbIndex || 0;
+        streakRunSeedValue = session.streakRunSeedValue || 0;
+        streakDaySeenIds = new Set(session.streakDaySeenIds || loadStreakDaySeenIdsFromStorage());
         restoreChallengePitchState(session);
         restored = true;
       }
@@ -7377,10 +7602,14 @@ async function startDailyStreakChallenge(isResume = false) {
     if (!restored) {
       const savedData = readSavedChallengeData(username);
       const active = savedData?.activeChallenge;
-      if (active?.gameMode === 'daily_streak' && savedData.streakPlaylistABs?.length) {
-        streakPlaylistABs = savedData.streakPlaylistABs;
-        activeStreakAbIndex = savedData.activeStreakAbIndex || active.activeStreakAbIndex || 0;
+      if (active?.gameMode === 'daily_streak' && (active.streakPitchHistory?.length || savedData.streakSessionUsedIds?.length)) {
         streakPitchHistory = active.streakPitchHistory || [];
+        streakSessionUsedIds = new Set(savedData.streakSessionUsedIds || active.streakSessionUsedIds || []);
+        currentStreakAbMeta = savedData.currentStreakAbMeta || active.currentStreakAbMeta || null;
+        streakRunSeedValue = savedData.streakRunSeedValue || active.streakRunSeedValue || 0;
+        streakDaySeenIds = new Set(savedData.streakDaySeenIds || active.streakDaySeenIds || loadStreakDaySeenIdsFromStorage());
+        // Normalize AB index from session-used set (prevents off-by-one on resume).
+        activeStreakAbIndex = Math.max(0, streakSessionUsedIds.size - 1);
         restoreChallengePitchState(active);
         restored = true;
       }
@@ -7388,23 +7617,12 @@ async function startDailyStreakChallenge(isResume = false) {
   }
 
   if (!isResume && !restored) {
-    if (allStreakAtBatsPool.length === 0) {
-      extractAllAtBatsForStreak();
-    }
-    if (allStreakAtBatsPool.length === 0) {
-      throw new Error('No at-bats available for streak challenge');
-    }
-
-    // Fisher-Yates shuffle
-    const shuffledABs = [...allStreakAtBatsPool];
-    for (let i = shuffledABs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffledABs[i], shuffledABs[j]] = [shuffledABs[j], shuffledABs[i]];
-    }
-    
-    streakPlaylistABs = shuffledABs;
+    initNewStreakRunSeed();
+    streakSessionUsedIds = new Set();
+    currentStreakAbMeta = null;
     activeStreakAbIndex = 0;
     streakPitchHistory = [];
+    streakPlaylistABs = [];
 
     currentPitchIndex = 0;
     pitchHistory = [];
@@ -7425,7 +7643,7 @@ async function startDailyStreakChallenge(isResume = false) {
     return;
   }
 
-  loadStreakAtBat(activeStreakAbIndex, restored);
+  loadNextStreakAtBat(restored);
   } catch (err) {
     console.error('Failed to start streak challenge:', err);
     if (toastMessage) {
@@ -7440,21 +7658,25 @@ async function startDailyStreakChallenge(isResume = false) {
   }
 }
 
-function loadStreakAtBat(abIdx, isResume = false) {
-  if (abIdx >= streakPlaylistABs.length) {
-    // Recycle/reshuffle if we run out of compiled at-bats
-    const shuffledABs = [...allStreakAtBatsPool];
-    for (let i = shuffledABs.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffledABs[i], shuffledABs[j]] = [shuffledABs[j], shuffledABs[i]];
+function loadNextStreakAtBat(isResume = false) {
+  let abData = isResume && currentStreakAbMeta ? currentStreakAbMeta : null;
+
+  if (!abData) {
+    const streakLen = computeStreakCorrectCount(streakPitchHistory);
+    abData = pickNextStreakAb(streakLen, streakSessionUsedIds, getStreakDateKey(), {
+      runSeed: streakRunSeedValue || undefined,
+      daySeenIds: streakDaySeenIds,
+    });
+    if (!abData?.pitches?.length) {
+      throw new Error('No eligible streak at-bats available for today');
     }
-    streakPlaylistABs = streakPlaylistABs.concat(shuffledABs);
+    streakSessionUsedIds.add(abData.id);
+    currentStreakAbMeta = abData;
+    if (!isResume) activeStreakAbIndex = Math.max(0, streakSessionUsedIds.size - 1);
   }
 
-  activeStreakAbIndex = abIdx;
-  const abData = streakPlaylistABs[activeStreakAbIndex];
-  pitchesList = abData?.pitches || [];
-  if (!abData || pitchesList.length === 0) {
+  pitchesList = abData.pitches;
+  if (!pitchesList.length) {
     throw new Error('Streak challenge at-bat has no pitch data');
   }
 
@@ -7473,9 +7695,8 @@ function loadStreakAtBat(abIdx, isResume = false) {
       reconstructActiveAtBatState();
     }
 
-    // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
     if (checkReconstructedAbCompleted()) {
-      console.log("Resumed Streak At-Bat is completed. Loading intermission/summary directly.");
+      console.log('Resumed streak at-bat is completed — showing transition.');
       cancelAutoPlayPitch();
       activeAbEnded = true;
       if (pitchesList.length > 0) {
@@ -7483,11 +7704,10 @@ function loadStreakAtBat(abIdx, isResume = false) {
         const matchup = getMatchupNames(lastCompletedPitch);
         lastAbPitcher = matchup.pitcher;
         lastAbBatter = matchup.batter;
-        lastAbBlurb = lastCompletedPitch.historical_blurb || "No play-by-play description available.";
+        lastAbBlurb = lastCompletedPitch.historical_blurb || 'No play-by-play description available.';
         lastAbOutcomeText = determineAbOutcomeFromHistory();
         transitionToState(STATES.IDLE);
-        
-        showAtBatSummaryScreen(lastAbOutcomeText);
+        advanceStreakToNextAtBat();
       }
       return;
     }
@@ -7503,7 +7723,7 @@ function loadStreakAtBat(abIdx, isResume = false) {
 
   saveGameProgress();
 
-  transitionToState(STATES.IDLE);
+  transitionToState(STATES.IDLE, { deferNavUpdate: true });
   showAtBatStartScreen(() => {
     if (currentState === STATES.IDLE && !isGamePaused) {
       autoPlayTimeout = setTimeout(() => {
@@ -7511,6 +7731,110 @@ function loadStreakAtBat(abIdx, isResume = false) {
       }, 600);
     }
   }, isResume);
+}
+
+function formatStreakDifficultyMeta(ab) {
+  if (!ab || ab.difficulty == null) {
+    return { label: 'Standard', score: 50 };
+  }
+  const score = Math.max(0, Math.min(100, ab.difficulty));
+  const bands = [
+    [20, 'Easy'],
+    [40, 'Moderate'],
+    [60, 'Challenging'],
+    [80, 'Hard'],
+    [100, 'Expert'],
+  ];
+  let label = 'Expert';
+  for (const [max, name] of bands) {
+    if (score <= max) {
+      label = name;
+      break;
+    }
+  }
+  return { label, score };
+}
+
+function updateAbStartStreakDifficultyUi(ab) {
+  const textEl = document.getElementById('ab-start-streak-difficulty-text');
+  const fillEl = document.getElementById('ab-start-streak-difficulty-fill');
+  const { label, score } = formatStreakDifficultyMeta(ab);
+  if (textEl) textEl.textContent = label;
+  if (fillEl) fillEl.style.width = `${score}%`;
+}
+
+function advanceStreakToNextAtBat() {
+  streakFlowEpoch++;
+  cancelPendingStreakFlowTimers();
+  hideStreakTransitionScreen();
+  syncStreakSessionOverFromHistory();
+  if (isSessionOver) {
+    showStreakSummaryScreen();
+    return;
+  }
+  activeAbEnded = false;
+  currentStreakAbMeta = null;
+  loadNextStreakAtBat(false);
+}
+
+async function showStreakTransitionScreen(outcomeText) {
+  advanceStreakToNextAtBat();
+}
+
+function hideStreakTransitionScreen() {
+  if (!streakTransitionOverlay) return;
+  streakTransitionOverlay.classList.add('opacity-0', 'pointer-events-none');
+  streakTransitionOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+  const panel = streakTransitionOverlay.querySelector('.streak-transition-panel');
+  if (panel) {
+    panel.classList.add('scale-95');
+    panel.classList.remove('scale-100');
+  }
+  hideGameplayHudForSummary(false);
+}
+
+function continueStreakFromTransition() {
+  hideStreakTransitionScreen();
+  activeAbEnded = false;
+  currentStreakAbMeta = null;
+  loadNextStreakAtBat(false);
+}
+
+async function forfeitStreakRun() {
+  if (gameMode !== 'daily_streak' || isSessionOver) return;
+  const username = localStorage.getItem('ump_username');
+  if (username) {
+    try {
+      const stats = await getGlobalUserStats(username);
+      stats.dnfs = (stats.dnfs || 0) + 1;
+      await saveGlobalUserStats(username, stats);
+      await clearActiveSession(username);
+      const saved = readSavedChallengeData(username);
+      if (saved?.activeChallenge?.gameMode === 'daily_streak') {
+        saved.activeChallenge = null;
+        saved.streakSessionUsedIds = [];
+        localStorage.setItem(getChallengeStorageKey(username), JSON.stringify(saved));
+      }
+    } catch (e) {
+      console.warn('Failed to record streak forfeit:', e);
+    }
+  }
+  streakSessionUsedIds = new Set();
+  currentStreakAbMeta = null;
+  streakPitchHistory = [];
+  isSessionOver = true;
+}
+
+/** @deprecated Legacy pool — streak uses STREAK_POOL_ABS via streak-rotation.js */
+function extractAllAtBatsForStreak() {
+  allStreakAtBatsPool = [];
+  console.warn('extractAllAtBatsForStreak is deprecated; use streak pool builder.');
+}
+
+/** @deprecated Use loadNextStreakAtBat */
+function loadStreakAtBat(abIdx, isResume = false) {
+  activeStreakAbIndex = abIdx;
+  loadNextStreakAtBat(isResume);
 }
 
 function getAbPitches(abEntry) {
@@ -7603,6 +7927,18 @@ function normalizePlaylistAbs(rawABs, meta = {}) {
       userTotalCount: existing.userTotalCount || 0
     };
   });
+}
+
+function resolveStreakAbContextForUrls() {
+  if (currentStreakAbMeta?.filmRoomUrl || currentStreakAbMeta?.umpScorecardUrl) {
+    return currentStreakAbMeta;
+  }
+  const lastId = [...streakSessionUsedIds].pop();
+  if (lastId) {
+    const fromPool = getAbById(lastId);
+    if (fromPool) return fromPool;
+  }
+  return currentStreakAbMeta || null;
 }
 
 function getRevisitedUrls(pitch, abData) {
@@ -8083,6 +8419,21 @@ function renderStreakSummaryPitchFocus(index, item) {
 async function showStreakSummaryScreen() {
   if (!streakSummaryOverlay) return;
 
+  streakFlowEpoch++;
+  cancelPendingStreakFlowTimers();
+  recordStreakDaySeenIds(streakSessionUsedIds);
+
+  if (abStartOverlay?.classList.contains('opacity-100')) {
+    setAbStartOverlayActive(false);
+    abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+    abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+    if (startPanel) {
+      startPanel.classList.add('scale-95');
+      startPanel.classList.remove('scale-100');
+    }
+  }
+
   activeAbEnded = true;
   cancelAutoPlayPitch();
   streakSummarySelectedPitchIndex = null;
@@ -8102,6 +8453,8 @@ async function showStreakSummaryScreen() {
   const abPitches = streakPitchHistory.filter(p => !p.isSwingPlay);
   const correctCount = abPitches.filter(x => x.userCorrect).length;
   const accuracy = abPitches.length > 0 ? Math.round((correctCount / abPitches.length) * 100) : 100;
+  const umpCorrectCount = abPitches.filter(x => x.realCorrect).length;
+  const umpAccuracy = abPitches.length > 0 ? Math.round((umpCorrectCount / abPitches.length) * 100) : 100;
 
   const finalPitchItem = abPitches.length > 0 ? abPitches[abPitches.length - 1] : null;
   const targetPitch = finalPitchItem?.pitchData || finalPitchItem || lastCompletedPitch || currentPitch;
@@ -8124,6 +8477,8 @@ async function showStreakSummaryScreen() {
   if (streakSummaryFinalStreak) streakSummaryFinalStreak.textContent = correctCount;
   if (streakSummaryAccuracy) streakSummaryAccuracy.textContent = `${accuracy}%`;
   if (streakSummaryFraction) streakSummaryFraction.textContent = `${correctCount}/${abPitches.length} Correct`;
+  if (streakSummaryUmpAccuracy) streakSummaryUmpAccuracy.textContent = `${umpAccuracy}%`;
+  if (streakSummaryUmpFraction) streakSummaryUmpFraction.textContent = `${umpCorrectCount}/${abPitches.length} Correct`;
 
   if (streakSummaryPitcherHandBadge && targetPitch) {
     const pH = (targetPitch.pitcher_hand || "R").includes("L") ? "LHP" : "RHP";
@@ -8266,7 +8621,7 @@ async function showStreakSummaryScreen() {
     }
   }
 
-  let urls = getRevisitedUrls(targetPitch, streakPlaylistABs[activeStreakAbIndex]);
+  const urls = getRevisitedUrls(targetPitch, resolveStreakAbContextForUrls());
   if (streakSummaryFilmLink) streakSummaryFilmLink.href = urls.filmRoomUrl;
   if (streakSummaryScorecardLink) streakSummaryScorecardLink.href = urls.umpScorecardUrl;
 
@@ -8299,6 +8654,7 @@ async function updateStreakSummaryLeaderboardSnippet(username) {
 }
 
 function hideStreakSummaryScreen() {
+  closeAllPlayerStatsPopouts();
   if (streakSummaryOverlay) {
     streakSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
     streakSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
@@ -8785,8 +9141,7 @@ function advanceNextAtBat() {
     }
     loadWeeklyAtBat(activeWeeklyAbIndex);
   } else if (gameMode === 'daily_streak') {
-    activeStreakAbIndex++;
-    loadStreakAtBat(activeStreakAbIndex);
+    loadNextStreakAtBat(false);
   } else {
     if (isSessionOver) {
       completedABsCount[activeGameIndex] = 1;
@@ -8867,6 +9222,10 @@ function saveChallengeSessionToLocal() {
       abStrikes,
       pitchHistory: sanitizedHistory,
       streakPitchHistory: sanitizeHistory(streakPitchHistory),
+      streakSessionUsedIds: [...streakSessionUsedIds],
+      streakRunSeedValue,
+      streakDaySeenIds: [...streakDaySeenIds],
+      currentStreakAbMeta,
       historyLength: pitchHistory.length
     };
   } else {
@@ -9367,9 +9726,12 @@ function pauseGameOnFocusLoss() {
       isGamePaused) return;
   if (abSummaryOverlay && abSummaryOverlay.classList.contains('opacity-100')) return;
   if (abStartOverlay && abStartOverlay.classList.contains('opacity-100')) return;
+  if (streakTransitionOverlay && streakTransitionOverlay.classList.contains('opacity-100')) return;
+  if (streakSummaryOverlay && streakSummaryOverlay.classList.contains('opacity-100')) return;
 
   // Blur/visibility loss cancels pending timers — flush post-AB summary instead of losing it
   if (isTransitioningToSummary && activeAbEnded) {
+    if (isStreakBetweenAbMenuVisible()) return;
     if (summaryTimeout) {
       clearTimeout(summaryTimeout);
       summaryTimeout = null;
@@ -9460,6 +9822,7 @@ function resumeGameFromPause() {
   
   // Check if we were in the middle of transitioning to summary when paused
   if (isTransitioningToSummary) {
+    if (isStreakBetweenAbMenuVisible()) return;
     if (summaryTimeout) clearTimeout(summaryTimeout);
     summaryTimeout = setTimeout(() => {
       finishAtBatAndShowSummary();
@@ -10046,6 +10409,7 @@ function startQuickReviewAutoAdvance(delayMs) {
       if (quickContinueTimer) {
         quickContinueTimer.textContent = '';
       }
+      if (isStreakBetweenAbMenuVisible()) return;
       hideQuickPreviewPanel();
       advanceGameFlow();
     }
@@ -13110,16 +13474,26 @@ function renderPlayerStatsPopoutContent(popout, name, details) {
   popout.innerHTML = statsHtml;
 }
 
+let activePlayerPopoutDismiss = null;
+
+function closeAllPlayerStatsPopouts() {
+  document.querySelectorAll('.player-card-popout').forEach((p) => p.remove());
+  if (activePlayerPopoutDismiss) {
+    document.removeEventListener('pointerdown', activePlayerPopoutDismiss, true);
+    activePlayerPopoutDismiss = null;
+  }
+}
+
 function showPlayerStatsPopout(element, name, role, hand) {
   if (!element || !name || name === '--') return;
 
   const existing = element.querySelector('.player-card-popout');
   if (existing) {
-    existing.remove();
+    closeAllPlayerStatsPopouts();
     return;
   }
 
-  document.querySelectorAll('.player-card-popout').forEach(p => p.remove());
+  closeAllPlayerStatsPopouts();
   element.classList.add('relative');
 
   const abHand = hand || getPitchMatchupHandsFromActivePitch(role === 'PITCHER' ? 'pitcher' : 'batter');
@@ -13151,7 +13525,7 @@ function bindPlayerPopoutClose(popout, element) {
   if (closeBtn) {
     closeBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      popout.remove();
+      closeAllPlayerStatsPopouts();
     });
   }
 
@@ -13159,15 +13533,23 @@ function bindPlayerPopoutClose(popout, element) {
     e.stopPropagation();
   });
 
-  const onDocumentClick = (e) => {
-    if (!popout.contains(e.target) && !element.contains(e.target)) {
-      popout.remove();
-      document.removeEventListener('click', onDocumentClick);
+  if (activePlayerPopoutDismiss) {
+    document.removeEventListener('pointerdown', activePlayerPopoutDismiss, true);
+  }
+
+  activePlayerPopoutDismiss = (e) => {
+    if (!document.body.contains(popout)) {
+      document.removeEventListener('pointerdown', activePlayerPopoutDismiss, true);
+      activePlayerPopoutDismiss = null;
+      return;
     }
+    if (popout.contains(e.target) || element.contains(e.target)) return;
+    closeAllPlayerStatsPopouts();
   };
-  setTimeout(() => {
-    document.addEventListener('click', onDocumentClick);
-  }, 10);
+
+  requestAnimationFrame(() => {
+    document.addEventListener('pointerdown', activePlayerPopoutDismiss, true);
+  });
 }
 
 function getUserXpStats() {
@@ -13507,6 +13889,10 @@ async function saveGameProgress() {
       swingOutcome: h.swingOutcome,
       swingHitType: h.swingHitType,
     })),
+    streakSessionUsedIds: [...streakSessionUsedIds],
+    streakRunSeedValue,
+    streakDaySeenIds: [...streakDaySeenIds],
+    currentStreakAbMeta,
     weeklyPlaylistABs,
     streakPlaylistABs,
     activeDailyDate,

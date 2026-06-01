@@ -730,8 +730,8 @@
                     </div>
                   </div>
                   <input type="hidden" id="game-finder-date" value="" />
-                  <p id="game-finder-load-status" class="mlb-games-browse__status" aria-live="polite" hidden></p>
                 </div>
+                <p id="game-finder-load-status" class="mlb-games-browse__status" aria-live="polite" hidden></p>
                 <div id="recent-games-grid" class="mlb-games-grid mlb-games-grid--recent grid max-h-[min(55vh,420px)] overflow-y-auto">
                   <!-- Dynamically filled with game cards -->
                 </div>
@@ -1339,6 +1339,46 @@
               </div>
             </div>
           </div>
+
+          <!-- Streak Challenge Dock (shown in daily_streak mode) -->
+          <p id="ab-start-streak-last-outcome" class="ab-start-last-outcome hidden" aria-live="polite"></p>
+          <div id="ab-start-streak-details" class="ab-streak-dock hidden">
+            <span class="ab-streak-dock__heading">Streak Challenge</span>
+            <div class="ab-streak-dock__body">
+              <div class="ab-streak-dock__streak">
+                <span class="ab-streak-dock__label">Current streak</span>
+                <span class="ab-streak-dock__value">
+                  <span id="ab-start-streak-current">0</span>
+                  <span class="ab-streak-dock__unit">pitches</span>
+                </span>
+              </div>
+              <div class="ab-streak-dock__stats" aria-label="Streak standings">
+                <div class="ab-streak-dock__stat">
+                  <span class="ab-streak-dock__stat-label">Today</span>
+                  <span id="ab-start-streak-today-best" class="ab-streak-dock__stat-value">0</span>
+                </div>
+                <div class="ab-streak-dock__stat">
+                  <span class="ab-streak-dock__stat-label">All-time</span>
+                  <span id="ab-start-streak-alltime-best" class="ab-streak-dock__stat-value">0</span>
+                </div>
+                <div class="ab-streak-dock__stat">
+                  <span class="ab-streak-dock__stat-label">Rank</span>
+                  <span id="ab-start-streak-rank" class="ab-streak-dock__stat-value">—</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- At-bat difficulty (streak mode only) -->
+          <div id="ab-start-streak-difficulty" class="ab-start-difficulty hidden">
+            <span class="ab-start-difficulty__label">At-bat difficulty</span>
+            <div class="ab-start-difficulty__row">
+              <span id="ab-start-streak-difficulty-text" class="ab-start-difficulty__text">—</span>
+              <div class="ab-start-difficulty__bar" aria-hidden="true">
+                <div id="ab-start-streak-difficulty-fill" class="ab-start-difficulty__fill" style="width: 50%"></div>
+              </div>
+            </div>
+          </div>
           
           <!-- Pitcher vs Batter Faceoff Display (Themed to match Umpire Box Score) -->
           <div class="ab-summary-matchup-card">
@@ -1605,6 +1645,52 @@
         </div>
       </div>
 
+      <!-- SCREEN S2: STREAK BETWEEN-AB TRANSITION (compact, no full AB summary) -->
+      <div id="streak-transition-overlay" class="fixed inset-0 w-screen h-screen z-[145] pointer-events-none opacity-0 transition-all duration-300 flex items-center justify-center p-3">
+        <div class="streak-transition-panel w-full max-w-md transform scale-95 transition-all duration-300">
+          <div class="ab-summary-marquee" aria-hidden="true">
+            <span class="ab-summary-marquee-icon">⚾</span>
+            <span class="ab-summary-marquee-text">STREAK RUN</span>
+            <span class="ab-summary-marquee-icon">⚾</span>
+          </div>
+          <div class="ump-panel--subtle p-4 rounded-xl border border-amber-500/30 bg-slate-900/95 text-left">
+            <p id="streak-transition-last-ab" class="text-xs font-mono-tech text-gray-400 uppercase tracking-widest mb-1">Last at-bat</p>
+            <p id="streak-transition-outcome" class="text-lg font-black text-white mb-3">—</p>
+            <div id="streak-transition-dock" class="ab-summary-challenge-dock--unified ab-challenge-dock mb-3 rounded-lg text-left border-amber-500/25">
+              <span class="ab-summary-challenge-label ab-challenge-dock__heading text-amber-400">Streak Challenge</span>
+              <div class="ab-challenge-dock__main">
+                <div class="ab-challenge-dock__progress-block">
+                  <div class="ab-challenge-dock__count-row">
+                    <span class="ab-challenge-dock__count-label">Current streak</span>
+                    <span class="ab-challenge-dock__count-value text-amber-400">
+                      <span id="streak-transition-current">0</span><span class="text-gray-500 text-sm"> pitches</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="ab-challenge-dock__stats">
+                  <div class="ab-challenge-dock__stat">
+                    <span class="ab-summary-challenge-stat-label">Today</span>
+                    <span id="streak-transition-today-best" class="ab-challenge-dock__stat-value">0</span>
+                  </div>
+                  <div class="ab-challenge-dock__stat">
+                    <span class="ab-summary-challenge-stat-label">All-time</span>
+                    <span id="streak-transition-alltime-best" class="ab-challenge-dock__stat-value">0</span>
+                  </div>
+                  <div class="ab-challenge-dock__stat">
+                    <span class="ab-summary-challenge-stat-label">Rank</span>
+                    <span id="streak-transition-rank" class="ab-challenge-dock__stat-value text-purple-400">—</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p id="streak-transition-next-hint" class="text-[10px] text-gray-500 font-mono-tech uppercase tracking-wider mb-3">Next at-bat · difficulty ramps as you go</p>
+            <button type="button" id="btn-streak-transition-continue" class="ump-btn w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white ump-btn--sm">
+              CONTINUE STREAK <kbd class="ab-summary-kbd bg-amber-800">SPACE</kbd>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- SCREEN S: POST-STREAK SUMMARY OVERLAY -->
       <div id="streak-summary-overlay" class="fixed inset-0 w-screen h-screen z-[150] pointer-events-none opacity-0 transition-all duration-300">
         <div class="streak-summary-panel arcade-cabinet transform scale-95 transition-all duration-300">
@@ -1673,9 +1759,14 @@
                   <span class="ab-summary-calls-pct">Pitches Called</span>
                 </div>
                 <div class="ab-summary-calls-col">
-                  <span class="ab-summary-calls-label">ACCURACY</span>
+                  <span class="ab-summary-calls-label">YOU</span>
                   <span id="streak-summary-accuracy" class="ab-summary-calls-score text-emerald-400">100%</span>
                   <span id="streak-summary-fraction" class="ab-summary-calls-pct">0/0 Correct</span>
+                </div>
+                <div class="ab-summary-calls-col">
+                  <span class="ab-summary-calls-label">UMP</span>
+                  <span id="streak-summary-ump-accuracy" class="ab-summary-calls-score text-purple-300">100%</span>
+                  <span id="streak-summary-ump-fraction" class="ab-summary-calls-pct">0/0 Correct</span>
                 </div>
               </div>
               <p class="ab-summary-calls-note">Run ended by the final incorrect call shown above</p>
@@ -1743,22 +1834,20 @@
           </div>
 
           <footer class="ab-summary-footer-bar text-left">
-            <!-- Streak Division standing (Unified pre/post style) -->
-            <div id="streak-summary-challenge-details" class="ab-summary-challenge-dock--unified mb-3 rounded-lg overflow-hidden text-left p-3 bg-slate-900 border border-amber-500/25">
-              <div class="flex justify-between items-center w-full">
-                <span class="ab-summary-challenge-label text-amber-400 whitespace-nowrap">DAILY STREAK STANDINGS</span>
-                <div class="flex gap-3 text-right">
-                  <span class="ab-summary-challenge-stat-label w-24 text-center">BEST STREAK</span>
-                  <span class="ab-summary-challenge-stat-label w-12 text-center">RANK</span>
-                </div>
+            <!-- Streak Division standing -->
+            <div id="streak-summary-challenge-details" class="ab-streak-summary-dock">
+              <div class="ab-streak-summary-dock__header">
+                <span class="ab-streak-summary-dock__heading">Daily Streak Standings</span>
+                <span class="ab-streak-summary-dock__note">Unlimited plays active</span>
               </div>
-              <div class="flex justify-between items-center w-full mt-0.5 font-mono-tech">
-                <div class="flex items-center gap-1.5 whitespace-nowrap">
-                  <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Unlimited Plays Active</span>
+              <div class="ab-streak-summary-dock__stats" aria-label="Daily streak standings">
+                <div class="ab-streak-summary-dock__stat">
+                  <span class="ab-streak-summary-dock__stat-label">Best streak</span>
+                  <span id="streak-summary-best-streak" class="ab-streak-summary-dock__stat-value">0 pitches</span>
                 </div>
-                <div class="flex gap-3 text-right items-baseline">
-                  <span id="streak-summary-best-streak" class="text-sm font-black text-white w-24 text-center whitespace-nowrap">0 Pitches</span>
-                  <span id="streak-summary-leaderboard-snippet" class="text-sm font-black text-white w-12 text-center">--</span>
+                <div class="ab-streak-summary-dock__stat">
+                  <span class="ab-streak-summary-dock__stat-label">Rank</span>
+                  <span id="streak-summary-leaderboard-snippet" class="ab-streak-summary-dock__stat-value">—</span>
                 </div>
               </div>
             </div>
@@ -1955,28 +2044,21 @@
     </div> <!-- Closes #hud-layer -->
 
       <!-- SCREEN: CUSTOM RETRO CONFIRM MODAL -->
-      <div id="confirm-modal-overlay" class="fixed inset-0 w-full h-full bg-slate-950/80 backdrop-blur-sm flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300">
-        <div class="max-w-md w-full glass-panel p-6 rounded-2xl border-2 border-amber-500/30 flex flex-col items-center text-center shadow-2xl relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-amber-500/5 blur-3xl"></div>
-          
-          <div class="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mb-4 text-amber-400">
-            <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-            </svg>
+      <div id="confirm-modal-overlay" class="fixed inset-0 w-full h-full flex justify-center items-center z-[200] opacity-0 scale-95 pointer-events-none transition-all duration-300 p-3">
+        <div class="confirm-cabinet w-full max-w-sm flex flex-col relative overflow-hidden transform scale-95 transition-all duration-300 pointer-events-auto">
+          <div class="confirm-marquee" aria-hidden="true">
+            <span class="confirm-marquee-dot"></span>
+            WARNING
+            <span class="confirm-marquee-dot"></span>
           </div>
-
-          <h3 class="text-sm font-black text-amber-400 font-mono-tech uppercase tracking-widest mb-2">Warning: Active Attempt</h3>
-          <p id="confirm-modal-text" class="text-xs text-gray-300 font-mono-tech uppercase leading-relaxed mb-6">
-            This will end your current attempt for the day! Are you sure you want to exit?
-          </p>
-
-          <div class="grid grid-cols-2 gap-3 w-full">
-            <button id="btn-confirm-modal-yes" class="py-3 bg-red-700 hover:bg-red-600 rounded-xl text-xs font-black uppercase text-white tracking-widest cursor-pointer transition-all shadow-lg pointer-events-auto">
-              Exit Game
-            </button>
-            <button id="btn-confirm-modal-no" class="py-3 bg-slate-900 border border-white/10 hover:bg-gray-800 rounded-xl text-xs font-black uppercase text-gray-400 tracking-widest cursor-pointer transition-all pointer-events-auto">
-              Cancel
-            </button>
+          <div class="confirm-body">
+            <p id="confirm-modal-text" class="confirm-message">
+              Leaving forfeits this streak run. Exit anyway?
+            </p>
+            <div class="confirm-actions">
+              <button type="button" id="btn-confirm-modal-yes" class="ab-start-btn ab-start-btn--ready">Exit Game</button>
+              <button type="button" id="btn-confirm-modal-no" class="ab-start-btn ab-start-btn--exit">Cancel</button>
+            </div>
           </div>
         </div>
       </div>

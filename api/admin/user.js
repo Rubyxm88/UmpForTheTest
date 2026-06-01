@@ -64,8 +64,15 @@ export default async function handler(req, res) {
           createdAt: profile.created_at,
           updatedAt: profile.updated_at,
         },
-        stats: rowToClientStats(statsRow),
-        leaderboardEntries: leaderboardRows || [],
+        stats: rowToClientStats(statsRow, leaderboardRows),
+        leaderboardEntries: (leaderboardRows || []).map((e) => ({
+          board: e.board,
+          periodKey: e.period_key,
+          scoreRaw: e.score_raw,
+          scoreText: e.score_text,
+          accuracy: e.accuracy,
+          submittedAt: e.submitted_at,
+        })),
       });
     } catch (err) {
       sendJson(res, 500, { error: err.message || 'Failed to load user' });

@@ -1,6 +1,10 @@
 import { sendJson } from '../_lib/http.js';
 import { getAdminFromRequest } from '../_lib/admin-session.js';
-import { tryGetSupabaseAdmin, SUPABASE_SETUP_HINT } from '../_lib/supabase.js';
+import {
+  tryGetSupabaseAdmin,
+  rowToClientStats,
+  SUPABASE_SETUP_HINT,
+} from '../_lib/supabase.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -38,12 +42,24 @@ export default async function handler(req, res) {
 
     const handles = (profiles || []).map((p) => p.handle);
     let statsMap = {};
+    const leaderboardByHandle = {};
+
     if (handles.length) {
       const { data: statsRows } = await supabase
         .from('user_stats')
-        .select('handle, xp, overall_accuracy, max_streak, completed_weekly, dnfs, updated_at')
+        .select('*')
         .in('handle', handles);
       statsMap = Object.fromEntries((statsRows || []).map((s) => [s.handle, s]));
+
+      const { data: lbRows } = await supabase
+        .from('leaderboard_entries')
+        .select('handle, board, accuracy')
+        .in('handle', handles);
+
+      for (const entry of lbRows || []) {
+        if (!leaderboardByHandle[entry.handle]) leaderboardByHandle[entry.handle] = [];
+        leaderboardByHandle[entry.handle].push(entry);
+      }
     }
 
     const users = (profiles || []).map((p) => ({
@@ -51,7 +67,9 @@ export default async function handler(req, res) {
       favoriteTeam: p.favorite_team,
       createdAt: p.created_at,
       updatedAt: p.updated_at,
-      stats: statsMap[p.handle] || null,
+      stats: statsMap[p.handle]
+        ? rowToClientStats(statsMap[p.handle], leaderboardByHandle[p.handle])
+        : null,
     }));
 
     sendJson(res, 200, { users, count: users.length });

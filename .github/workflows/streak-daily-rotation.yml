@@ -1,0 +1,46 @@
+name: Streak Daily Rotation
+
+on:
+  schedule:
+    # Daily at 00:05 UTC — new streak deck + daily leaderboard period
+    - cron: '5 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  streak-rotation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Rebuild streak pool (if sources changed)
+        run: node scripts/streak-pool-builder.js
+
+      - name: Generate daily rotation
+        run: node scripts/streak-rotation-generator.js
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet src/data/streak_pool.js src/data/streak_rotation.js && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/data/streak_pool.js src/data/streak_rotation.js
+          git commit -m "chore: streak daily rotation [$(date -u +'%Y-%m-%d')]"
+          git push origin main
