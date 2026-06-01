@@ -173,6 +173,68 @@ export function buildWeeklyPlaylist(games, meta, config) {
 }
 
 /**
+ * Player-facing playlist order with per-AB selection reasons (matches buildWeeklyPlaylist).
+ */
+export function explainWeeklyPlaylist(games, meta, config) {
+  const playlistOpts = resolvePlaylistOptions(meta, config);
+  const edgeFt = playlistOpts.borderlineEdgeThresholdFt ?? 0.15;
+  const target = Math.max(1, playlistOpts.targetAtBats || 20);
+  const borderlineTarget = Math.round(target * (playlistOpts.borderlineRatio ?? 0.5));
+  const normalTarget = target - borderlineTarget;
+  const seed = Number(playlistOpts.shuffleSeed) || Number(meta?.shuffleSeed) || 20260101;
+
+  const playlist = buildWeeklyPlaylist(games, meta, config);
+  const stats = summarizePlaylistBuild(games, meta, config);
+
+  const capNote =
+    playlistOpts.perGameCap && playlistOpts.perGameCap > 0
+      ? ` Max ${playlistOpts.perGameCap} ABs per game.`
+      : '';
+  const lateNote = playlistOpts.prioritizeLateInning ? ' Late-inning ABs prioritized in pool order.' : '';
+
+  const selectedAtBats = playlist.map((ab, i) => {
+    const isBl = abHasBorderlinePitch(ab, edgeFt);
+    const inning = ab.maxInning ? ` · inn ${ab.maxInning}` : '';
+    if (isBl) {
+      return {
+        playOrder: i + 1,
+        gameIndex: ab.gameIndex,
+        gameTitle: ab.gameTitle,
+        batter: ab.batter,
+        pitcher: ab.pitcher,
+        pitchCount: ab.pitches?.length ?? 0,
+        maxInning: ab.maxInning ?? null,
+        reasonCode: 'borderline',
+        reasonDetail: `Borderline called pitch within ${edgeFt} ft of the zone edge. Mix target ${borderlineTarget} borderline / ${normalTarget} standard (seed ${seed}).${capNote}${lateNote}${inning}`,
+      };
+    }
+    return {
+      playOrder: i + 1,
+      gameIndex: ab.gameIndex,
+      gameTitle: ab.gameTitle,
+      batter: ab.batter,
+      pitcher: ab.pitcher,
+      pitchCount: ab.pitches?.length ?? 0,
+      maxInning: ab.maxInning ?? null,
+      reasonCode: 'standard',
+      reasonDetail: `Standard AB: passed pitch filters, no borderline pitch in this at-bat (seed ${seed}).${capNote}${lateNote}${inning}`,
+    };
+  });
+
+  return {
+    selectedAtBats,
+    playlistStats: {
+      ...stats,
+      borderlineTarget,
+      normalTarget,
+      shuffleSeed: seed,
+      perGameCap: playlistOpts.perGameCap ?? null,
+      prioritizeLateInning: !!playlistOpts.prioritizeLateInning,
+    },
+  };
+}
+
+/**
  * Stats for admin preview (no full playlist returned).
  */
 export function summarizePlaylistBuild(games, meta, config) {

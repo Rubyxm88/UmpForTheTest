@@ -646,19 +646,140 @@ body {
   color: var(--ump-color-text-dim);
 }
 
-.admin-week-row {
+.admin-week-row,
+.admin-schedule-row--week {
   cursor: pointer;
 }
 
 .admin-week-row:hover,
-.admin-bundle-row:hover {
+.admin-bundle-row:hover,
+.admin-schedule-row:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
 .admin-week-row--selected,
-.admin-bundle-row--selected {
+.admin-bundle-row--selected,
+.admin-schedule-row--selected {
   background: rgba(168, 85, 247, 0.12);
   outline: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.admin-week-badge--library {
+  color: var(--ump-color-warn);
+  border-color: rgba(196, 154, 60, 0.45);
+}
+
+.admin-schedule-section td {
+  font-family: var(--ump-font-ui, sans-serif);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ump-color-text-dim);
+  padding-top: 1rem;
+  border-top: 1px solid var(--ump-color-border);
+}
+
+.admin-schedule-assign-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.admin-inline-bundle-select {
+  min-width: 10rem;
+  max-width: 14rem;
+  font-size: 0.85rem;
+}
+
+.admin-link-btn {
+  font: inherit;
+  color: var(--ump-color-accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.admin-link-btn:hover {
+  color: #c4b5fd;
+}
+
+.admin-challenges-main {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 1100px) {
+  .admin-challenges-main {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
+
+.admin-bundle-drilldown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-drilldown-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.admin-drilldown-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.admin-reason-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--ump-radius-1);
+  border: 1px solid var(--ump-color-border);
+}
+
+.admin-reason-badge--borderline {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.admin-reason-badge--standard {
+  color: var(--ump-color-text-dim);
+}
+
+.admin-reason-detail {
+  font-size: 0.8rem;
+  color: var(--ump-color-text-dim);
+  max-width: 22rem;
+  line-height: 1.35;
+}
+
+.admin-table-wrap--playlist {
+  max-height: 28rem;
+  overflow: auto;
+}
+
+.admin-meta-pre {
+  font-size: 0.75rem;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: var(--ump-radius-1);
 }
 
 .admin-week-actions {

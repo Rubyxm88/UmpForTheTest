@@ -1930,6 +1930,79 @@ function getStatsStorageKey(handle) {
   return `pitch_ump_stats_${normalizeHandle(handle)}`;
 }
 
+function getStatsMetaStorageKey(handle) {
+  return `pitch_ump_stats_meta_${normalizeHandle(handle)}`;
+}
+
+const DEFAULT_USER_STATS = Object.freeze({
+  overallAccuracy: null,
+  maxStreak: 0,
+  completedWeekly: 0,
+  history: [],
+});
+
+function readLocalUserStats(handle) {
+  const statsKey = getStatsStorageKey(handle);
+  try {
+    return JSON.parse(localStorage.getItem(statsKey) || JSON.stringify(DEFAULT_USER_STATS));
+  } catch {
+    return { ...DEFAULT_USER_STATS };
+  }
+}
+
+function getStatsMeta(handle) {
+  const key = getStatsMetaStorageKey(handle);
+  try {
+    return JSON.parse(localStorage.getItem(key) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setStatsMeta(handle, meta) {
+  localStorage.setItem(getStatsMetaStorageKey(handle), JSON.stringify(meta));
+}
+
+function markStatsPendingSync(handle) {
+  const normalized = normalizeHandle(handle);
+  const meta = getStatsMeta(normalized);
+  meta.pendingCloudSync = true;
+  meta.localRevision = (Number(meta.localRevision) || 0) + 1;
+  meta.localUpdatedAt = Date.now();
+  setStatsMeta(normalized, meta);
+}
+
+function clearStatsPendingSync(handle) {
+  const normalized = normalizeHandle(handle);
+  const meta = getStatsMeta(normalized);
+  meta.pendingCloudSync = false;
+  meta.lastCloudSyncAt = Date.now();
+  meta.lastCloudRevision = meta.localRevision || meta.lastCloudRevision || 0;
+  setStatsMeta(normalized, meta);
+}
+
+function persistLocalStats(handle, stats) {
+  const normalized = normalizeHandle(handle);
+  localStorage.setItem(getStatsStorageKey(normalized), JSON.stringify(stats));
+  markStatsPendingSync(normalized);
+  scheduleStatsCloudSync(normalized);
+}
+
+function clearStoredAuthSession() {
+  localStorage.removeItem('ump_username');
+  apiLogout().catch(() => {});
+}
+
+function handleSessionExpired() {
+  clearStoredAuthSession();
+  activeFavoriteTeam = null;
+  updateXpBarColors();
+  updateWelcomeScreenState();
+  void updateProfileStatsUI();
+  initProfileSettingsUI();
+  transitionToState(STATES.WELCOME);
+}
+
 /** Prefer the longer recent-pitch buffer when reconciling local vs cloud (last 100 called pitches). */
 function mergeRecentPitches(cloud = [], local = []) {
   const fromCloud = Array.isArray(cloud) ? cloud : [];
@@ -2013,7 +2086,48 @@ function mergeTeamStats(cloud = {}, local = {}) {
   return merged;
 }
 
-function mergeUserStats(cloud = {}, local = {}) {
+/** Server stats win on login/refresh; keep only ephemeral local fields. */
+function mergeUserStatsFromCloud(cloud = {}, local = {}) {
+  const cloudHist = Array.isArray(cloud.history) ? cloud.history : [];
+  const merged = {
+    xp: Number(cloud.xp) || 0,
+    overallAccuracy: cloud.overallAccuracy ?? null,
+    maxStreak: Number(cloud.maxStreak) || 0,
+    completedWeekly: Number(cloud.completedWeekly) || 0,
+    dnfs: Number(cloud.dnfs) || 0,
+    favoriteTeam: cloud.favoriteTeam || local.favoriteTeam || 'none',
+    history: cloudHist,
+    dailyHistory: { ...(cloud.dailyHistory || {}) },
+    streakHistory: { ...(cloud.streakHistory || {}) },
+    teamStats: { ...(cloud.teamStats || {}) },
+    bestWeeklyRecord: cloud.bestWeeklyRecord || local.bestWeeklyRecord || null,
+    challengeProgress: local.challengeProgress || cloud.challengeProgress || null,
+    recentPitches: mergeRecentPitches(cloud.recentPitches, local.recentPitches),
+    lifetimeTotalCalls: Number(cloud.lifetimeTotalCalls) || 0,
+    lifetimeCorrectCalls: Number(cloud.lifetimeCorrectCalls) || 0,
+    totalPitchesCalled: Number(cloud.totalPitchesCalled) || 0,
+  };
+
+  if (!merged.lifetimeTotalCalls && cloudHist.length > 0) {
+    ensureLifetimeCalledCounters(merged);
+    reconcileLifetimeCalledFromHistory(merged);
+  } else if (merged.lifetimeTotalCalls > 0) {
+    merged.totalPitchesCalled = merged.lifetimeTotalCalls;
+    if (merged.overallAccuracy == null && merged.lifetimeCorrectCalls != null) {
+      merged.overallAccuracy = Math.round(
+        (merged.lifetimeCorrectCalls / merged.lifetimeTotalCalls) * 100
+      );
+    }
+  } else {
+    ensureLifetimeCalledCounters(merged);
+    reconcileLifetimeCalledFromHistory(merged);
+  }
+
+  return merged;
+}
+
+/** Merge local ahead-of-cloud stats before uploading (unsynced play on this device). */
+function mergeUserStatsForUpload(local = {}, cloud = {}) {
   const cloudHist = Array.isArray(cloud.history) ? cloud.history : [];
   const localHist = Array.isArray(local.history) ? local.history : [];
   const merged = {
@@ -2054,6 +2168,19 @@ function mergeUserStats(cloud = {}, local = {}) {
   return merged;
 }
 
+function resolveCloudAndLocalStats(cloudStats, localStats, handle) {
+  const cloud = cloudStats || {};
+  const local = localStats || {};
+  const normalized = normalizeHandle(handle);
+  const meta = getStatsMeta(normalized);
+
+  if (meta.pendingCloudSync && localStatsAheadOfCloud(local, cloud)) {
+    return mergeUserStatsForUpload(local, cloud);
+  }
+  clearStatsPendingSync(normalized);
+  return mergeUserStatsFromCloud(cloud, local);
+}
+
 function localStatsAheadOfCloud(local = {}, cloud = {}) {
   return (
     (local.recentPitches?.length || 0) > (cloud.recentPitches?.length || 0) ||
@@ -2079,10 +2206,7 @@ function scheduleStatsCloudSync(handle) {
     setTimeout(() => {
       statsCloudSyncTimers.delete(normalized);
       const statsKey = getStatsStorageKey(normalized);
-      const latest = JSON.parse(
-        localStorage.getItem(statsKey) ||
-          '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
-      );
+      const latest = readLocalUserStats(normalized);
       saveGlobalUserStats(normalized, latest).catch((e) => {
         console.warn(`Debounced stats sync failed for ${normalized}:`, e);
       });
@@ -2193,13 +2317,10 @@ function requireLoggedInUser() {
 async function applyCloudSessionToLocal(handle, pinVal, cloud) {
   const normalized = normalizeHandle(handle);
   const statsKey = getStatsStorageKey(normalized);
-  const existingLocal = JSON.parse(
-    localStorage.getItem(statsKey) ||
-      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
-  );
-  const stats = mergeUserStats(cloud.stats || {}, existingLocal);
+  const existingLocal = readLocalUserStats(normalized);
+  const stats = resolveCloudAndLocalStats(cloud.stats || {}, existingLocal, normalized);
   localStorage.setItem(statsKey, JSON.stringify(stats));
-  if (localStatsAheadOfCloud(existingLocal, cloud.stats || {})) {
+  if (getStatsMeta(normalized).pendingCloudSync) {
     scheduleStatsCloudSync(normalized);
   }
 
@@ -2238,34 +2359,36 @@ async function saveGlobalUser(handle, pin) {
 }
 
 async function getGlobalUserStats(handle) {
-  const statsKey = getStatsStorageKey(handle);
-  const fallback = JSON.parse(
-    localStorage.getItem(statsKey) ||
-      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
-  );
+  const normalized = normalizeHandle(handle);
+  const statsKey = getStatsStorageKey(normalized);
+  const fallback = readLocalUserStats(normalized);
   try {
     const me = await apiMe();
-    if (me?.stats && normalizeHandle(me.handle) === normalizeHandle(handle)) {
-      const merged = mergeUserStats(me.stats, fallback);
+    if (me?.stats && normalizeHandle(me.handle) === normalized) {
+      const merged = resolveCloudAndLocalStats(me.stats, fallback, normalized);
       localStorage.setItem(statsKey, JSON.stringify(merged));
-      if (localStatsAheadOfCloud(fallback, me.stats)) {
-        scheduleStatsCloudSync(normalizeHandle(handle));
+      if (getStatsMeta(normalized).pendingCloudSync) {
+        scheduleStatsCloudSync(normalized);
       }
       return merged;
     }
   } catch (e) {
-    console.warn(`Error fetching cloud stats for ${handle}:`, e);
+    if (e.status === 401) throw e;
+    console.warn(`Error fetching cloud stats for ${normalized}:`, e);
   }
   return fallback;
 }
 
 async function saveGlobalUserStats(handle, stats) {
-  const statsKey = getStatsStorageKey(handle);
+  const normalized = normalizeHandle(handle);
+  const statsKey = getStatsStorageKey(normalized);
   localStorage.setItem(statsKey, JSON.stringify(stats));
+  markStatsPendingSync(normalized);
   try {
     await apiSaveStats(stats);
+    clearStatsPendingSync(normalized);
   } catch (e) {
-    console.warn(`Error saving stats for ${handle} to cloud:`, e);
+    console.warn(`Error saving stats for ${normalized} to cloud:`, e);
   }
 }
 
@@ -2276,7 +2399,7 @@ function loginUserSession(handleVal) {
   
   loadSavedSessionFromLocal();
   loadFavoriteTeam();
-  updateProfileStatsUI();
+  void updateProfileStatsUI();
   updateDailyStreakStatusUI();
   if (autoPlayTimeout) {
     clearTimeout(autoPlayTimeout);
@@ -2308,10 +2431,8 @@ function loginUserSession(handleVal) {
       const resumeHandle = document.getElementById('welcome-resume-handle');
       if (resumeHandle) resumeHandle.textContent = normalized.toUpperCase();
       
-      const statsKey = getStatsStorageKey(normalized);
-      const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
-      
-      let xp = userStats.xp !== undefined ? userStats.xp : 0;
+      const userStats = readLocalUserStats(normalized);
+      const xp = Number(userStats.xp) || 0;
       
       const today = new Date().toLocaleDateString();
       const loginBonusKey = `daily_login_bonus_${normalized}_${today}`;
@@ -2572,21 +2693,27 @@ export async function startGameSession() {
       const me = await apiMe();
       if (me?.handle) {
         await applyCloudSessionToLocal(me.handle, null, me);
+      } else {
+        clearStoredAuthSession();
       }
     } catch (e) {
-      console.warn('Could not refresh session from cloud:', e);
-      const profile = await getProfile(handleNormalized);
-      if (profile?.favoriteTeam && profile.favoriteTeam !== 'none') {
-        activeFavoriteTeam = profile.favoriteTeam;
-        localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
-        if (userFavoriteTeamBadge) {
-          userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${profile.favoriteTeam.toUpperCase()}`;
+      if (e.status === 401) {
+        clearStoredAuthSession();
+      } else {
+        console.warn('Could not refresh session from cloud:', e);
+        const profile = await getProfile(handleNormalized);
+        if (profile?.favoriteTeam && profile.favoriteTeam !== 'none') {
+          activeFavoriteTeam = profile.favoriteTeam;
+          localStorage.setItem('pitch_ump_favorite_team', profile.favoriteTeam);
+          if (userFavoriteTeamBadge) {
+            userFavoriteTeamBadge.textContent = `FAVORITE TEAM: ${profile.favoriteTeam.toUpperCase()}`;
+          }
+          updateXpBarColors();
         }
-        updateXpBarColors();
       }
     }
     await loadSavedSessionFromLocal();
-    updateProfileStatsUI();
+    await updateProfileStatsUI();
     initProfileSettingsUI();
     updateDailyStreakStatusUI();
   }
@@ -4568,7 +4695,7 @@ async function refreshWelcomeStatsFromCloud() {
 
   try {
     const stats = await getGlobalUserStats(storedUser);
-    const xp = stats.xp !== undefined ? stats.xp : 0;
+    const xp = Number(stats.xp) || 0;
     const xpProgress = getXpProgressInLevel(xp);
 
     const welcomeLevel = document.getElementById('welcome-resume-level');
@@ -4588,7 +4715,8 @@ async function refreshWelcomeStatsFromCloud() {
     }
     if (welcomeStreak) welcomeStreak.textContent = `${stats.maxStreak || 0} Pitches`;
   } catch (e) {
-    console.warn('Could not refresh welcome stats from cloud:', e);
+    if (e.status === 401) handleSessionExpired();
+    else console.warn('Could not refresh welcome stats from cloud:', e);
   }
 }
 
@@ -4608,22 +4736,8 @@ function updateWelcomeScreenState() {
     }
     if (resumeHandle) resumeHandle.textContent = storedUser.toUpperCase();
     
-    // Fetch and calculate User Stats for the Welcome screen
-    const statsKey = getStatsStorageKey(storedUser);
-    const userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
-    
-    let xp = userStats.xp !== undefined ? userStats.xp : 0;
-    if (userStats.xp === undefined) {
-      const history = userStats.history || [];
-      history.forEach(h => {
-        const isWeekly = h.gameName && h.gameName.includes("Weekly");
-        const isStreak = h.gameName && h.gameName.includes("Streak");
-        
-        if (isWeekly) xp += (h.correctCalls || 0) * 10;
-        else if (isStreak) xp += (h.correctCalls || 0) * 15;
-        else xp += (h.correctCalls || 0) * 5;
-      });
-    }
+    const userStats = readLocalUserStats(storedUser);
+    const xp = Number(userStats.xp) || 0;
     
     const xpProgress = getXpProgressInLevel(xp);
     
@@ -5944,8 +6058,7 @@ function submitUserDecision(userCall) {
       userStats.maxStreak = maxSessionStreak;
     }
     
-    localStorage.setItem(statsKey, JSON.stringify(userStats));
-    scheduleStatsCloudSync(username);
+    persistLocalStats(username, userStats);
   }
   
   if (gameMode === 'daily_streak') {
@@ -7178,9 +7291,8 @@ function renderScoreboardDashboard() {
       );
     }
 
-    localStorage.setItem(statsKey, JSON.stringify(userStats));
-    saveGlobalUserStats(username, userStats);
-    updateProfileStatsUI();
+    void saveGlobalUserStats(username, userStats);
+    void updateProfileStatsUI();
 
     // Leaderboard submit — weekly and streak only (Play Any Game updates profile accuracy only)
     if (gameMode === 'weekly_challenge') {
@@ -7640,7 +7752,7 @@ function switchTab(tabName, options = {}) {
   });
 
   if (tabName === 'stats') {
-    updateProfileStatsUI();
+    void updateProfileStatsUI();
   } else if (tabName === 'leaderboard') {
     applyStandingsTabOptions(options);
     renderLeaderboard(activeStandingsBoard);
@@ -8911,14 +9023,7 @@ async function showStreakSummaryScreen() {
   renderStreakSummaryXpPopover(correctCount, xpEarned);
 
   if (username) {
-    const statsKey = getStatsStorageKey(username);
-    const localStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
-    
     const todayStr = new Date().toISOString().split('T')[0];
-    if (!localStats.streakHistory) localStats.streakHistory = {};
-    localStats.streakHistory[todayStr] = Math.max(localStats.streakHistory[todayStr] || 0, correctCount);
-    localStats.maxStreak = Math.max(localStats.maxStreak || 0, correctCount);
-    localStorage.setItem(statsKey, JSON.stringify(localStats));
 
     getGlobalUserStats(username).then(async (globalStats) => {
       if (!globalStats.streakHistory) globalStats.streakHistory = {};
@@ -8926,7 +9031,10 @@ async function showStreakSummaryScreen() {
       globalStats.maxStreak = Math.max(globalStats.maxStreak || 0, correctCount);
       await saveGlobalUserStats(username, globalStats);
       updateDailyStreakStatusUI();
-    }).catch(err => console.warn(err));
+    }).catch((err) => {
+      if (err.status === 401) handleSessionExpired();
+      else console.warn(err);
+    });
 
     submitGlobalScore('daily', username, favoriteTeam, `${accuracy}%`, `${correctCount} Streak`, correctCount);
 
@@ -10279,7 +10387,31 @@ function updateChallengeProgressUI() {
   updateWeeklyChallengeRankSnippet();
 }
 
-function updateProfileStatsUI(animateXp = false) {
+let profileStatsRefreshSeq = 0;
+
+async function updateProfileStatsUI(animateXp = false) {
+  const username = localStorage.getItem('ump_username');
+  if (!username) {
+    renderProfileStatsUI(null, animateXp);
+    return;
+  }
+
+  const seq = ++profileStatsRefreshSeq;
+  let userStats;
+  try {
+    userStats = await getGlobalUserStats(username);
+  } catch (e) {
+    if (e.status === 401) {
+      handleSessionExpired();
+      return;
+    }
+    userStats = readLocalUserStats(username);
+  }
+  if (seq !== profileStatsRefreshSeq) return;
+  renderProfileStatsUI(userStats, animateXp);
+}
+
+function renderProfileStatsUI(userStats, animateXp = false) {
   const avgAccEl = document.getElementById('stats-avg-accuracy');
   const maxStrEl = document.getElementById('stats-max-streak');
   const bestWeeklyEl = document.getElementById('stats-best-weekly-record');
@@ -10382,14 +10514,17 @@ function updateProfileStatsUI(animateXp = false) {
     
     return;
   }
-  
+
+  if (!userStats) {
+    userStats = readLocalUserStats(username);
+  }
   const normalized = normalizeHandle(username);
   const statsKey = getStatsStorageKey(normalized);
-  let userStats = JSON.parse(localStorage.getItem(statsKey) || '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}');
   const migratedStats = ensureProfileAggregateStats(userStats);
   userStats = migratedStats.stats;
   if (migratedStats.changed) {
     localStorage.setItem(statsKey, JSON.stringify(userStats));
+    markStatsPendingSync(normalized);
   }
   
   // Set handle
@@ -10417,23 +10552,7 @@ function updateProfileStatsUI(animateXp = false) {
     }
   }
   
-  // Calculate XP (Experience Points) based on history correct calls or read from userStats.xp
-  let xp = userStats.xp !== undefined ? userStats.xp : 0;
-  if (userStats.xp === undefined) {
-    const history = userStats.history || [];
-    history.forEach(h => {
-      const isWeekly = h.gameName && h.gameName.includes("Weekly");
-      const isStreak = h.gameName && h.gameName.includes("Streak");
-      
-      if (isWeekly) {
-        xp += (h.correctCalls || 0) * 10;
-      } else if (isStreak) {
-        xp += (h.correctCalls || 0) * 15;
-      } else {
-        xp += (h.correctCalls || 0) * 5;
-      }
-    });
-  }
+  const xp = Number(userStats.xp) || 0;
   
   const xpProgress = getXpProgressInLevel(xp);
   const tier = getLevelTier(xpProgress.level);
@@ -14234,7 +14353,16 @@ async function awardXP(amount) {
   const username = localStorage.getItem('ump_username');
   if (!username || !amount) return;
 
-  const stats = await getGlobalUserStats(username);
+  let stats;
+  try {
+    stats = await getGlobalUserStats(username);
+  } catch (e) {
+    if (e.status === 401) {
+      handleSessionExpired();
+      return;
+    }
+    stats = readLocalUserStats(username);
+  }
   const oldXp = stats.xp || 0;
   const oldLevel = getLevelFromXp(oldXp);
   stats.xp = oldXp + amount;
@@ -14242,7 +14370,7 @@ async function awardXP(amount) {
   stats.level = newLevel;
 
   await saveGlobalUserStats(username, stats);
-  updateProfileStatsUI();
+  void updateProfileStatsUI();
   triggerXpSurgeAnimation(amount);
 
   if (newLevel > oldLevel) {

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import { getIsoWeekKey } from '../../api/_lib/period.js';
 import { getSupabaseAdmin } from '../../api/_lib/supabase.js';
 import { writeWeeklyBundle, DEFAULT_OUTPUT_PATH } from './weekly-curator-core.mjs';
-import { summarizePlaylistBuild } from '../../src/js/weekly-playlist.js';
+import { explainWeeklyPlaylist } from '../../src/js/weekly-playlist.js';
 import {
   attachUsedByWeeks,
   canWriteFilesystem,
@@ -63,53 +63,29 @@ export function buildWeekTimeline(anchorDate = new Date(), { futureCount = 5, pa
 
 export function summarizeBundleForAdmin(bundle) {
   if (!bundle) return null;
-  const playlistStats = summarizePlaylistBuild(
-    bundle.games || [],
-    bundle.meta || {},
-    bundle.meta?.generation || null
-  );
-  const abs = [];
   const games = bundle.games || [];
-  games.forEach((game, gameIdx) => {
-    let cur = [];
-    let batter = '';
-    game.pitches?.forEach((pitch) => {
-      if (pitch.batter !== batter && cur.length) {
-        abs.push({
-          gameIndex: gameIdx,
-          gameTitle: game.title,
-          batter: cur[0]?.batter,
-          pitcher: cur[0]?.pitcher,
-          pitchCount: cur.length,
-        });
-        cur = [];
-      }
-      batter = pitch.batter;
-      cur.push(pitch);
-    });
-    if (cur.length) {
-      abs.push({
-        gameIndex: gameIdx,
-        gameTitle: game.title,
-        batter: cur[0]?.batter,
-        pitcher: cur[0]?.pitcher,
-        pitchCount: cur.length,
-      });
-    }
-  });
+  const config = bundle.meta?.generation || null;
+  const { selectedAtBats, playlistStats } = explainWeeklyPlaylist(
+    games,
+    bundle.meta || {},
+    config
+  );
   return {
     meta: bundle.meta,
     label: bundle.label,
     id: bundle.id,
+    createdAt: bundle.createdAt,
     playlistStats,
     games: games.map((g) => ({
       id: g.id,
       title: g.title,
       gamePk: g.gamePk,
+      filmRoomUrl: g.film_room_url,
+      umpScorecardUrl: g.ump_scorecard_url,
       pitchCount: g.pitches?.length || 0,
     })),
-    atBatsPreview: abs.slice(0, 50),
-    atBatTotal: abs.length,
+    selectedAtBats,
+    sourceAtBatCount: playlistStats.candidateAbs,
   };
 }
 
