@@ -6,7 +6,7 @@ import {
   listStreakAbsForAdmin,
   listStreakSessionsForAdmin,
 } from '../../../scripts/lib/streak-analytics.mjs';
-import { STREAK_POOL_META } from '../../../src/data/streak_pool.js';
+import { getStreakPoolMeta } from '../../../scripts/lib/streak-pool-meta.mjs';
 
 export default async function handler(req, res) {
   if (!getAdminFromRequest(req)) {
@@ -20,7 +20,7 @@ export default async function handler(req, res) {
       ok: true,
       supabaseConfigured: false,
       setupHint: SUPABASE_SETUP_HINT,
-      bundleMeta: STREAK_POOL_META,
+      bundleMeta: getStreakPoolMeta(),
       readiness: { phase: 'bundle_only' },
     });
     return;
@@ -56,7 +56,7 @@ export default async function handler(req, res) {
       sendJson(res, 200, {
         ok: true,
         supabaseConfigured: true,
-        bundleMeta: STREAK_POOL_META,
+        bundleMeta: getStreakPoolMeta(),
         readiness: {
           phase:
             dash.poolCount >= 1000
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
               id: 'client_api',
               label: 'Client loads ABs from /api/streak-pool (not bundle)',
               done: false,
-              detail: `Bundle has ${STREAK_POOL_META.totalAbs} ABs shipped in build`,
+              detail: `Bundle has ${getStreakPoolMeta().totalAbs} ABs shipped in build`,
             },
             {
               id: 'telemetry',

@@ -236,6 +236,7 @@ export async function persistCuratorResult(result, { label, bundleId } = {}) {
 export async function bootstrapFromLiveBundleIfEmpty() {
   const catalog = await loadCatalog();
   if (catalog.length > 0) return null;
+  if (getStorageMode() === 'none') return null;
   if (!fs.existsSync(LIVE_BUNDLE_PATH)) return null;
 
   const text = fs.readFileSync(LIVE_BUNDLE_PATH, 'utf8');

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "builtAt": "2026-06-01T04:45:56.456Z",
+  "totalAbs": 150,
+  "sourceAbs": 589,
+  "tierCounts": {
+    "1": 0,
+    "2": 38,
+    "3": 82,
+    "4": 27,
+    "5": 3
+  },
+  "rejectCounts": {
+    "no_borderline_taken": 435
+  },
+  "manifestOnly": false
+}

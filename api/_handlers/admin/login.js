@@ -27,6 +27,11 @@ export default async function handler(req, res) {
       mustChangePassword: Boolean(result.mustChangePassword),
     });
   } catch (err) {
-    sendJson(res, 500, { error: err.message || 'Login failed' });
+    let msg = err.message || 'Login failed';
+    if (/SESSION_SECRET/i.test(msg)) {
+      msg =
+        'SESSION_SECRET is not set on this deployment. Add a long random string in Vercel → Settings → Environment Variables, then redeploy.';
+    }
+    sendJson(res, 500, { error: msg });
   }
 }

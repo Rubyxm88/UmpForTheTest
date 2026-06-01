@@ -186,7 +186,10 @@ export const STREAK_POOL_ABS = ${JSON.stringify(scored, null, 2)};
 
   fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
   fs.writeFileSync(OUTPUT_PATH, js, 'utf-8');
+  const metaPath = path.resolve(path.dirname(OUTPUT_PATH), 'streak_pool_meta.json');
+  fs.writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf-8');
   console.log(`Written: ${OUTPUT_PATH}`);
+  console.log(`Written: ${metaPath}`);
 }
 
 main();

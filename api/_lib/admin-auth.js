@@ -1,5 +1,5 @@
 import { hashPIN } from './pin.js';
-import { getSupabaseAdmin } from './supabase.js';
+import { tryGetSupabaseAdmin } from './supabase.js';
 
 const DEFAULT_USER = 'admin';
 const DEFAULT_PASS = 'admin';
@@ -31,8 +31,8 @@ export async function verifyAdminCredentials(username, password) {
     };
   }
 
-  try {
-    const supabase = getSupabaseAdmin();
+  const supabase = tryGetSupabaseAdmin();
+  if (supabase) try {
     const { data, error } = await supabase
       .from('admin_accounts')
       .select('username, password_hash, must_change_password')
@@ -70,19 +70,20 @@ export async function verifyAdminCredentials(username, password) {
       };
     }
   } catch (err) {
-    const envUser = (process.env.ADMIN_USERNAME || DEFAULT_USER).toLowerCase();
-    const envHash =
-      process.env.ADMIN_PASSWORD_HASH ||
-      hashPIN(process.env.ADMIN_PASSWORD || DEFAULT_PASS);
-    if (user === envUser && hashPIN(pass) === envHash) {
-      return {
-        ok: true,
-        username: user,
-        mustChangePassword: !process.env.ADMIN_PASSWORD_HASH,
-        bootstrap: true,
-      };
-    }
-    console.warn('Admin auth fallback error:', err.message);
+    console.warn('Admin auth Supabase error:', err.message);
+  }
+
+  const envUser = (process.env.ADMIN_USERNAME || DEFAULT_USER).toLowerCase();
+  const envHash =
+    process.env.ADMIN_PASSWORD_HASH ||
+    hashPIN(process.env.ADMIN_PASSWORD || DEFAULT_PASS);
+  if (user === envUser && hashPIN(pass) === envHash) {
+    return {
+      ok: true,
+      username: user,
+      mustChangePassword: !process.env.ADMIN_PASSWORD_HASH,
+      bootstrap: true,
+    };
   }
 
   return { ok: false };
@@ -97,8 +98,8 @@ export async function upsertAdminPassword(username, newPassword) {
     updated_at: new Date().toISOString(),
   };
 
-  try {
-    const supabase = getSupabaseAdmin();
+  const supabase = tryGetSupabaseAdmin();
+  if (supabase) try {
     const { error } = await supabase.from('admin_accounts').upsert(row, {
       onConflict: 'username',
     });
@@ -106,10 +107,15 @@ export async function upsertAdminPassword(username, newPassword) {
     devAdminAccounts.set(user, row);
     return;
   } catch (err) {
-    if (isProduction()) throw err;
-    devAdminAccounts.set(user, row);
-    console.warn('admin password stored in dev memory (no Supabase):', err.message);
+    console.warn('admin password Supabase error:', err.message);
   }
+
+  if (isProduction() && !supabase) {
+    throw new Error(
+      'Cannot save admin password without Supabase. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on Vercel.'
+    );
+  }
+  devAdminAccounts.set(user, row);
 }
 
 export function isValidAdminPassword(password) {

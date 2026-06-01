@@ -10,7 +10,10 @@ function formatApiError(res, data) {
     if (isLocal && (!data.error || data.error === 'Internal Server Error')) {
       return 'API unavailable — run npm run dev:full (or npm run dev:api in another terminal)';
     }
-    return data.error || 'Server error — check Vercel env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) and function logs';
+    return (
+      data.error ||
+      'Server error — set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SESSION_SECRET on Vercel, then redeploy. Check function logs for details.'
+    );
   }
   return data.error || res.statusText || 'Request failed';
 }
@@ -132,9 +135,8 @@ async function checkSession() {
     } else {
       showScreen(panelScreen);
       if (signedInAs) signedInAs.textContent = `Signed in as ${me.username}`;
-      await loadUsers();
+      await loadUsersSafe();
       await loadChallenges();
-      await loadStreak();
     }
   } catch {
     showScreen(loginScreen);
@@ -156,9 +158,8 @@ loginForm?.addEventListener('submit', async (e) => {
     } else {
       showScreen(panelScreen);
       if (signedInAs) signedInAs.textContent = `Signed in as ${data.username}`;
-      await loadUsers();
+      await loadUsersSafe();
       await loadChallenges();
-      await loadStreak();
     }
   } catch (err) {
     showError(loginError, err.message || 'Login failed');
@@ -177,9 +178,8 @@ passwordForm?.addEventListener('submit', async (e) => {
       }),
     });
     showScreen(panelScreen);
-    await loadUsers();
+    await loadUsersSafe();
     await loadChallenges();
-    await loadStreak();
   } catch (err) {
     showError(passwordError, err.message || 'Update failed');
   }
@@ -1120,6 +1120,16 @@ async function loadChallenges() {
   } catch (err) {
     challengesRoot.innerHTML = `<p class="admin-status-err">${escapeHtml(err.message || 'Failed to load')}</p>`;
     setChallengeStatus(err.message, 'err');
+    showAdminToast(err.message, 'err');
+  }
+}
+
+async function loadUsersSafe() {
+  try {
+    await loadUsers();
+  } catch (err) {
+    if (usersList) usersList.innerHTML = `<p class="admin-status-err">${escapeHtml(err.message)}</p>`;
+    showAdminToast(err.message, 'err');
   }
 }
 

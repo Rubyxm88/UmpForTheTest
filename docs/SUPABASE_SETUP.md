@@ -100,7 +100,19 @@ With `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set on Vercel, **Build full 
 
 Local dev still mirrors bundles to `src/data/weekly_bundles/` when the filesystem is writable.
 
-## 6. Streak pool (20k+ path)
+## 6. Vercel environment variables (production)
+
+In **Vercel → Project → Settings → Environment Variables** (Production), set:
+
+| Variable | Where to get it |
+|----------|-----------------|
+| `SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Same page → `service_role` secret (not the anon key) |
+| `SESSION_SECRET` | Any long random string (32+ characters) for signing cookies |
+
+Redeploy after adding or changing variables. Without `SESSION_SECRET`, admin login returns a 500. Without Supabase keys, weekly admin cannot save bundles (read-only server).
+
+## 7. Streak pool (20k+ path)
 
 Migrations:
 
