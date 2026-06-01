@@ -4,6 +4,10 @@
   "rewrites": [
     { "source": "/admin", "destination": "/admin.html" },
     { "source": "/admin/", "destination": "/admin.html" },
+    { "source": "/api/streak-pool", "destination": "/api/streak" },
+    { "source": "/api/streak-telemetry", "destination": "/api/streak" },
+    { "source": "/api/leaderboard-periods", "destination": "/api/leaderboard?view=periods" },
+    { "source": "/api/crew", "destination": "/api/leaderboard?view=crew" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

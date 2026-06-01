@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { sendJson, readJsonBody } from '../_lib/http.js';
-import { getAdminFromRequest } from '../_lib/admin-session.js';
-import { getIsoWeekKey } from '../_lib/period.js';
-import { normalizeWeeklyGenerationConfig } from '../../src/js/weekly-generation-config.js';
+import { sendJson, readJsonBody } from '../../_lib/http.js';
+import { getAdminFromRequest } from '../../_lib/admin-session.js';
+import { getIsoWeekKey } from '../../_lib/period.js';
+import { normalizeWeeklyGenerationConfig } from '../../../src/js/weekly-generation-config.js';
 import {
   CONFIG_PATH,
   loadConfigFromFile,
   runWeeklyCurator,
-} from '../../scripts/lib/weekly-curator-core.mjs';
+} from '../../../scripts/lib/weekly-curator-core.mjs';
 import {
   assignBundleToWeek,
   unassignWeek,
@@ -22,7 +22,7 @@ import {
   getWeeksUsingBundle,
   deployBundleToLiveApp,
   LIVE_BUNDLE_PATH,
-} from '../../scripts/lib/weekly-schedule.mjs';
+} from '../../../scripts/lib/weekly-schedule.mjs';
 
 function readGenerationConfig() {
   try {

@@ -3,15 +3,15 @@
  * Body: { event: 'ab_served'|'pitch'|'ab_completed'|'session_end', ... }
  */
 
-import { sendJson, readJsonBody } from './_lib/http.js';
-import { getHandleFromRequest } from './_lib/session.js';
-import { getSupabaseAdmin } from './_lib/supabase.js';
+import { sendJson, readJsonBody } from '../../_lib/http.js';
+import { getHandleFromRequest } from '../../_lib/session.js';
+import { getSupabaseAdmin } from '../../_lib/supabase.js';
 import {
   recordStreakAbServed,
   recordStreakPitch,
   recordStreakAbCompleted,
   recordStreakSessionEnd,
-} from '../scripts/lib/streak-analytics.mjs';
+} from '../../../scripts/lib/streak-analytics.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

@@ -1,10 +1,10 @@
-import { sendJson } from '../_lib/http.js';
-import { getAdminFromRequest } from '../_lib/admin-session.js';
+import { sendJson } from '../../_lib/http.js';
+import { getAdminFromRequest } from '../../_lib/admin-session.js';
 import {
   tryGetSupabaseAdmin,
   rowToClientStats,
   SUPABASE_SETUP_HINT,
-} from '../_lib/supabase.js';
+} from '../../_lib/supabase.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

@@ -71,7 +71,8 @@ export async function apiSaveStats(stats) {
 
 export async function apiFetchLeaderboardPeriods(board) {
   const params = new URLSearchParams({ board });
-  const res = await fetch(`/api/leaderboard-periods?${params}`, { ...API_FETCH_OPTS });
+  params.set('view', 'periods');
+  const res = await fetch(`/api/leaderboard?${params}`, { ...API_FETCH_OPTS });
   const data = await parseResponse(res);
   return {
     periods: data.periods || [],
@@ -81,7 +82,8 @@ export async function apiFetchLeaderboardPeriods(board) {
 
 export async function apiFetchCrewLeaderboard(metric, username) {
   const params = new URLSearchParams({ metric, username: username || '' });
-  const res = await fetch(`/api/crew?${params}`, { ...API_FETCH_OPTS });
+  params.set('view', 'crew');
+  const res = await fetch(`/api/leaderboard?${params}`, { ...API_FETCH_OPTS });
   const data = await parseResponse(res);
   return {
     rows: data.rows || [],

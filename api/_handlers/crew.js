@@ -1,5 +1,4 @@
-import { normalizeHandle, sendJson } from './_lib/http.js';
-import { getSupabaseAdmin } from './_lib/supabase.js';
+import { normalizeHandle, sendJson } from '../_lib/http.js';
 
 const METRICS = new Set(['rank', 'wins', 'streak']);
 
@@ -15,8 +14,7 @@ function mapCrewRows(list, username, metric) {
     const isUser = normalizeHandle(item.handle) === normalizedUser;
     const xp = item.xp || 0;
     const level = Math.floor(xp / 1000) + 1;
-    const avgAcc =
-      item.overall_accuracy != null ? `${item.overall_accuracy}%` : '--';
+    const avgAcc = item.overall_accuracy != null ? `${item.overall_accuracy}%` : '--';
 
     let scoreText = `${level}`;
     let accuracyText = `${xp.toLocaleString()} XP`;
@@ -53,44 +51,30 @@ function mapCrewRows(list, username, metric) {
   });
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    sendJson(res, 405, { error: 'Method not allowed' });
+export async function handleCrew(req, res, supabase) {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const metric = url.searchParams.get('metric') || 'rank';
+  if (!METRICS.has(metric)) {
+    sendJson(res, 400, { error: 'Invalid metric' });
     return;
   }
 
-  try {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const metric = url.searchParams.get('metric') || 'rank';
-    if (!METRICS.has(metric)) {
-      sendJson(res, 400, { error: 'Invalid metric' });
-      return;
-    }
+  const username = url.searchParams.get('username') || '';
 
-    const username = url.searchParams.get('username') || '';
-    const supabase = getSupabaseAdmin();
+  const orderCol =
+    metric === 'wins' ? 'completed_weekly' : metric === 'streak' ? 'max_streak' : 'xp';
 
-    const orderCol =
-      metric === 'wins'
-        ? 'completed_weekly'
-        : metric === 'streak'
-          ? 'max_streak'
-          : 'xp';
+  const { data, error } = await supabase
+    .from('user_stats')
+    .select('handle, xp, completed_weekly, max_streak, overall_accuracy, profiles(favorite_team)')
+    .order(orderCol, { ascending: false })
+    .limit(50);
 
-    const { data, error } = await supabase
-      .from('user_stats')
-      .select('handle, xp, completed_weekly, max_streak, overall_accuracy, profiles(favorite_team)')
-      .order(orderCol, { ascending: false })
-      .limit(50);
-
-    if (error) {
-      sendJson(res, 500, { error: error.message });
-      return;
-    }
-
-    const rows = mapCrewRows(data || [], username, metric);
-    sendJson(res, 200, { rows, metric, source: rows.length ? 'live' : 'empty' });
-  } catch (err) {
-    sendJson(res, 500, { error: err.message || 'Failed to load crew leaderboard' });
+  if (error) {
+    sendJson(res, 500, { error: error.message });
+    return;
   }
+
+  const rows = mapCrewRows(data || [], username, metric);
+  sendJson(res, 200, { rows, metric, source: rows.length ? 'live' : 'empty' });
 }

@@ -1,12 +1,12 @@
-import { sendJson } from '../_lib/http.js';
-import { getAdminFromRequest } from '../_lib/admin-session.js';
-import { tryGetSupabaseAdmin, SUPABASE_SETUP_HINT } from '../_lib/supabase.js';
+import { sendJson } from '../../_lib/http.js';
+import { getAdminFromRequest } from '../../_lib/admin-session.js';
+import { tryGetSupabaseAdmin, SUPABASE_SETUP_HINT } from '../../_lib/supabase.js';
 import {
   fetchStreakAdminDashboard,
   listStreakAbsForAdmin,
   listStreakSessionsForAdmin,
-} from '../../scripts/lib/streak-analytics.mjs';
-import { STREAK_POOL_META } from '../../src/data/streak_pool.js';
+} from '../../../scripts/lib/streak-analytics.mjs';
+import { STREAK_POOL_META } from '../../../src/data/streak_pool.js';
 
 export default async function handler(req, res) {
   if (!getAdminFromRequest(req)) {

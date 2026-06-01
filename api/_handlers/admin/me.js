@@ -1,7 +1,7 @@
-import { sendJson } from '../_lib/http.js';
-import { getAdminFromRequest } from '../_lib/admin-session.js';
-import { getDevAdminAccount } from '../_lib/admin-auth.js';
-import { getSupabaseAdmin } from '../_lib/supabase.js';
+import { sendJson } from '../../_lib/http.js';
+import { getAdminFromRequest } from '../../_lib/admin-session.js';
+import { getDevAdminAccount } from '../../_lib/admin-auth.js';
+import { getSupabaseAdmin } from '../../_lib/supabase.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

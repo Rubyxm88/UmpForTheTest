@@ -6,9 +6,9 @@
  * Until bulk ingest, client uses bundled src/data/streak_pool.js.
  */
 
-import { sendJson } from './_lib/http.js';
-import { getSupabaseAdmin } from './_lib/supabase.js';
-import { getDateKey } from './_lib/period.js';
+import { sendJson } from '../../_lib/http.js';
+import { getSupabaseAdmin } from '../../_lib/supabase.js';
+import { getDateKey } from '../../_lib/period.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {

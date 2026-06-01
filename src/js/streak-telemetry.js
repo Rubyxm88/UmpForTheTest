@@ -10,7 +10,7 @@ export function markStreakSessionStart() {
 
 export function streakTelemetry(event, payload = {}) {
   if (!localStorage.getItem('ump_username')) return;
-  fetch('/api/streak-telemetry', {
+  fetch('/api/streak', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },

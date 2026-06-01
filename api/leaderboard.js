@@ -2,6 +2,8 @@ import { getHandleFromRequest } from './_lib/session.js';
 import { normalizeHandle, readJsonBody, sendJson } from './_lib/http.js';
 import { getSupabaseAdmin } from './_lib/supabase.js';
 import { resolvePeriodKey } from './_lib/period.js';
+import { handleLeaderboardPeriods } from './_handlers/leaderboard-periods.js';
+import { handleCrew } from './_handlers/crew.js';
 
 const BOARDS = new Set(['weekly', 'daily', 'alltime']);
 
@@ -43,6 +45,14 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      const view = url.searchParams.get('view');
+      if (view === 'periods') {
+        return handleLeaderboardPeriods(req, res, supabase);
+      }
+      if (view === 'crew') {
+        return handleCrew(req, res, supabase);
+      }
+
       const board = url.searchParams.get('board') || 'weekly';
       if (!BOARDS.has(board)) {
         sendJson(res, 400, { error: 'Invalid board' });

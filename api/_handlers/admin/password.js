@@ -1,10 +1,10 @@
-import { readJsonBody, sendJson } from '../_lib/http.js';
-import { getAdminFromRequest } from '../_lib/admin-session.js';
+import { readJsonBody, sendJson } from '../../_lib/http.js';
+import { getAdminFromRequest } from '../../_lib/admin-session.js';
 import {
   verifyAdminCredentials,
   upsertAdminPassword,
   isValidAdminPassword,
-} from '../_lib/admin-auth.js';
+} from '../../_lib/admin-auth.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'PUT') {

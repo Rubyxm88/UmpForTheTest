@@ -1,9 +1,9 @@
-import { readJsonBody, sendJson } from '../_lib/http.js';
-import { verifyAdminCredentials } from '../_lib/admin-auth.js';
+import { readJsonBody, sendJson } from '../../_lib/http.js';
+import { verifyAdminCredentials } from '../../_lib/admin-auth.js';
 import {
   createAdminSessionToken,
   setAdminSessionCookie,
-} from '../_lib/admin-session.js';
+} from '../../_lib/admin-session.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
