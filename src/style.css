@@ -2949,6 +2949,57 @@ body.ab-start-active #nav-context-row {
   pointer-events: none !important;
 }
 
+.ab-start-resume-status {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono-tech, ui-monospace, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(167, 243, 208, 0.95);
+  text-align: center;
+}
+
+.ab-start-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem 2.5rem;
+  min-height: 8rem;
+}
+
+.ab-start-loading.hidden {
+  display: none !important;
+}
+
+.ab-start-main-content.hidden {
+  display: none !important;
+}
+
+.ab-start-loading-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid rgba(167, 139, 250, 0.35);
+  border-top-color: rgba(196, 181, 253, 0.95);
+  border-radius: 50%;
+  animation: ab-start-spin 0.75s linear infinite;
+}
+
+.ab-start-loading-text {
+  margin-top: 0.75rem;
+  font-size: 0.65rem;
+  font-family: var(--font-mono-tech, ui-monospace, monospace);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(196, 181, 253, 0.9);
+}
+
+@keyframes ab-start-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Streak: slightly smaller pre-AB cabinet (less “weekly campaign” feel). */
 body.streak-mode #ab-start-overlay .ab-start-cabinet {
   max-width: 22.5rem !important;

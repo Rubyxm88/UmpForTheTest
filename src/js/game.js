@@ -6472,13 +6472,42 @@ function showABOutcomeToast(text) {
 /**
  * Displays the At-Bat Start overlay with matchup info and a 3-second auto-start countdown
  */
-function showAtBatStartScreen(onConfirmCallback, isResume = false) {
+function showAtBatStartScreen(onConfirmCallback, isResume = false, startOpts = {}) {
   if (!localStorage.getItem('ump_username')) {
     if (onConfirmCallback) onConfirmCallback();
     return;
   }
   if (!abStartOverlay) {
     if (onConfirmCallback) onConfirmCallback();
+    return;
+  }
+
+  const loading = !!startOpts.loading;
+  const resumeMode = isResume || !!startOpts.resume;
+  const loadingMessage = startOpts.loadingMessage || 'Loading at-bat…';
+  const abStartLoadingEl = document.getElementById('ab-start-loading');
+  const abStartMainContentEl = document.getElementById('ab-start-main-content');
+  const abStartLoadingTextEl = document.getElementById('ab-start-loading-text');
+
+  if (abStartLoadingEl) abStartLoadingEl.classList.toggle('hidden', !loading);
+  if (abStartMainContentEl) abStartMainContentEl.classList.toggle('hidden', loading);
+  if (abStartLoadingTextEl && loading) abStartLoadingTextEl.textContent = loadingMessage;
+  if (btnAbStartConfirm) {
+    btnAbStartConfirm.disabled = loading;
+    btnAbStartConfirm.classList.toggle('opacity-50', loading);
+    btnAbStartConfirm.classList.toggle('pointer-events-none', loading);
+  }
+  if (loading) {
+    window._abStartCallback = onConfirmCallback;
+    setAbStartOverlayActive(true);
+    abStartOverlay.classList.remove('opacity-0', 'pointer-events-none');
+    abStartOverlay.classList.add('opacity-100', 'pointer-events-auto');
+    const startPanel = abStartOverlay.querySelector('.ab-start-cabinet');
+    if (startPanel) {
+      startPanel.classList.remove('scale-95');
+      startPanel.classList.add('scale-100');
+    }
+    updateUnifiedTopNav(currentState);
     return;
   }
 
@@ -6720,18 +6749,42 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     }
   }
 
+  const resumeStatusEl = document.getElementById('ab-start-resume-status');
+  if (resumeStatusEl) {
+    if (resumeMode && gameMode === 'weekly_challenge') {
+      const ab = weeklyPlaylistABs?.[activeWeeklyAbIndex];
+      const pitches = ab ? getAbPitches(ab) : pitchesList || [];
+      const called = pitches.filter((p) => p.userCall !== undefined).length;
+      const pitchNum = Math.min(
+        Math.max((currentPitchIndex ?? 0) + 1, 1),
+        pitches.length || 1
+      );
+      resumeStatusEl.textContent = pitches.length
+        ? `Count ${abBalls}-${abStrikes} · Pitch ${pitchNum} of ${pitches.length} · ${called} call${called === 1 ? '' : 's'} made`
+        : `Count ${abBalls}-${abStrikes} · Resume where you left off`;
+      resumeStatusEl.classList.remove('hidden');
+    } else {
+      resumeStatusEl.textContent = '';
+      resumeStatusEl.classList.add('hidden');
+    }
+  }
+
+  if (btnAbStartConfirm) {
+    btnAbStartConfirm.textContent = resumeMode ? 'RESUME PLAY [SPACE]' : 'READY [SPACE]';
+  }
+
   if (startTitle) {
     if (gameMode === 'weekly_challenge') {
       const total = getWeeklyChallengeTargetAtBats();
-      startTitle.textContent = isResume 
-        ? `RESUME: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}` 
+      startTitle.textContent = resumeMode
+        ? `RESUME: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}`
         : `NEXT: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}`;
     } else if (gameMode === 'daily_streak') {
-      startTitle.textContent = isResume 
-        ? `RESUME: AT-BAT ${activeStreakAbIndex + 1}` 
+      startTitle.textContent = resumeMode
+        ? `RESUME: AT-BAT ${activeStreakAbIndex + 1}`
         : `NEXT: AT-BAT ${activeStreakAbIndex + 1}`;
     } else {
-      startTitle.textContent = isResume ? 'At-bat in progress' : 'Upcoming at-bat';
+      startTitle.textContent = resumeMode ? 'At-bat in progress' : 'Upcoming at-bat';
     }
   }
 
@@ -6811,7 +6864,7 @@ function confirmAtBatStart() {
   });
 }
 
-function returnToMainMenu() {
+async function returnToMainMenu() {
   // Clean up all timers and state
   if (autoPlayTimeout) {
     clearTimeout(autoPlayTimeout);
@@ -6885,9 +6938,11 @@ function returnToMainMenu() {
   if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
     if (gameMode === 'weekly_challenge') {
       syncWeeklyPlaylistFromActiveAtBat();
+      await persistWeeklyChallengeProgress();
+    } else {
+      saveChallengeSessionToLocal();
+      void saveGameProgress();
     }
-    saveChallengeSessionToLocal();
-    void saveGameProgress();
   } else {
     saveChallengeSessionToLocal();
   }
@@ -7710,9 +7765,11 @@ async function goToMainMenu() {
     if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
       if (gameMode === 'weekly_challenge') {
         syncWeeklyPlaylistFromActiveAtBat();
+        void persistWeeklyChallengeProgress();
+      } else {
+        saveChallengeSessionToLocal();
+        await saveGameProgress();
       }
-      saveChallengeSessionToLocal();
-      await saveGameProgress();
     }
     
     pitchesList = [];
@@ -9515,7 +9572,6 @@ async function showAtBatSummaryScreen(outcomeText) {
     if (weeklyPlaylistABs[activeWeeklyAbIndex]) {
       weeklyPlaylistABs[activeWeeklyAbIndex].userCorrectCount = correctCount;
       weeklyPlaylistABs[activeWeeklyAbIndex].userTotalCount = abPitches.length;
-      weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
       persistWeeklyChallengeProgress();
     }
 
@@ -9638,7 +9694,15 @@ async function advanceNextAtBat() {
     currentPitchIndex = 0;
     abBalls = 0;
     abStrikes = 0;
-    await persistWeeklyChallengeProgress();
+    if (gameMode === 'weekly_challenge') {
+      const nextNum = Math.min(activeWeeklyAbIndex + 1, getWeeklyChallengeTargetAtBats());
+      showAtBatStartScreen(null, false, {
+        loading: true,
+        loadingMessage: `Loading at-bat ${nextNum}…`,
+      });
+      transitionToState(STATES.IDLE, { deferNavUpdate: true });
+    }
+    void persistWeeklyChallengeProgress();
     if (gameMode === 'weekly_challenge') {
       updateChallengeProgressUI();
     }
@@ -9723,6 +9787,10 @@ function saveChallengeSessionToLocal() {
     weeklyPlaylistABs?.length > 0 &&
     !isWeeklyChallengeRunComplete(weeklyPlaylistABs);
   const streakRunInProgress = gameMode === 'daily_streak' && !isSessionOver;
+
+  if (weeklyRunInProgress || (gameMode === 'weekly_challenge' && sanitizedPlaylist?.length)) {
+    data.weeklyLeaveState = captureWeeklyLeaveState();
+  }
   const hasLivePitchState =
     sanitizedHistory.length > 0 || currentPitchIndex > 0 || streakPitchHistory.length > 0;
   const shouldSnapshotChallenge =
@@ -9876,9 +9944,42 @@ function weeklyPlaylistHasProgress(playlist) {
   );
 }
 
+function weeklyAbHasSavedPitchCalls(ab) {
+  if (!ab) return false;
+  return getAbPitches(ab).some((p) => p.userCall !== undefined);
+}
+
+/** True when the user has started but not finished every pitch in the saved AB. */
 function weeklyAbHasMidPitchProgress(ab) {
   if (!ab || ab.completed) return false;
-  return getAbPitches(ab).some((p) => p.userCall !== undefined);
+  const pitches = getAbPitches(ab);
+  if (!pitches.length) return false;
+  const called = pitches.filter((p) => p.userCall !== undefined).length;
+  return called > 0 && called < pitches.length;
+}
+
+function captureWeeklyLeaveState() {
+  if (gameMode !== 'weekly_challenge') return null;
+  const summaryVisible = abSummaryOverlay && isOverlayShowing(abSummaryOverlay);
+  const ab = weeklyPlaylistABs[activeWeeklyAbIndex];
+  const pitches = ab ? getAbPitches(ab) : [];
+  const abFinishedInPlaylist =
+    ab && pitches.length > 0 && checkWeeklyAbIsFinished(ab, pitches);
+  const awaitingSummaryOrAdvance =
+    summaryVisible || (activeAbEnded && abFinishedInPlaylist);
+  const midAb =
+    !awaitingSummaryOrAdvance && ab && weeklyAbHasMidPitchProgress(ab);
+  return {
+    pendingSummaryAbIndex: awaitingSummaryOrAdvance ? activeWeeklyAbIndex : null,
+    midAbAbIndex: midAb ? activeWeeklyAbIndex : null,
+    activeWeeklyAbIndex,
+    savedAt: Date.now(),
+  };
+}
+
+function readWeeklyLeaveState() {
+  const saved = readSavedChallengeData();
+  return saved?.weeklyLeaveState || null;
 }
 
 function mergeWeeklyAbEntry(freshAb, savedAb) {
@@ -9909,11 +10010,13 @@ function mergeWeeklyAbEntry(freshAb, savedAb) {
 
   const calledCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay).length;
   const correctCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay && p.userCorrect).length;
+  const allPitchesCalled =
+    mergedPitches.length > 0 && mergedPitches.every((p) => p.userCall !== undefined);
 
   return {
     ...freshAb,
     pitches: mergedPitches,
-    completed: !!savedAb.completed,
+    completed: !!savedAb.completed && allPitchesCalled,
     userCorrectCount: savedAb.userCorrectCount ?? correctCount,
     userTotalCount: savedAb.userTotalCount ?? calledCount,
     gameIndex: freshAb.gameIndex ?? savedAb.gameIndex,
@@ -9948,8 +10051,22 @@ function mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist) {
 }
 
 /** Pick the at-bat with the most advanced saved progress (not merely the first incomplete slot). */
-function findWeeklyResumeAbIndex(playlist, preferredIndex = null) {
+function findWeeklyResumeAbIndex(playlist, preferredIndex = null, leaveState = null) {
   if (!playlist?.length) return 0;
+
+  if (leaveState?.midAbAbIndex != null && leaveState.midAbAbIndex < playlist.length) {
+    const midAb = playlist[leaveState.midAbAbIndex];
+    if (weeklyAbHasMidPitchProgress(midAb) || weeklyAbHasSavedPitchCalls(midAb)) {
+      return leaveState.midAbAbIndex;
+    }
+  }
+  if (
+    leaveState?.pendingSummaryAbIndex != null &&
+    leaveState.pendingSummaryAbIndex >= 0 &&
+    leaveState.pendingSummaryAbIndex < playlist.length
+  ) {
+    return leaveState.pendingSummaryAbIndex;
+  }
 
   let bestScore = -1;
   let bestIdx = 0;
@@ -9993,7 +10110,10 @@ function findWeeklyResumeAbIndex(playlist, preferredIndex = null) {
   const allCalled =
     bestPitches.length > 0 && bestPitches.every((p) => p.userCall !== undefined);
 
-  if (bestAb.completed || (allCalled && checkWeeklyAbIsFinished(bestAb, bestPitches))) {
+  if (
+    !weeklyAbHasMidPitchProgress(bestAb) &&
+    (bestAb.completed || (allCalled && checkWeeklyAbIsFinished(bestAb, bestPitches)))
+  ) {
     const next = bestIdx + 1;
     if (next < playlist.length) {
       return findFirstPlayableWeeklyAbIndex(playlist, next);
@@ -10021,7 +10141,28 @@ function checkWeeklyAbIsFinished(ab, pitches = getAbPitches(ab)) {
     }
     if (balls >= 4 || strikes >= 3) return true;
   }
-  return pitches.every((p) => p.userCall !== undefined);
+  return false;
+}
+
+function weeklyAbIsNaturallyCompleteFromLiveState() {
+  if (abBalls >= 4 || abStrikes >= 3) return true;
+  if (pitchHistory.length > 0) {
+    const lastItem = pitchHistory[pitchHistory.length - 1];
+    if (lastItem.isSwingPlay && (lastItem.swingOutcome === 'HIT' || lastItem.swingOutcome === 'OUT')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function restoreWeeklyAbFromSavedProgress(abData, snapshot) {
+  if (snapshot?.gameMode === 'weekly_challenge' && snapshot.activeWeeklyAbIndex === activeWeeklyAbIndex) {
+    restoreChallengePitchState(snapshot);
+  }
+  reconstructActiveAtBatState();
+  const firstOpen = pitchesList.findIndex((p) => p.userCall === undefined);
+  if (firstOpen >= 0) currentPitchIndex = firstOpen;
+  syncWeeklyPlaylistFromActiveAtBat();
 }
 
 function syncWeeklyPlaylistFromActiveAtBat() {
@@ -10074,23 +10215,26 @@ function dismissAbSummaryOverlay() {
   clearSummaryPitchReview();
 }
 
+async function pushWeeklyChallengeProgressToCloud(username) {
+  const data = readSavedChallengeData(username);
+  if (!data?.weeklyPlaylistABs?.length) return;
+  data.savedAt = Date.now();
+  try {
+    const stats = await getGlobalUserStats(username);
+    stats.challengeProgress = data;
+    await saveGlobalUserStats(username, stats);
+  } catch (e) {
+    console.warn('Weekly challenge cloud save failed:', e);
+  }
+}
+
 async function persistWeeklyChallengeProgress() {
   if (gameMode !== 'weekly_challenge') return;
   syncWeeklyPlaylistFromActiveAtBat();
   saveChallengeSessionToLocal();
   const username = localStorage.getItem('ump_username');
   if (username) {
-    const data = readSavedChallengeData(username);
-    if (data?.weeklyPlaylistABs?.length) {
-      data.savedAt = Date.now();
-      try {
-        const stats = await getGlobalUserStats(username);
-        stats.challengeProgress = data;
-        await saveGlobalUserStats(username, stats);
-      } catch (e) {
-        console.warn('Weekly challenge cloud save failed:', e);
-      }
-    }
+    void pushWeeklyChallengeProgressToCloud(username);
   }
   void saveGameProgress();
 }
@@ -10138,13 +10282,19 @@ async function resolveWeeklyChallengeResume(rawABs, username) {
   }
 
   const playlist = mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist || []);
-  const abIndex = findWeeklyResumeAbIndex(playlist, preferredIndex);
+  const leaveState = savedBundle?.weeklyLeaveState || null;
+  const abIndex = findWeeklyResumeAbIndex(playlist, preferredIndex, leaveState);
 
   return {
     playlist,
     abIndex,
     hasMidAbProgress: weeklyAbHasMidPitchProgress(playlist[abIndex]),
     hasRunProgress: weeklyPlaylistHasProgress(playlist),
+    weeklyLeaveState: leaveState,
+    activeChallenge:
+      savedBundle?.activeChallenge?.gameMode === 'weekly_challenge'
+        ? savedBundle.activeChallenge
+        : null,
   };
 }
 
@@ -10251,10 +10401,10 @@ function reconstructActiveAtBatState() {
     }
   }
   
-  currentPitchIndex = nextPitchIndex;
-  // Limit currentPitchIndex to the valid range
+  const firstOpen = pitchesList.findIndex((p) => p.userCall === undefined);
+  currentPitchIndex = firstOpen >= 0 ? firstOpen : nextPitchIndex;
   if (currentPitchIndex >= pitchesList.length) {
-    currentPitchIndex = pitchesList.length - 1;
+    currentPitchIndex = Math.max(0, pitchesList.length - 1);
   }
   
   console.log(`Reconstructed active At-Bat state: pitchIndex=${currentPitchIndex}, balls=${abBalls}, strikes=${abStrikes}, historyCount=${pitchHistory.length}`);
@@ -11555,10 +11705,6 @@ async function startWeeklyChallenge() {
     throw new Error('Weekly challenge playlist is empty');
   }
 
-  if (!resume.hasRunProgress) {
-    activeWeeklyAbIndex = 0;
-  }
-
   if (activeWeeklyAbIndex >= weeklyPlaylistABs.length) {
     saveChallengeSessionToLocal();
     transitionToState(STATES.SCOREBOARD);
@@ -11570,12 +11716,24 @@ async function startWeeklyChallenge() {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
 
+  const pendingSummaryIdx = resume.weeklyLeaveState?.pendingSummaryAbIndex;
+  const resumeAbIdx =
+    pendingSummaryIdx != null &&
+    pendingSummaryIdx >= 0 &&
+    pendingSummaryIdx < weeklyPlaylistABs.length
+      ? pendingSummaryIdx
+      : activeWeeklyAbIndex;
+
   console.log(
     resume.hasMidAbProgress
-      ? `Resuming weekly challenge at AB ${activeWeeklyAbIndex + 1} (mid at-bat, pitch-by-pitch)`
-      : `Resuming weekly challenge at AB ${activeWeeklyAbIndex + 1}`
+      ? `Resuming weekly challenge at AB ${resumeAbIdx + 1} (mid at-bat, pitch-by-pitch)`
+      : `Resuming weekly challenge at AB ${resumeAbIdx + 1}`
   );
-  loadWeeklyAtBat(activeWeeklyAbIndex, { resume: true });
+  loadWeeklyAtBat(resumeAbIdx, {
+    resume: true,
+    pendingSummary: pendingSummaryIdx === resumeAbIdx,
+    snapshot: resume.activeChallenge,
+  });
   } catch (err) {
     console.error('Failed to start weekly challenge:', err);
     if (toastMessage) {
@@ -11621,6 +11779,9 @@ function checkReconstructedAbCompleted() {
   if (gameMode === 'mlb_game') {
     return pitchesList.length > 0 && currentPitchIndex >= pitchesList.length - 1;
   }
+  if (gameMode === 'weekly_challenge') {
+    return weeklyAbIsNaturallyCompleteFromLiveState();
+  }
   if (abBalls >= 4 || abStrikes >= 3) return true;
   if (pitchHistory.length > 0) {
     const lastItem = pitchHistory[pitchHistory.length - 1];
@@ -11653,6 +11814,20 @@ function determineAbOutcomeFromHistory() {
   return "AT-BAT COMPLETE";
 }
 
+function prepareWeeklySummaryResumeMetadata() {
+  if (!pitchesList?.length) return '';
+  lastCompletedPitch = pitchesList[pitchesList.length - 1];
+  const matchup = getMatchupNames(lastCompletedPitch);
+  lastAbPitcher = matchup.pitcher;
+  lastAbBatter = matchup.batter;
+  lastAbBlurb = lastCompletedPitch.historical_blurb || 'No play-by-play description available.';
+  lastAbOutcomeText =
+    gameMode === 'mlb_game'
+      ? formatMlbAbOutcomeText(lastCompletedPitch)
+      : determineAbOutcomeFromHistory();
+  return lastAbOutcomeText;
+}
+
 function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   const opts =
     typeof isResumeOrOpts === 'object' && isResumeOrOpts !== null
@@ -11660,6 +11835,8 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
       : { resume: !!isResumeOrOpts, fresh: false };
   const resume = !!opts.resume;
   const fresh = !!opts.fresh;
+  const pendingSummary = !!opts.pendingSummary;
+  const snapshot = opts.snapshot || null;
 
   if (abIdx >= weeklyPlaylistABs.length) {
     if (gameMode === 'mlb_game') {
@@ -11680,14 +11857,18 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
 
+  const hasSavedCalls = weeklyAbHasSavedPitchCalls(abData);
+  const allPitchesCalled =
+    pitchesList.length > 0 && pitchesList.every((p) => p.userCall !== undefined);
+
   // Rejoin only: skip at-bats already finished in saved progress
   if (resume && !fresh && gameMode === 'weekly_challenge' && abData.completed) {
-    const allCalled =
-      pitchesList.length > 0 && pitchesList.every((p) => p.userCall !== undefined);
-    if (allCalled || checkWeeklyAbIsFinished(abData, pitchesList)) {
+    if (weeklyAbHasMidPitchProgress(abData)) {
+      abData.completed = false;
+    } else if (allPitchesCalled && checkWeeklyAbIsFinished(abData, pitchesList)) {
       const nextIdx = abIdx + 1;
       if (nextIdx < weeklyPlaylistABs.length) {
-        return loadWeeklyAtBat(nextIdx, { resume: true, fresh: false });
+        return loadWeeklyAtBat(nextIdx, { resume: true, fresh: false, snapshot });
       }
     }
   }
@@ -11700,28 +11881,25 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
     currentAbStartHistoryIndex = 0;
     abBalls = 0;
     abStrikes = 0;
-  } else if (resume && weeklyAbHasMidPitchProgress(abData)) {
-    reconstructActiveAtBatState();
-    syncWeeklyPlaylistFromActiveAtBat();
+  } else if (resume && (weeklyAbHasMidPitchProgress(abData) || hasSavedCalls)) {
+    restoreWeeklyAbFromSavedProgress(abData, snapshot);
 
-    if (checkReconstructedAbCompleted()) {
-      console.log('Resumed mid–at-bat that is already complete — showing summary.');
+    const shouldShowSummaryOnResume =
+      pendingSummary ||
+      (resume &&
+        !fresh &&
+        !weeklyAbHasMidPitchProgress(abData) &&
+        checkWeeklyAbIsFinished(abData, pitchesList));
+
+    if (shouldShowSummaryOnResume) {
       cancelAutoPlayPitch();
       activeAbEnded = true;
-      if (pitchesList.length > 0) {
-        lastCompletedPitch = pitchesList[pitchesList.length - 1];
-        const matchup = getMatchupNames(lastCompletedPitch);
-        lastAbPitcher = matchup.pitcher;
-        lastAbBatter = matchup.batter;
-        lastAbBlurb = lastCompletedPitch.historical_blurb || 'No play-by-play description available.';
-        lastAbOutcomeText = gameMode === 'mlb_game'
-          ? formatMlbAbOutcomeText(lastCompletedPitch)
-          : determineAbOutcomeFromHistory();
-        transitionToState(STATES.IDLE);
-        void showAtBatSummaryScreen(lastAbOutcomeText);
-      }
+      const outcome = prepareWeeklySummaryResumeMetadata();
+      transitionToState(STATES.IDLE);
+      void showAtBatSummaryScreen(outcome);
       return;
     }
+
     activeAbEnded = false;
   } else {
     activeAbEnded = false;
@@ -11749,15 +11927,27 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   saveChallengeSessionToLocal();
   saveGameProgress();
 
-  const showResumeStart = resume && !fresh && weeklyAbHasMidPitchProgress(abData);
+  const abEndedForUi =
+    pendingSummary ||
+    (!weeklyAbHasMidPitchProgress(abData) && checkWeeklyAbIsFinished(abData, pitchesList));
+  const showResumeStart =
+    resume &&
+    !fresh &&
+    hasSavedCalls &&
+    !abEndedForUi &&
+    !abData.completed;
   const enterGameplay = () => {
-    showAtBatStartScreen(() => {
-      if (currentState === STATES.IDLE && !isGamePaused) {
-        autoPlayTimeout = setTimeout(() => {
-          triggerPitchRelease();
-        }, 600);
-      }
-    }, showResumeStart);
+    showAtBatStartScreen(
+      () => {
+        if (currentState === STATES.IDLE && !isGamePaused) {
+          autoPlayTimeout = setTimeout(() => {
+            triggerPitchRelease();
+          }, 600);
+        }
+      },
+      showResumeStart,
+      { resume: showResumeStart }
+    );
   };
 
   transitionToState(STATES.IDLE, { deferNavUpdate: true });
