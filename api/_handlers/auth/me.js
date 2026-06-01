@@ -1,8 +1,8 @@
-import { getHandleFromRequest } from '../_lib/session.js';
-import { sendJson } from '../_lib/http.js';
-import { getSupabaseAdmin, rowToClientStats } from '../_lib/supabase.js';
+import { getHandleFromRequest } from '../../_lib/session.js';
+import { sendJson } from '../../_lib/http.js';
+import { getSupabaseAdmin, rowToClientStats } from '../../_lib/supabase.js';
 
-export default async function handler(req, res) {
+export async function handleMe(req, res) {
   if (req.method !== 'GET') {
     sendJson(res, 405, { error: 'Method not allowed' });
     return;

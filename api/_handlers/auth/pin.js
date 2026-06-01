@@ -1,9 +1,9 @@
-import { hashPIN, isValidPin } from '../_lib/pin.js';
-import { getHandleFromRequest } from '../_lib/session.js';
-import { readJsonBody, sendJson } from '../_lib/http.js';
-import { getSupabaseAdmin } from '../_lib/supabase.js';
+import { hashPIN, isValidPin } from '../../_lib/pin.js';
+import { getHandleFromRequest } from '../../_lib/session.js';
+import { readJsonBody, sendJson } from '../../_lib/http.js';
+import { getSupabaseAdmin } from '../../_lib/supabase.js';
 
-export default async function handler(req, res) {
+export async function handlePin(req, res) {
   if (req.method !== 'PUT') {
     sendJson(res, 405, { error: 'Method not allowed' });
     return;

@@ -1,14 +1,14 @@
-import { hashPIN, isValidHandle, isValidPin } from '../_lib/pin.js';
+import { hashPIN, isValidHandle, isValidPin } from '../../_lib/pin.js';
 import {
   normalizeHandle,
   readJsonBody,
   sendJson,
   setSessionCookie,
-} from '../_lib/http.js';
-import { createSessionToken } from '../_lib/session.js';
-import { getSupabaseAdmin, rowToClientStats } from '../_lib/supabase.js';
+} from '../../_lib/http.js';
+import { createSessionToken } from '../../_lib/session.js';
+import { getSupabaseAdmin, rowToClientStats } from '../../_lib/supabase.js';
 
-export default async function handler(req, res) {
+export async function handleLogin(req, res) {
   if (req.method !== 'POST') {
     sendJson(res, 405, { error: 'Method not allowed' });
     return;

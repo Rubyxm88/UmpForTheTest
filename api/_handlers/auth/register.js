@@ -1,12 +1,12 @@
-import { hashPIN, isValidHandle, isValidPin } from '../_lib/pin.js';
+import { hashPIN, isValidHandle, isValidPin } from '../../_lib/pin.js';
 import {
   normalizeHandle,
   readJsonBody,
   sendJson,
   setSessionCookie,
-} from '../_lib/http.js';
-import { createSessionToken } from '../_lib/session.js';
-import { getSupabaseAdmin } from '../_lib/supabase.js';
+} from '../../_lib/http.js';
+import { createSessionToken } from '../../_lib/session.js';
+import { getSupabaseAdmin } from '../../_lib/supabase.js';
 
 const BLANK_STATS = {
   xp: 0,
@@ -20,7 +20,7 @@ const BLANK_STATS = {
   teamStats: {},
 };
 
-export default async function handler(req, res) {
+export async function handleRegister(req, res) {
   if (req.method !== 'POST') {
     sendJson(res, 405, { error: 'Method not allowed' });
     return;

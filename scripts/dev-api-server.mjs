@@ -46,27 +46,54 @@ if (!hasSupabase) {
 
 const handlerCache = new Map();
 
-async function loadHandler(pathname) {
+async function importHandler(file) {
+  const mod = await import(`file://${file}`);
+  const handler = mod.default;
+  if (typeof handler !== 'function') return null;
+  return handler;
+}
+
+async function resolveRoute(pathname) {
   if (handlerCache.has(pathname)) return handlerCache.get(pathname);
 
   const rel = pathname.replace(/^\/api\//, '').replace(/\/$/, '');
   if (!rel || rel.includes('..')) return null;
 
+  const segments = rel.split('/');
+
+  // Vercel dynamic route: api/auth/[action].js
+  if (segments.length === 2 && segments[0] === 'auth') {
+    const file = join(root, 'api', 'auth', '[action].js');
+    if (existsSync(file)) {
+      const handler = await importHandler(file);
+      if (handler) {
+        const route = { handler, routeQuery: { action: segments[1] } };
+        handlerCache.set(pathname, route);
+        return route;
+      }
+    }
+  }
+
   const file = join(root, 'api', `${rel}.js`);
   if (!existsSync(file)) return null;
 
-  const mod = await import(`file://${file}`);
-  const handler = mod.default;
-  if (typeof handler !== 'function') return null;
+  const handler = await importHandler(file);
+  if (!handler) return null;
 
-  handlerCache.set(pathname, handler);
-  return handler;
+  const route = { handler, routeQuery: {} };
+  handlerCache.set(pathname, route);
+  return route;
 }
 
-function runHandler(handler, nodeReq, nodeRes) {
+function runHandler(route, nodeReq, nodeRes) {
+  const url = new URL(nodeReq.url || '/', `http://127.0.0.1:${PORT}`);
+  const query = Object.fromEntries(url.searchParams);
+  Object.assign(query, route.routeQuery);
+
   const req = {
     method: nodeReq.method,
     url: nodeReq.url,
+    query,
     headers: nodeReq.headers,
     on(event, listener) {
       nodeReq.on(event, listener);
@@ -84,7 +111,7 @@ function runHandler(handler, nodeReq, nodeRes) {
     },
   };
 
-  return Promise.resolve(handler(req, res)).catch((err) => {
+  return Promise.resolve(route.handler(req, res)).catch((err) => {
     console.error(`[dev-api] ${nodeReq.method} ${nodeReq.url}:`, err);
     if (!nodeRes.headersSent) {
       nodeRes.statusCode = 500;
@@ -104,15 +131,15 @@ const server = http.createServer(async (nodeReq, nodeRes) => {
     return;
   }
 
-  const handler = await loadHandler(pathname);
-  if (!handler) {
+  const route = await resolveRoute(pathname);
+  if (!route) {
     nodeRes.statusCode = 404;
     nodeRes.setHeader('Content-Type', 'application/json');
     nodeRes.end(JSON.stringify({ error: 'API route not found' }));
     return;
   }
 
-  await runHandler(handler, nodeReq, nodeRes);
+  await runHandler(route, nodeReq, nodeRes);
 });
 
 server.listen(PORT, '127.0.0.1', () => {
