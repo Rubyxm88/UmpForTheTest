@@ -1885,105 +1885,61 @@
 
       <!-- SCREEN M: HIGH-FIDELITY INTERACTIVE UMPIRE SCORECARD -->
       <div id="scoreboard-screen" class="absolute inset-0 w-full h-full bg-slate-950/98 bg-grid-pattern flex flex-col justify-center items-center p-4 md:p-6 z-40 pointer-events-none opacity-0 scale-95 transition-all duration-500 overflow-y-auto">
-        <div class="max-w-4xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col relative overflow-hidden">
-          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-purple-500/10 blur-3xl"></div>
+        <div class="max-w-3xl w-full glass-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-white/10 flex flex-col relative overflow-hidden">
+          <div class="absolute -top-32 -left-32 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl"></div>
+          <div class="absolute -bottom-32 -right-32 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl"></div>
           
           <!-- Summary Header -->
           <div class="text-center mb-6">
-            <span class="px-3.5 py-1 text-xs font-semibold uppercase tracking-widest bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full shadow-lg">UmpScorecards Diagnostic</span>
-            <h2 class="text-3xl md:text-4xl font-black uppercase mt-3 tracking-wide leading-none font-mono-tech">OFFICIAL UMP SCORECARD</h2>
-            <p id="final-eval-rating" class="text-gray-400 text-xs font-mono-tech tracking-wider mt-1.5 uppercase">ABS vs. Umpire Curation Accuracy Report</p>
+            <span id="final-kicker" class="px-3.5 py-1 text-xs font-semibold uppercase tracking-widest bg-gradient-to-r from-emerald-600 to-teal-600 rounded-full shadow-lg">Challenge Complete</span>
+            <h2 id="final-title" class="text-3xl md:text-4xl font-black uppercase mt-3 tracking-wide leading-none font-mono-tech bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">CHALLENGE COMPLETED</h2>
+            <p id="final-eval-rating" class="text-gray-400 text-xs font-mono-tech tracking-wider mt-1.5 uppercase">OFFICIAL PERFORMANCE REPORT</p>
           </div>
 
-          <!-- Scorecard Core Details (SVG Matrix vs Stats) -->
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
-            <!-- Left Side: Stats & RE24 -->
-            <div class="md:col-span-6 flex flex-col justify-between gap-4">
-              <div class="grid grid-cols-2 gap-4">
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Your Called Accuracy</span>
-                  <span id="final-user-accuracy" class="text-4xl font-black text-blue-400 font-mono-tech mt-1 block">0%</span>
-                  <span id="final-user-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
-                </div>
-                <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
-                  <span class="text-[9px] uppercase text-gray-400 font-mono-tech">Real MLB Ump Accuracy</span>
-                  <span id="final-ump-accuracy" class="text-4xl font-black text-red-400 font-mono-tech mt-1 block">0%</span>
-                  <span id="final-ump-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
-                </div>
-              </div>
-
-              <!-- RE24 Run Favor Display -->
-              <div class="glass-panel-light p-4 rounded-xl border border-white/5 flex flex-col justify-center text-center">
-                <span class="text-[9px] uppercase text-purple-300 font-mono-tech font-bold tracking-wider">RE24 Run Expectancy Impact</span>
-                <span id="final-scorecard-re24" class="text-2xl font-black text-white font-mono-tech mt-1">Favor: +0.00 Runs to --</span>
-                <p class="text-[9px] text-gray-400 mt-1 leading-relaxed">Runs shifted based on user strikes/balls call discrepancy vs. official ABS zones.</p>
-              </div>
-
-              <!-- Narrative description -->
-              <div id="final-eval-desc" class="text-xs text-gray-300 leading-relaxed font-sans glass-panel-light p-4 rounded-xl border border-white/5 flex-1 flex items-center justify-center text-center">
-                Completed game diagnostic data is calculated.
-              </div>
+          <!-- Main Stats Grid -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Your Accuracy</span>
+              <span id="final-user-accuracy" class="text-4xl font-black text-emerald-400 font-mono-tech mt-1 block">0%</span>
+              <span id="final-user-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
             </div>
-
-            <!-- Right Side: SVG Strike Zone Matrix Plot -->
-            <div class="md:col-span-6 flex flex-col items-center">
-              <span class="text-[10px] text-gray-400 font-bold uppercase font-mono-tech tracking-wider mb-2">Established Strike Zone Grid</span>
-              <div class="flex flex-col items-center justify-center p-4 bg-slate-950/60 border border-white/5 rounded-xl w-full h-[280px]">
-                <!-- SVG strike zone chart viewport mapping coordinates -->
-                <svg id="scorecard-matrix-svg" class="w-full h-full max-w-[240px]" viewBox="-2.0 0.0 4.0 4.0">
-                  <defs>
-                    <!-- Marker designs -->
-                    <filter id="glow-strike" x="-50%" y="-50%" width="200%" height="200%">
-                      <feGaussianBlur stdDeviation="0.1" result="blur" />
-                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
-                  </defs>
-                  
-                  <!-- Out of Zone background -->
-                  <rect x="-2.0" y="0.0" width="4.0" height="4.0" fill="rgba(255, 255, 255, 0.01)" />
-                  
-                  <!-- Standard Strike Zone Box (Solid) -->
-                  <rect x="-0.7083" y="0.58" width="1.4166" height="1.84" fill="none" stroke="rgba(255, 255, 255, 0.45)" stroke-width="0.03" />
-                  
-                  <!-- Grid container to hold points dynamically -->
-                  <g id="svg-pitches-container"></g>
-                </svg>
-              </div>
-              <!-- Legends -->
-              <div class="flex gap-4 mt-2 text-[9px] font-mono-tech text-gray-400">
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-green-500 border border-green-400"></span> Correct Ball</span>
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rotate-45 bg-green-500 border border-green-400"></span> Correct Strike</span>
-                <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 bg-red-500 border border-red-400"></span> Missed Call</span>
-              </div>
+            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Real MLB Ump Accuracy</span>
+              <span id="final-ump-accuracy" class="text-4xl font-black text-purple-400 font-mono-tech mt-1 block">0%</span>
+              <span id="final-ump-stats" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">--</span>
+            </div>
+            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Pitches Called</span>
+              <span id="final-pitches-count" class="text-4xl font-black text-blue-400 font-mono-tech mt-1 block">0</span>
+              <span class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">Total Takes</span>
+            </div>
+            <div class="glass-panel-light p-4 rounded-xl border border-white/5 text-center">
+              <span class="text-[9px] uppercase text-gray-400 font-mono-tech font-bold block">Rank Standing</span>
+              <span id="final-leaderboard-rank" class="text-4xl font-black text-amber-400 font-mono-tech mt-1 block">--</span>
+              <span id="final-leaderboard-score" class="text-[9px] text-gray-500 font-mono-tech uppercase block mt-1">Syncing...</span>
             </div>
           </div>
 
-          <!-- Bottom: Called Pitches Table Log -->
-          <div class="overflow-y-auto max-h-[140px] border border-white/10 rounded-xl mb-6 bg-slate-950/30">
-            <table class="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr class="bg-white/5 border-b border-white/10 font-mono-tech text-[9px] text-gray-400 uppercase tracking-widest">
-                  <th class="p-3">Pitch</th>
-                  <th class="p-3">Details</th>
-                  <th class="p-3 text-center">Your Call</th>
-                  <th class="p-3 text-center">ABS Zone</th>
-                  <th class="p-3 text-center">Real Ump</th>
-                  <th class="p-3 text-center">Result</th>
-                </tr>
-              </thead>
-              <tbody id="scoreboard-table-body">
-                <!-- Pitches parsed dynamically -->
-              </tbody>
-            </table>
+          <!-- Description / Narrative -->
+          <div id="final-eval-desc" class="text-xs text-gray-300 leading-relaxed font-sans glass-panel-light p-4 rounded-xl border border-white/5 text-center mb-6">
+            Completed challenge diagnostic data is calculated.
+          </div>
+
+          <!-- Games Breakdown Section -->
+          <div class="w-full mb-6">
+            <h3 class="text-xs font-mono-tech text-gray-400 uppercase tracking-widest mb-3 text-left pl-1">Games Overview</h3>
+            <div id="challenge-games-list" class="flex flex-col gap-2 max-h-[160px] overflow-y-auto pr-1">
+              <!-- Rendered dynamically -->
+            </div>
           </div>
 
           <!-- Actions footer -->
-          <div class="flex gap-3 mt-auto">
-            <button id="btn-scoreboard-home" class="flex-1 py-4 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-              Return to Main Menu
+          <div class="flex flex-col sm:flex-row gap-3 mt-auto">
+            <button id="btn-scoreboard-home" class="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg transition-all cursor-pointer">
+              Exit Challenge
             </button>
-            <button id="btn-scoreboard-leaderboard" class="py-4 px-6 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer">
-              View Crew Standings
+            <button id="btn-scoreboard-leaderboard" class="py-3 px-6 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg transition-all cursor-pointer">
+              View Leaderboards
             </button>
           </div>
         </div>
@@ -2175,7 +2131,7 @@
             </div>
             <div id="challenge-detail-playlist-wrap" class="challenge-detail-playlist">
               <div class="challenge-detail-playlist__head">
-                <span class="challenge-detail-playlist__label">Your 20 at-bats</span>
+                <span id="challenge-detail-playlist-label" class="challenge-detail-playlist__label">Your At-Bats</span>
                 <span id="challenge-detail-playlist-meta" class="challenge-detail-playlist__meta">Full MLB plate appearances</span>
               </div>
               <div id="challenge-detail-playlist-list" class="challenge-detail-playlist__list"></div>

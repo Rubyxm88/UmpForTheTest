@@ -16,7 +16,16 @@ async function parseResponse(res) {
   return data;
 }
 
+let meCache = null;
+let mePromise = null;
+
+export function clearMeCache() {
+  meCache = null;
+  mePromise = null;
+}
+
 export async function apiRegister(handle, pin) {
+  clearMeCache();
   const res = await fetch('/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -27,6 +36,7 @@ export async function apiRegister(handle, pin) {
 }
 
 export async function apiLogin(handle, pin) {
+  clearMeCache();
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -37,6 +47,7 @@ export async function apiLogin(handle, pin) {
 }
 
 export async function apiUpdatePin(pin) {
+  clearMeCache();
   const res = await fetch('/api/auth/pin', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -47,6 +58,7 @@ export async function apiUpdatePin(pin) {
 }
 
 export async function apiLogout() {
+  clearMeCache();
   const res = await fetch('/api/auth/logout', {
     method: 'POST',
     ...API_FETCH_OPTS,
@@ -55,8 +67,23 @@ export async function apiLogout() {
 }
 
 export async function apiMe() {
-  const res = await fetch('/api/auth/me', { ...API_FETCH_OPTS });
-  return parseResponse(res);
+  if (meCache) return meCache;
+  if (mePromise) return mePromise;
+
+  mePromise = (async () => {
+    try {
+      const res = await fetch('/api/auth/me', { ...API_FETCH_OPTS });
+      const data = await parseResponse(res);
+      meCache = data;
+      return data;
+    } catch (err) {
+      mePromise = null;
+      throw err;
+    } finally {
+      mePromise = null;
+    }
+  })();
+  return mePromise;
 }
 
 export async function apiSaveStats(stats) {
@@ -66,7 +93,11 @@ export async function apiSaveStats(stats) {
     ...API_FETCH_OPTS,
     body: JSON.stringify({ stats }),
   });
-  return parseResponse(res);
+  const data = await parseResponse(res);
+  if (meCache) {
+    meCache.stats = stats;
+  }
+  return data;
 }
 
 export async function apiFetchLeaderboardPeriods(board) {

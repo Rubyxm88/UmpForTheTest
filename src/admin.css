@@ -597,13 +597,56 @@ body {
   border-top: 1px solid var(--ump-color-border);
 }
 
+.wc-rail-heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
 .wc-rail-heading {
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--ump-color-text-dim);
-  margin: 0 0 0.5rem;
+  margin: 0;
+}
+
+.wc-rail-filter-row {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.15rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--ump-radius-1);
+  border: 1px solid var(--ump-color-border-grass);
+}
+
+.wc-rail-filter-btn {
+  flex: 1;
+  font-family: var(--ump-font-ui, sans-serif);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.4rem;
+  border: none;
+  border-radius: var(--ump-radius-1);
+  background: transparent;
+  color: var(--ump-color-text-dim);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.1s ease;
+}
+
+.wc-rail-filter-btn:hover {
+  color: var(--ump-color-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wc-rail-filter-btn--active {
+  color: var(--ump-color-text);
+  background: rgba(168, 85, 247, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(168, 85, 247, 0.35);
 }
 
 .wc-rail-list {
@@ -1098,6 +1141,26 @@ body {
 .admin-week-badge--library {
   color: var(--ump-color-warn);
   border-color: rgba(196, 154, 60, 0.45);
+}
+
+.admin-week-badge--used {
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.45);
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.admin-week-badge--unused {
+  color: var(--ump-color-text-dim);
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ump-btn--xs {
+  min-height: 24px;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.36rem;
+  border-width: 1.5px;
+  line-height: 1;
 }
 
 .admin-schedule-section td {

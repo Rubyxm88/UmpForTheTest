@@ -1994,6 +1994,7 @@ function persistLocalStats(handle, stats) {
 
 function clearStoredAuthSession() {
   localStorage.removeItem('ump_username');
+  localStorage.removeItem('session_local_only');
   apiLogout().catch(() => {});
 }
 
@@ -2348,17 +2349,20 @@ async function applyCloudSessionToLocal(handle, pinVal, cloud) {
 }
 
 async function saveGlobalUser(handle, pin) {
-  try {
-    await apiUpdatePin(pin);
-    const normalized = normalizeHandle(handle);
-    const profile = await getProfile(normalized);
-    if (profile) {
-      profile.pinHash = await hashPIN(pin);
-      delete profile.pin;
-      await saveProfile(profile);
+  const normalized = normalizeHandle(handle);
+  const sessionLocalOnly = localStorage.getItem('session_local_only') === 'true';
+  if (!sessionLocalOnly) {
+    try {
+      await apiUpdatePin(pin);
+    } catch (e) {
+      console.warn('Error saving PIN to cloud:', e);
     }
-  } catch (e) {
-    console.warn('Error saving PIN to cloud:', e);
+  }
+  const profile = await getProfile(normalized);
+  if (profile) {
+    profile.pinHash = await hashPIN(pin);
+    delete profile.pin;
+    await saveProfile(profile);
   }
 }
 
@@ -2366,6 +2370,10 @@ async function getGlobalUserStats(handle) {
   const normalized = normalizeHandle(handle);
   const statsKey = getStatsStorageKey(normalized);
   const fallback = readLocalUserStats(normalized);
+  const sessionLocalOnly = localStorage.getItem('session_local_only') === 'true';
+  if (sessionLocalOnly) {
+    return fallback;
+  }
   try {
     const me = await apiMe();
     if (me?.stats && normalizeHandle(me.handle) === normalized) {
@@ -2387,6 +2395,10 @@ async function saveGlobalUserStats(handle, stats) {
   const normalized = normalizeHandle(handle);
   const statsKey = getStatsStorageKey(normalized);
   localStorage.setItem(statsKey, JSON.stringify(stats));
+  const sessionLocalOnly = localStorage.getItem('session_local_only') === 'true';
+  if (sessionLocalOnly) {
+    return;
+  }
   markStatsPendingSync(normalized);
   try {
     await apiSaveStats(stats);
@@ -2627,6 +2639,7 @@ function initProfileSettingsUI() {
  * Initialize all DOM queries and attach event listeners
  */
 export async function startGameSession() {
+  cachedExtractedWeeklyPlaylist = null;
   const liveWeekly = await hydrateWeeklyChallengeFromApi(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
   if (liveWeekly.applied) {
     console.log(
@@ -2694,7 +2707,11 @@ export async function startGameSession() {
   const storedUser = localStorage.getItem('ump_username');
   if (storedUser) {
     const handleNormalized = storedUser.toUpperCase();
+    const sessionLocalOnly = localStorage.getItem('session_local_only') === 'true';
     try {
+      if (sessionLocalOnly) {
+        throw { status: 503, message: 'Local only session' };
+      }
       const me = await apiMe();
       if (me?.handle) {
         await applyCloudSessionToLocal(me.handle, null, me);
@@ -3317,6 +3334,7 @@ async function submitLoginAction() {
 
   try {
     const cloud = await apiLogin(handleValNormalized, pinVal);
+    localStorage.removeItem('session_local_only');
     if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
     if (loginConfirmBox) {
       loginConfirmBox.classList.add('hidden');
@@ -3342,6 +3360,7 @@ async function submitLoginAction() {
       return;
     }
     console.warn('Cloud login unavailable, trying local profile:', err);
+    localStorage.setItem('session_local_only', 'true');
   }
 
   const profile = await getProfile(handleValNormalized);
@@ -4035,6 +4054,7 @@ function attachEvents() {
       let cloud;
       try {
         cloud = await apiRegister(handleValNormalized, pinVal);
+        localStorage.removeItem('session_local_only');
       } catch (regErr) {
         if (regErr.status === 409) {
           if (loginErrorMsg) {
@@ -4044,6 +4064,7 @@ function attachEvents() {
           return;
         }
         console.warn('Cloud registration unavailable, creating local profile:', regErr);
+        localStorage.setItem('session_local_only', 'true');
         cloud = { handle: handleValNormalized, stats: {} };
       }
 
@@ -7288,9 +7309,6 @@ function showDecisionToast(isCorrect, absCall) {
   }, 1800);
 }
 
-/**
- * Populates final dashboard metrics table
- */
 function renderScoreboardDashboard() {
   const totalPitches = pitchHistory.length;
   
@@ -7306,25 +7324,46 @@ function renderScoreboardDashboard() {
   let displayCorrectCount = userCorrectCount;
   let displayAcc = userAcc;
 
+  let displayUmpPitchesCount = calledPitches.length;
+  let displayUmpCorrectCount = umpCorrectCount;
+  let displayUmpAcc = umpAcc;
+
   if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
     let overallCorrect = 0;
     let overallTotal = 0;
+    let overallUmpCorrect = 0;
+    let overallUmpTotal = 0;
     weeklyPlaylistABs.forEach(ab => {
       if (ab.completed) {
         overallCorrect += ab.userCorrectCount || 0;
         overallTotal += ab.userTotalCount || 0;
+
+        const pitches = getAbPitches(ab);
+        const abCalled = pitches.filter(p => !p.isSwingPlay && p.userCall !== undefined);
+        overallUmpTotal += abCalled.length;
+        overallUmpCorrect += abCalled.filter(p => p.realCorrect).length;
       }
     });
     displayPitchesCount = overallTotal;
     displayCorrectCount = overallCorrect;
     displayAcc = overallTotal > 0 ? Math.round((overallCorrect / overallTotal) * 100) : 100;
+
+    displayUmpPitchesCount = overallUmpTotal;
+    displayUmpCorrectCount = overallUmpCorrect;
+    displayUmpAcc = overallUmpTotal > 0 ? Math.round((overallUmpCorrect / overallUmpTotal) * 100) : 100;
   }
   
   finalUserAccuracy.textContent = `${displayAcc}%`;
   finalUserStats.textContent = `${displayCorrectCount} OF ${displayPitchesCount} CORRECT`;
   
-  finalUmpAccuracy.textContent = `${umpAcc}%`;
-  finalUmpStats.textContent = `${umpCorrectCount} OF ${calledPitches.length} CORRECT`;
+  finalUmpAccuracy.textContent = `${displayUmpAcc}%`;
+  finalUmpStats.textContent = `${displayUmpCorrectCount} OF ${displayUmpPitchesCount} CORRECT`;
+
+  // Pitch count card
+  const pitchesCountEl = document.getElementById('final-pitches-count');
+  if (pitchesCountEl) {
+    pitchesCountEl.textContent = String(displayPitchesCount);
+  }
 
   // Save game result to persistent user profile stats database in localStorage
   const username = localStorage.getItem('ump_username');
@@ -7361,8 +7400,6 @@ function renderScoreboardDashboard() {
     if (gameMode === 'daily_streak') {
       userStats.streakHistory[todayStr] = Math.max(userStats.streakHistory[todayStr] || 0, userCorrectCount);
     }
-    
-    // Rolling recent pitches are updated live in submitUserDecision. Capping is also done live.
     
     let gameName = "Practice Mode";
     let matchup = "N/A";
@@ -7427,6 +7464,122 @@ function renderScoreboardDashboard() {
       const masteryScore = completedTeamsList.length * 1000 + avgAcc;
       submitGlobalScore('alltime', username, teamString, `${avgAcc}%`, `${completedTeamsList.length} Teams (${masteryScore} pts)`, masteryScore);
     }
+  }
+
+  // Populate leaderboard rank and score metrics on cards
+  const rankEl = document.getElementById('final-leaderboard-rank');
+  const scoreEl = document.getElementById('final-leaderboard-score');
+  if (username) {
+    if (gameMode === 'weekly_challenge') {
+      const weeklyPoints = displayCorrectCount * 10;
+      if (rankEl) rankEl.textContent = '...';
+      if (scoreEl) scoreEl.textContent = `${weeklyPoints} PTS`;
+      const periodKey = getActiveWeeklyLeaderboardPeriodKey();
+      getLeaderboardRows('weekly', username, periodKey).then(({ rows }) => {
+        const me = rows.find(r => r.isUser);
+        if (rankEl) rankEl.textContent = me ? `#${me.rank}` : 'SYNC';
+        if (scoreEl) scoreEl.textContent = me ? `${me.scoreText}`.toUpperCase() : `${weeklyPoints} PTS`;
+      }).catch(() => {
+        if (rankEl) rankEl.textContent = 'SYNC';
+      });
+    } else if (gameMode === 'daily_streak') {
+      if (rankEl) rankEl.textContent = `${userCorrectCount}`;
+      if (scoreEl) scoreEl.textContent = `STREAK`;
+      getLeaderboardRows('daily', username).then(({ rows }) => {
+        const me = rows.find(r => r.isUser);
+        if (scoreEl) scoreEl.textContent = me ? `#${me.rank} GLOBAL` : `STREAK`;
+      }).catch(() => {});
+    } else {
+      if (rankEl) rankEl.textContent = '--';
+      if (scoreEl) scoreEl.textContent = 'PRACTICE';
+    }
+  } else {
+    if (rankEl) rankEl.textContent = '--';
+    if (scoreEl) scoreEl.textContent = 'GUEST';
+  }
+
+  // Populate Title & Kicker
+  const titleEl = document.getElementById('final-title');
+  const kickerEl = document.getElementById('final-kicker');
+  if (titleEl && kickerEl) {
+    if (gameMode === 'weekly_challenge') {
+      const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+      titleEl.textContent = 'Challenge Completed';
+      kickerEl.textContent = formatWeekLabel(meta.challengeWeekId);
+    } else if (gameMode === 'daily_streak') {
+      titleEl.textContent = 'Streak Run Ended';
+      kickerEl.textContent = 'Daily Streak';
+    } else {
+      titleEl.textContent = 'Game Completed';
+      kickerEl.textContent = 'Practice Mode';
+    }
+  }
+
+  // Populate Games Breakdown List
+  const gamesListEl = document.getElementById('challenge-games-list');
+  if (gamesListEl) {
+    const gamesGroup = {};
+    if (gameMode === 'weekly_challenge' && weeklyPlaylistABs && weeklyPlaylistABs.length > 0) {
+      weeklyPlaylistABs.forEach(ab => {
+        if (!gamesGroup[ab.gameIndex]) {
+          gamesGroup[ab.gameIndex] = {
+            title: ab.gameTitle || 'Game',
+            correct: 0,
+            total: 0,
+            umpCorrect: 0,
+            umpTotal: 0,
+            abCount: 0
+          };
+        }
+        const g = gamesGroup[ab.gameIndex];
+        g.abCount += 1;
+        if (ab.completed) {
+          g.correct += ab.userCorrectCount || 0;
+          g.total += ab.userTotalCount || 0;
+          
+          const pitches = getAbPitches(ab);
+          const abCalled = pitches.filter(p => !p.isSwingPlay && p.userCall !== undefined);
+          g.umpTotal += abCalled.length;
+          g.umpCorrect += abCalled.filter(p => p.realCorrect).length;
+        }
+      });
+    } else {
+      const gameName = "Practice Game";
+      const called = pitchHistory.filter(x => !x.isSwingPlay);
+      const correct = called.filter(x => x.userCorrect).length;
+      const umpCorrect = called.filter(x => x.realCorrect).length;
+      gamesGroup[0] = {
+        title: gameName,
+        correct,
+        total: called.length,
+        umpCorrect,
+        umpTotal: called.length,
+        abCount: 1
+      };
+    }
+
+    gamesListEl.innerHTML = Object.values(gamesGroup).map(game => {
+      const userAcc = game.total > 0 ? Math.round((game.correct / game.total) * 100) : 100;
+      const umpAcc = game.umpTotal > 0 ? Math.round((game.umpCorrect / game.umpTotal) * 100) : 100;
+      return `
+        <div class="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-slate-900/60 text-xs font-mono-tech">
+          <div class="flex flex-col gap-0.5">
+            <span class="text-white font-bold text-[13px] tracking-wide">${game.title}</span>
+            <span class="text-gray-500 text-[9px] uppercase">${game.abCount} at-bats</span>
+          </div>
+          <div class="flex items-center gap-4 text-right">
+            <div class="flex flex-col gap-0.5">
+              <span class="text-emerald-400 font-black text-sm">${userAcc}%</span>
+              <span class="text-gray-500 text-[8px] uppercase font-bold tracking-wider text-center">YOU</span>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-purple-400 font-black text-sm">${umpAcc}%</span>
+              <span class="text-gray-500 text-[8px] uppercase font-bold tracking-wider text-center">MLB UMP</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
   }
 
   let rating = 'ROOKIE BALL';
@@ -7500,9 +7653,9 @@ function renderScoreboardDashboard() {
           </div>
         </div>
         <span class="text-[11px] font-sans text-gray-300 text-center leading-relaxed max-w-lg">
-          ${userAcc > umpAcc 
-            ? `🔥 Outstanding! You called <b>${userCorrectCount}</b> of <b>${calledPitches.length}</b> critical takes correctly (<b>${userAcc}%</b>), out-umpiring <b>${umpireNameObj}</b> who posted <b>${umpCorrectCount}/${calledPitches.length}</b> (<b>${umpAcc}%</b>).` 
-            : `<b>${umpireName}</b> called <b>${umpCorrectCount}/${calledPitches.length}</b> (<b>${umpAcc}%</b>) correctly on these critical takes, out-performing your <b>${userCorrectCount}/${calledPitches.length}</b> (<b>${userAcc}%</b>). Keep training!`}
+          ${displayAcc > displayUmpAcc 
+            ? `🔥 Outstanding! You called <b>${displayCorrectCount}</b> of <b>${displayPitchesCount}</b> critical takes correctly (<b>${displayAcc}%</b>), out-umpiring <b>${umpireNameObj}</b> who posted <b>${displayUmpCorrectCount}/${displayUmpPitchesCount}</b> (<b>${displayUmpAcc}%</b>).` 
+            : `<b>${umpireName}</b> called <b>${displayUmpCorrectCount}/${displayUmpPitchesCount}</b> (<b>${displayUmpAcc}%</b>) correctly on these critical takes, out-performing your <b>${displayCorrectCount}/${displayPitchesCount}</b> (<b>${displayAcc}%</b>). Keep training!`}
         </span>
       </div>
     `;
@@ -7511,45 +7664,47 @@ function renderScoreboardDashboard() {
   finalEvalRating.textContent = rating;
   finalEvalDesc.innerHTML = desc;
 
-  scoreboardTableBody.innerHTML = '';
-  
-  pitchHistory.forEach(item => {
-    const row = document.createElement('tr');
-    row.className = 'border-b border-white/5 hover:bg-white/2 bg-slate-900/50';
+  if (scoreboardTableBody) {
+    scoreboardTableBody.innerHTML = '';
     
-    const matchupInfo = (item.pitchData.pitcher && item.pitchData.batter)
-      ? `<span class="text-[10px] font-semibold block"><span class="text-orange-300">${item.pitchData.pitcher}</span> vs <span class="text-purple-300">${item.pitchData.batter}</span></span>`
-      : (item.pitchData.batter ? `<span class="text-[10px] text-purple-300 font-semibold block">${item.pitchData.batter}</span>` : '');
+    pitchHistory.forEach(item => {
+      const row = document.createElement('tr');
+      row.className = 'border-b border-white/5 hover:bg-white/2 bg-slate-900/50';
       
-    const detailsCell = `
-      <div class="flex flex-col">
-        <span class="font-semibold text-white">${item.pitchType}</span>
-        <span class="text-[10px] text-gray-400 font-mono-tech">${item.speedMph} MPH (${item.pitchData.pitcher_hand || 'RHP'})</span>
-        ${matchupInfo}
-      </div>
-    `;
+      const matchupInfo = (item.pitchData.pitcher && item.pitchData.batter)
+        ? `<span class="text-[10px] font-semibold block"><span class="text-orange-300">${item.pitchData.pitcher}</span> vs <span class="text-purple-300">${item.pitchData.batter}</span></span>`
+        : (item.pitchData.batter ? `<span class="text-[10px] text-purple-300 font-semibold block">${item.pitchData.batter}</span>` : '');
+        
+      const detailsCell = `
+        <div class="flex flex-col">
+          <span class="font-semibold text-white">${item.pitchType}</span>
+          <span class="text-[10px] text-gray-400 font-mono-tech">${item.speedMph} MPH (${item.pitchData.pitcher_hand || 'RHP'})</span>
+          ${matchupInfo}
+        </div>
+      `;
 
-    const userBadge = makeBadgeHtml(item.userCall, item.isSwingPlay);
-    const absBadge = makeBadgeHtml(item.absCall);
-    const realBadge = makeBadgeHtml(item.realCall);
-    
-    const resultIcon = item.isSwingPlay
-      ? '<span class="text-gray-500 font-mono-tech">-</span>'
-      : (item.userCorrect 
-          ? '<span class="text-green-500 text-lg">✓</span>' 
-          : '<span class="text-red-500 text-lg">✗</span>');
+      const userBadge = makeBadgeHtml(item.userCall, item.isSwingPlay);
+      const absBadge = makeBadgeHtml(item.absCall);
+      const realBadge = makeBadgeHtml(item.realCall);
       
-    row.innerHTML = `
-      <td class="p-3 font-mono-tech font-bold text-gray-400">#${item.pitchNum}</td>
-      <td class="p-3">${detailsCell}</td>
-      <td class="p-3 text-center">${userBadge}</td>
-      <td class="p-3 text-center">${absBadge}</td>
-      <td class="p-3 text-center">${realBadge}</td>
-      <td class="p-3 text-center">${resultIcon}</td>
-    `;
-    
-    scoreboardTableBody.appendChild(row);
-  });
+      const resultIcon = item.isSwingPlay
+        ? '<span class="text-gray-500 font-mono-tech">-</span>'
+        : (item.userCorrect 
+            ? '<span class="text-green-500 text-lg">✓</span>' 
+            : '<span class="text-red-500 text-lg">✗</span>');
+        
+      row.innerHTML = `
+        <td class="p-3 font-mono-tech font-bold text-gray-400">#${item.pitchNum}</td>
+        <td class="p-3">${detailsCell}</td>
+        <td class="p-3 text-center">${userBadge}</td>
+        <td class="p-3 text-center">${absBadge}</td>
+        <td class="p-3 text-center">${realBadge}</td>
+        <td class="p-3 text-center">${resultIcon}</td>
+      `;
+      
+      scoreboardTableBody.appendChild(row);
+    });
+  }
   
   // Calculate and draw scorecard RE24 favor and SVG matrix plot
   const re24 = calculateScorecardRE24();
@@ -9608,6 +9763,7 @@ async function showAtBatSummaryScreen(outcomeText) {
     if (weeklyPlaylistABs[activeWeeklyAbIndex]) {
       weeklyPlaylistABs[activeWeeklyAbIndex].userCorrectCount = correctCount;
       weeklyPlaylistABs[activeWeeklyAbIndex].userTotalCount = abPitches.length;
+      weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
       persistWeeklyChallengeProgress();
     }
 
@@ -10347,6 +10503,7 @@ function challengeProgressMatchesBundle(progress) {
 }
 
 async function refreshWeeklyChallengeBundleIfNeeded() {
+  cachedExtractedWeeklyPlaylist = null;
   const live = await hydrateWeeklyChallengeFromApi(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
   if (live.applied) {
     weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
@@ -10858,8 +11015,8 @@ function getWeeklyChallengeCompletedStats() {
     }
   });
 
-  const inProgressCorrect = pitchHistory.filter((x) => !x.isSwingPlay && x.userCorrect).length;
-  const inProgressTotal = pitchHistory.filter((x) => !x.isSwingPlay).length;
+  const inProgressCorrect = gameMode === 'weekly_challenge' ? pitchHistory.filter((x) => !x.isSwingPlay && x.userCorrect).length : 0;
+  const inProgressTotal = gameMode === 'weekly_challenge' ? pitchHistory.filter((x) => !x.isSwingPlay).length : 0;
   const sessionCorrect = overallCorrect + inProgressCorrect;
   const sessionTotal = overallTotal + inProgressTotal;
   const sessionAccuracy = sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : null;
@@ -11979,9 +12136,13 @@ function updateSummaryTimerUI() {
   }
 }
 
+let cachedExtractedWeeklyPlaylist = null;
+
 function extractAtBatsFromWeeklyData() {
+  if (cachedExtractedWeeklyPlaylist) return cachedExtractedWeeklyPlaylist;
   const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
-  return buildWeeklyPlaylist(WEEKLY_CHALLENGE_DATA, meta);
+  cachedExtractedWeeklyPlaylist = buildWeeklyPlaylist(WEEKLY_CHALLENGE_DATA, meta);
+  return cachedExtractedWeeklyPlaylist;
 }
 
 function getWeeklyChallengeTargetAtBats() {
@@ -14288,8 +14449,12 @@ async function populateWeeklyChallengeDetailModal() {
   if (gamesWrap) gamesWrap.classList.remove('hidden');
 
   if (playlistMeta) {
-    const bl = explained.playlistStats?.borderlineTarget ?? 10;
-    playlistMeta.textContent = `${totalAbs} ABs · ${bl} borderline mix · full endings`;
+    playlistMeta.textContent = `${totalAbs} ABs · Full Plate Appearances`;
+  }
+
+  const playlistLabelEl = document.getElementById('challenge-detail-playlist-label');
+  if (playlistLabelEl) {
+    playlistLabelEl.textContent = `Your ${totalAbs} At-Bats`;
   }
 
   if (playlistList) {
@@ -14297,20 +14462,14 @@ async function populateWeeklyChallengeDetailModal() {
     playlistList.innerHTML = rows.length
       ? rows
           .map((ab) => {
-            const typeClass =
-              ab.reasonCode === 'borderline'
-                ? 'challenge-detail-playlist-row__tag--borderline'
-                : 'challenge-detail-playlist-row__tag--standard';
-            const typeLabel = ab.reasonCode === 'borderline' ? 'Borderline' : 'Standard';
             return `
           <article class="challenge-detail-playlist-row">
             <div class="challenge-detail-playlist-row__order">${ab.playOrder}</div>
             <div class="challenge-detail-playlist-row__main">
               <div class="challenge-detail-playlist-row__matchup">${ab.batter} <span>vs</span> ${ab.pitcher}</div>
-              <div class="challenge-detail-playlist-row__game">${ab.gameTitle} · ${ab.pitchCount} pitches · ends ${ab.endingCount || '—'}</div>
+              <div class="challenge-detail-playlist-row__game">${ab.gameTitle} · ${ab.pitchCount} pitches</div>
               <div class="challenge-detail-playlist-row__result">${ab.abResult || 'Result on file'}</div>
             </div>
-            <span class="challenge-detail-playlist-row__tag ${typeClass}">${typeLabel}</span>
           </article>`;
           })
           .join('')

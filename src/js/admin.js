@@ -462,6 +462,7 @@ let challengeViewTab = 'playlist';
 let selectedAbIndex = null;
 let weekAnalytics = null;
 let abDetailCache = null;
+let bundleFilterMode = 'all';
 
 function showAdminToast(message, tone = 'ok') {
   let el = document.getElementById('admin-toast');
@@ -708,12 +709,25 @@ function renderWeekRail(data) {
     })
     .join('');
 
-  const library = bundles
+  const totalBundlesCount = bundles.length;
+  const usedBundlesCount = bundles.filter((b) => b.usedByWeeks?.length > 0).length;
+  const unusedBundlesCount = bundles.filter((b) => !b.usedByWeeks?.length).length;
+
+  const filteredBundles = bundles.filter((b) => {
+    if (bundleFilterMode === 'used') return b.usedByWeeks?.length > 0;
+    if (bundleFilterMode === 'unused') return !b.usedByWeeks?.length;
+    return true;
+  });
+
+  const library = filteredBundles
     .map((b) => {
       const active = b.id === selectedBundleId;
+      const isUsed = b.usedByWeeks?.length > 0;
+      const badgeClass = isUsed ? 'admin-week-badge--used' : 'admin-week-badge--unused';
+      const badgeLabel = isUsed ? `Used: ${b.usedByWeeks.join(', ')}` : 'Unused';
       return `
         <button type="button" class="wc-rail-item wc-rail-item--bundle${active ? ' wc-rail-item--active' : ''}" data-bundle="${escapeHtml(b.id)}">
-          <span class="admin-week-badge admin-week-badge--library">Bundle</span>
+          <span class="admin-week-badge ${badgeClass}">${escapeHtml(badgeLabel)}</span>
           <strong>${escapeHtml(b.label || b.id)}</strong>
           <span class="wc-rail-item__sub"><code>${escapeHtml(b.id)}</code></span>
           <span class="wc-rail-item__meta">${b.targetAtBats ?? 20} AB · ${b.gameCount ?? 0} games</span>
@@ -750,8 +764,16 @@ function renderWeekRail(data) {
         : ''
     }
     <div class="wc-rail-section">
-      <p class="wc-rail-heading">Bundle library</p>
-      <div class="wc-rail-list">${library || '<p class="wc-empty">No bundles</p>'}</div>
+      <div class="wc-rail-heading-row">
+        <p class="wc-rail-heading">Bundle library</p>
+        <button type="button" id="admin-btn-new-bundle" class="ump-btn ump-btn--ghost ump-btn--xs">+ Build</button>
+      </div>
+      <div class="wc-rail-filter-row">
+        <button type="button" class="wc-rail-filter-btn${bundleFilterMode === 'all' ? ' wc-rail-filter-btn--active' : ''}" data-filter-bundles="all">All (${totalBundlesCount})</button>
+        <button type="button" class="wc-rail-filter-btn${bundleFilterMode === 'used' ? ' wc-rail-filter-btn--active' : ''}" data-filter-bundles="used">Used (${usedBundlesCount})</button>
+        <button type="button" class="wc-rail-filter-btn${bundleFilterMode === 'unused' ? ' wc-rail-filter-btn--active' : ''}" data-filter-bundles="unused">Unused (${unusedBundlesCount})</button>
+      </div>
+      <div class="wc-rail-list">${library || '<p class="wc-empty">No matching bundles</p>'}</div>
     </div>`;
 }
 
@@ -906,12 +928,12 @@ function renderWorkspaceMain(data) {
         <button type="button" class="wc-tab${challengeViewTab === 'playlist' ? ' wc-tab--active' : ''}" data-wc-tab="playlist">Playlist <span class="wc-tab__count">${detail?.selectedAtBats?.length || 0}</span></button>
         <button type="button" class="wc-tab${challengeViewTab === 'build' ? ' wc-tab--active' : ''}" data-wc-tab="build">Build bundle</button>
       </nav>
-      <div id="wc-panel-overview" class="wc-panel${overviewHidden}">${detail ? renderOverviewWorkspace(data, detail) : '<p class="wc-empty">Select a week or bundle from the left.</p>'}</div>
+      <div id="wc-panel-overview" class="wc-panel${overviewHidden}">${detail ? renderOverviewWorkspace(data, detail) : '<p class="wc-empty">Select a week or bundle from the left to view details.</p>'}</div>
       <div id="wc-panel-playlist" class="wc-panel${playlistHidden}">
         ${
           detail
             ? `<p class="wc-meta">Tap an at-bat to inspect the full pitch list and how players performed on that slot.</p>${renderPlaylistAbCards(detail, weekAnalytics)}`
-            : '<p class="wc-empty">Select a bundle to view its 20-AB playlist.</p>'
+            : '<p class="wc-empty">Select a week or bundle from the left to view playlist.</p>'
         }
       </div>
       <div id="wc-panel-build" class="wc-panel${buildHidden}">
@@ -920,6 +942,7 @@ function renderWorkspaceMain(data) {
         <div class="admin-build-actions">
           <button type="button" id="admin-preview-generate" class="ump-btn ump-btn--ghost">Quick preview (2 games)</button>
           <button type="button" id="admin-generate-bundle" class="ump-btn ump-btn--primary">Build full bundle</button>
+          <button type="button" id="admin-save-config" class="ump-btn ump-btn--ghost">Save as defaults</button>
         </div>
         <div id="admin-preview-result" class="admin-preview-box hidden"></div>
       </div>
@@ -1115,12 +1138,32 @@ async function onChallengesRootClick(e) {
     onPreviewGenerate();
     return;
   }
+  if (target.closest('#admin-save-config')) {
+    onSaveConfig();
+    return;
+  }
   if (target.closest('#admin-drilldown-assign')) {
     onDrilldownAssign();
     return;
   }
   if (target.closest('#admin-drilldown-delete')) {
     onDeleteBundle();
+    return;
+  }
+  if (target.closest('#admin-btn-new-bundle')) {
+    selectedWeekId = null;
+    selectedBundleId = null;
+    reviewBundleDetail = null;
+    reviewBundleMeta = { canDelete: false, usedByWeeks: [] };
+    weekAnalytics = null;
+    challengeViewTab = 'build';
+    refreshChallengesWorkspace();
+    return;
+  }
+  const filterBtn = target.closest('[data-filter-bundles]');
+  if (filterBtn) {
+    bundleFilterMode = filterBtn.getAttribute('data-filter-bundles') || 'all';
+    refreshChallengesWorkspace();
     return;
   }
 
@@ -1141,12 +1184,14 @@ async function onChallengesRootClick(e) {
   if (weekItem) {
     const w = weekItem.getAttribute('data-week');
     const b = weekItem.getAttribute('data-bundle');
+    challengeViewTab = 'overview';
     await selectWeekOrBundle(w, b || null);
     return;
   }
 
   const bundleItem = target.closest('.wc-rail-item--bundle[data-bundle]');
   if (bundleItem) {
+    challengeViewTab = 'overview';
     await selectWeekOrBundle(undefined, bundleItem.getAttribute('data-bundle'));
   }
 }
@@ -1376,6 +1421,33 @@ async function onPreviewGenerate() {
     setChallengeStatus(err.message, 'err');
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+async function onSaveConfig() {
+  const btn = document.getElementById('admin-save-config');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+  }
+  try {
+    setChallengeStatus('Saving generator defaults…', 'warn');
+    const result = await postChallengeAction('saveConfig');
+    if (result.ok) {
+      setChallengeStatus('Curator configuration defaults saved successfully!', 'ok');
+      if (challengePanelData) {
+        challengePanelData.config = result.config;
+      }
+    } else {
+      setChallengeStatus(result.error || 'Failed to save configuration defaults.', 'err');
+    }
+  } catch (err) {
+    setChallengeStatus(err.message, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save as defaults';
+    }
   }
 }
 
