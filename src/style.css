@@ -747,6 +747,7 @@ input[type="range"] {
 #umpcard-overlay:not(.opacity-100),
 #ab-start-overlay:not(.opacity-100),
 #ab-summary-overlay:not(.opacity-100),
+#streak-summary-overlay:not(.opacity-100),
 #pause-screen:not(.opacity-100),
 #decision-prompt:not(.opacity-100),
 #quick-preview-controls:not(.opacity-100) {
@@ -1100,7 +1101,8 @@ input[type="range"] {
     padding-bottom: 0.75rem !important;
   }
   #ab-start-overlay,
-  #ab-summary-overlay {
+  #ab-summary-overlay,
+  #streak-summary-overlay {
     overflow-y: auto !important;
     align-items: center !important;
     justify-content: center !important;
@@ -1124,7 +1126,8 @@ input[type="range"] {
 
 @media (max-height: 580px) {
   #ab-start-overlay,
-  #ab-summary-overlay {
+  #ab-summary-overlay,
+  #streak-summary-overlay {
     justify-content: flex-start !important;
     padding-top: max(1rem, env(safe-area-inset-top)) !important;
   }
@@ -1461,8 +1464,9 @@ a, button {
   color: var(--retro-gold);
 }
 
-/* Post at-bat summary overlay */
-#ab-summary-overlay {
+/* Post at-bat / post-streak summary overlays */
+#ab-summary-overlay,
+#streak-summary-overlay {
   position: fixed !important;
   inset: 0 !important;
   width: 100vw !important;
@@ -3798,8 +3802,9 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
     padding: 0.45rem 0.5rem 0.5rem !important;
   }
 
-  /* Post-AB summary: full-width sheet, no HUD bleed-through */
-  #ab-summary-overlay {
+  /* Post-AB / post-streak summary: full-width sheet, no HUD bleed-through */
+  #ab-summary-overlay,
+  #streak-summary-overlay {
     z-index: 150 !important;
     padding: 0.35rem 0.4rem max(0.5rem, env(safe-area-inset-bottom)) !important;
     padding-top: max(0.35rem, env(safe-area-inset-top)) !important;
@@ -4067,7 +4072,8 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
 }
 
 @media (min-width: 768px) {
-  #ab-summary-overlay {
+  #ab-summary-overlay,
+  #streak-summary-overlay {
     padding: 1.5rem 1rem 2rem !important;
   }
   .arcade-cabinet {
