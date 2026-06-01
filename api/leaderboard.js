@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from './_lib/supabase.js';
 import { resolvePeriodKey } from './_lib/period.js';
 import { handleLeaderboardPeriods } from './_handlers/leaderboard-periods.js';
 import { handleCrew } from './_handlers/crew.js';
+import { isEligibleForWeeklyLeaderboardSubmit } from './_lib/weekly-leaderboard-eligibility.js';
 
 const BOARDS = new Set(['weekly', 'daily', 'alltime']);
 
@@ -106,6 +107,27 @@ export default async function handler(req, res) {
       if (!Number.isFinite(scoreRaw)) {
         sendJson(res, 400, { error: 'Invalid scoreRaw' });
         return;
+      }
+
+      if (board === 'weekly') {
+        const { data: statsRow, error: statsErr } = await supabase
+          .from('user_stats')
+          .select('stats_json')
+          .eq('handle', handle)
+          .maybeSingle();
+
+        if (statsErr) {
+          sendJson(res, 500, { error: statsErr.message });
+          return;
+        }
+
+        if (!isEligibleForWeeklyLeaderboardSubmit(statsRow, periodKey)) {
+          sendJson(res, 403, {
+            error:
+              'Complete the full weekly challenge (all at-bats) before appearing on the leaderboard.',
+          });
+          return;
+        }
       }
 
       const { error } = await supabase.from('leaderboard_entries').upsert(

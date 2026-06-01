@@ -25,6 +25,29 @@ const MLB_GAME_FEED_URL = 'https://statsapi.mlb.com/api/v1.1/game';
 const CALL_MAP = { C: 'S', S: 'S', F: 'S', X: 'S', B: 'B', W: 'B', H: 'B' };
 const SWING_CODES = new Set(['S', 'F', 'X']);
 
+function mapAbOutcomeShort(eventType) {
+  if (!eventType) return null;
+  const e = String(eventType).toLowerCase();
+  if (e.includes('home_run') || e === 'home_run') return 'HR';
+  if (e === 'single') return '1B';
+  if (e === 'double') return '2B';
+  if (e === 'triple') return '3B';
+  if (e.includes('walk')) return 'BB';
+  if (e.includes('strikeout')) return 'K';
+  return null;
+}
+
+function advanceSourceCount(balls, strikes, callCode, isSwing, swingOutcome) {
+  if (isSwing) {
+    if (swingOutcome === 'WHIFF') return { balls, strikes: strikes + 1 };
+    if (swingOutcome === 'FOUL' && strikes < 2) return { balls, strikes: strikes + 1 };
+    return { balls, strikes };
+  }
+  if (CALL_MAP[callCode] === 'S') return { balls, strikes: strikes + 1 };
+  if (CALL_MAP[callCode] === 'B') return { balls: balls + 1, strikes };
+  return { balls, strikes };
+}
+
 function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -192,7 +215,8 @@ async function fetchAndParseGame(gameMeta, gameIndex) {
   const pitches = [];
   let pitchId = gameIndex * 10000 + 1;
 
-  for (const play of allPlays) {
+  for (let playIndex = 0; playIndex < allPlays.length; playIndex++) {
+    const play = allPlays[playIndex];
     const matchup = play.matchup || {};
     const pitcher = matchup.pitcher?.fullName || 'Unknown Pitcher';
     const batter = matchup.batter?.fullName || 'Unknown Batter';
@@ -205,6 +229,8 @@ async function fetchAndParseGame(gameMeta, gameIndex) {
     const events = play.playEvents || [];
     const pitchEvents = events.filter((e) => e.isPitch === true);
     const lastPitchIndex = pitchEvents.length - 1;
+    let countBalls = 0;
+    let countStrikes = 0;
 
     for (let j = 0; j < pitchEvents.length; j++) {
       const pe = pitchEvents[j];
@@ -247,14 +273,35 @@ async function fetchAndParseGame(gameMeta, gameIndex) {
         resultEventType || resultEvent
       );
 
+      const afterCount = advanceSourceCount(
+        countBalls,
+        countStrikes,
+        callCode,
+        isSwing,
+        pitchSwingOutcome
+      );
+      countBalls = afterCount.balls;
+      countStrikes = afterCount.strikes;
+
       pitches.push({
         id: pitchId++,
+        at_bat_index: playIndex,
+        game_play_index: playIndex,
         inning: aboutInning,
         is_top: isTop,
         pitcher,
         pitcher_hand: pitcherHand,
         batter,
         batter_hand: batterHand,
+        count_balls: countBalls,
+        count_strikes: countStrikes,
+        ...(isLastPitchOfAB
+          ? {
+              ab_event: resultEvent,
+              ab_event_type: resultEventType,
+              ab_outcome_short: mapAbOutcomeShort(resultEventType || resultEvent),
+            }
+          : {}),
         pitch_type: details.type?.description || 'Unknown',
         speed_mph: pitchData.startSpeed != null ? Math.round(pitchData.startSpeed) : null,
         release_pos_x: coords.x0 ?? null,

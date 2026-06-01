@@ -23,6 +23,10 @@ import {
   deployBundleToLiveApp,
   LIVE_BUNDLE_PATH,
 } from '../../../scripts/lib/weekly-schedule.mjs';
+import {
+  aggregateWeeklyAbAnalytics,
+  getBundleAbDetail,
+} from '../../../scripts/lib/weekly-admin-analytics.mjs';
 import { getStorageMode } from '../../../scripts/lib/weekly-storage.mjs';
 
 function readGenerationConfig() {
@@ -133,6 +137,29 @@ async function handlePost(body) {
       canDelete: usedByWeeks.length === 0,
       detail: summarizeBundleForAdmin(bundle),
     };
+  }
+
+  if (action === 'getAbDetail') {
+    const bundle = await loadBundleJson(body.bundleId);
+    if (!bundle) return { ok: false, error: 'Bundle not found' };
+    const detail = getBundleAbDetail(bundle, body.playOrder);
+    if (!detail) return { ok: false, error: 'At-bat not found in playlist' };
+    let analytics = null;
+    if (body.weekId) {
+      try {
+        const agg = await aggregateWeeklyAbAnalytics(body.weekId, body.bundleId);
+        analytics = agg.perAb.find((s) => s.playOrder === detail.playOrder) || null;
+      } catch {
+        analytics = null;
+      }
+    }
+    return { ok: true, action, detail, analytics };
+  }
+
+  if (action === 'getWeekAnalytics') {
+    const weekId = body.weekId || getIsoWeekKey();
+    const analytics = await aggregateWeeklyAbAnalytics(weekId, body.bundleId || null);
+    return { ok: true, action, analytics };
   }
 
   if (action === 'deleteBundle') {

@@ -31,6 +31,7 @@ export const DEFAULT_WEEKLY_GENERATION_CONFIG = {
   },
   filters: {
     requireCalledPitch: true,
+    requireCompleteAb: true,
     excludeSwingOnlyAbs: false,
     minCalledPitchesPerAb: 1,
   },
@@ -98,6 +99,7 @@ export function normalizeWeeklyGenerationConfig(raw) {
     const f = /** @type {Record<string, unknown>} */ (src.filters);
     if (typeof f.requireCalledPitch === 'boolean') base.filters.requireCalledPitch = f.requireCalledPitch;
     if (typeof f.excludeSwingOnlyAbs === 'boolean') base.filters.excludeSwingOnlyAbs = f.excludeSwingOnlyAbs;
+    if (typeof f.requireCompleteAb === 'boolean') base.filters.requireCompleteAb = f.requireCompleteAb;
     if (Number.isFinite(Number(f.minCalledPitchesPerAb))) {
       base.filters.minCalledPitchesPerAb = Math.max(0, Number(f.minCalledPitchesPerAb));
     }

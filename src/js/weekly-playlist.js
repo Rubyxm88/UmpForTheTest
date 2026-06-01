@@ -4,6 +4,7 @@
 
 import { getCrossingTime, getBallPositionAtTime } from './physics.js';
 import { resolvePlaylistOptions } from './weekly-generation-config.js';
+import { isSourceAbTerminated, summarizeSourceAb } from './weekly-ab-utils.js';
 
 export function mulberry32(seed) {
   let a = seed >>> 0;
@@ -29,6 +30,7 @@ function abPassesFilters(ab, filters, playlistOpts) {
   const calledCount = pitches.filter(isCalledPitch).length;
   if (filters.requireCalledPitch && calledCount < (filters.minCalledPitchesPerAb || 1)) return false;
   if (filters.excludeSwingOnlyAbs && calledCount === 0) return false;
+  if (filters.requireCompleteAb !== false && !isSourceAbTerminated(pitches)) return false;
   return true;
 }
 
@@ -45,14 +47,25 @@ function abHasBorderlinePitch(ab, edgeFt) {
   });
 }
 
+function weeklyAbGroupKey(pitch) {
+  if (pitch.at_bat_index != null && pitch.at_bat_index !== '') {
+    return `ab:${pitch.at_bat_index}`;
+  }
+  if (pitch.game_play_index != null && pitch.game_play_index !== '') {
+    return `play:${pitch.game_play_index}`;
+  }
+  return `legacy:${pitch.batter}:${pitch.pitcher}:${pitch.inning}:${pitch.is_top}`;
+}
+
 function groupGamesIntoAbs(games) {
   const allAbs = [];
   games.forEach((game, gameIdx) => {
     let currentPitches = [];
-    let currentBatter = '';
+    let currentGroupKey = '';
 
     const flushAb = () => {
       if (!currentPitches.length) return;
+      const summary = summarizeSourceAb(currentPitches);
       allAbs.push({
         gameIndex: gameIdx,
         gameTitle: game.title,
@@ -62,13 +75,18 @@ function groupGamesIntoAbs(games) {
         batter: currentPitches[0].batter,
         pitcher: currentPitches[0].pitcher,
         maxInning: Math.max(...currentPitches.map((p) => p.inning || 1)),
+        atBatIndex: currentPitches[0].at_bat_index ?? null,
+        endingCount: summary.countLine,
+        abResult: summary.outcome,
+        isComplete: summary.complete,
       });
       currentPitches = [];
     };
 
     (game.pitches || []).forEach((pitch) => {
-      if (pitch.batter !== currentBatter && currentPitches.length > 0) flushAb();
-      currentBatter = pitch.batter;
+      const groupKey = weeklyAbGroupKey(pitch);
+      if (currentGroupKey && groupKey !== currentGroupKey && currentPitches.length > 0) flushAb();
+      currentGroupKey = groupKey;
       currentPitches.push(pitch);
     });
     flushAb();
@@ -195,6 +213,10 @@ export function explainWeeklyPlaylist(games, meta, config) {
   const selectedAtBats = playlist.map((ab, i) => {
     const isBl = abHasBorderlinePitch(ab, edgeFt);
     const inning = ab.maxInning ? ` · inn ${ab.maxInning}` : '';
+    const abSummary = summarizeSourceAb(ab.pitches || []);
+    const endNote = abSummary.complete
+      ? ` Ends ${abSummary.countLine} → ${abSummary.outcome || 'result'}.`
+      : ` Ends ${abSummary.countLine} (incomplete — excluded from future builds).`;
     if (isBl) {
       return {
         playOrder: i + 1,
@@ -204,8 +226,11 @@ export function explainWeeklyPlaylist(games, meta, config) {
         pitcher: ab.pitcher,
         pitchCount: ab.pitches?.length ?? 0,
         maxInning: ab.maxInning ?? null,
+        endingCount: abSummary.countLine,
+        abResult: abSummary.outcome,
+        isComplete: abSummary.complete,
         reasonCode: 'borderline',
-        reasonDetail: `Borderline called pitch within ${edgeFt} ft of the zone edge. Mix target ${borderlineTarget} borderline / ${normalTarget} standard (seed ${seed}).${capNote}${lateNote}${inning}`,
+        reasonDetail: `Borderline called pitch within ${edgeFt} ft of the zone edge. Mix target ${borderlineTarget} borderline / ${normalTarget} standard (seed ${seed}).${capNote}${lateNote}${inning}${endNote}`,
       };
     }
     return {
@@ -216,8 +241,11 @@ export function explainWeeklyPlaylist(games, meta, config) {
       pitcher: ab.pitcher,
       pitchCount: ab.pitches?.length ?? 0,
       maxInning: ab.maxInning ?? null,
+      endingCount: abSummary.countLine,
+      abResult: abSummary.outcome,
+      isComplete: abSummary.complete,
       reasonCode: 'standard',
-      reasonDetail: `Standard AB: passed pitch filters, no borderline pitch in this at-bat (seed ${seed}).${capNote}${lateNote}${inning}`,
+      reasonDetail: `Standard AB: passed pitch filters, no borderline pitch in this at-bat (seed ${seed}).${capNote}${lateNote}${inning}${endNote}`,
     };
   });
 
@@ -250,8 +278,10 @@ export function summarizePlaylistBuild(games, meta, config) {
     else normal += 1;
   });
   const playlist = buildWeeklyPlaylist(games, meta, config);
+  const completeCandidates = candidates.filter((ab) => ab.isComplete !== false).length;
   return {
     candidateAbs: candidates.length,
+    completeCandidateAbs: completeCandidates,
     borderlinePool: borderline,
     normalPool: normal,
     selectedAbs: playlist.length,

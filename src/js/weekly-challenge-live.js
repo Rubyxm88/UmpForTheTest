@@ -27,6 +27,9 @@ export async function hydrateWeeklyChallengeFromApi(dataArray, metaObject) {
       delete metaObject[key];
     }
     Object.assign(metaObject, body.meta);
+    if (body.weekId) {
+      metaObject.challengeWeekId = body.weekId;
+    }
 
     activeWeeklyBundleId = body.bundleId || null;
     return {

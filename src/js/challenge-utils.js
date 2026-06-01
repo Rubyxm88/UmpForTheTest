@@ -35,6 +35,21 @@ export function extractGamePkFromUrl(url) {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * Leaderboard period for the active weekly challenge.
+ * Uses the calendar ISO week when the bundled reset Monday is before this week's Monday
+ * so scores still land on the current board before a new bundle is deployed.
+ */
+export function getWeeklyLeaderboardPeriodKey(challengeWeekId, resetDate) {
+  const calendarWeekId = getIsoWeekKey();
+  if (!challengeWeekId) return calendarWeekId;
+  if (!resetDate) return challengeWeekId;
+  if (resetDate < getMondayDateString() && challengeWeekId !== calendarWeekId) {
+    return calendarWeekId;
+  }
+  return challengeWeekId;
+}
+
 export function resolveWeeklyChallengeMeta(data, exportedMeta) {
   if (exportedMeta && exportedMeta.challengeWeekId) {
     return {
@@ -77,4 +92,36 @@ export function formatWeekSelectLabel(weekId, currentWeekId) {
   if (!weekId) return 'Select week';
   if (weekId === currentWeekId) return `${weekId} (current)`;
   return weekId;
+}
+
+/** Count playlist slots marked complete (client sets `completed` when an AB is fully umpired). */
+export function countWeeklyCompletedAbs(playlist) {
+  if (!Array.isArray(playlist)) return 0;
+  return playlist.filter((ab) => ab?.completed).length;
+}
+
+export function getWeeklyTargetFromProgress(progress, fallback = 20) {
+  const configured = Number(progress?.weeklyTargetAtBats);
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  const len = progress?.weeklyPlaylistABs?.length;
+  if (len > 0) return len;
+  return fallback;
+}
+
+/** True when saved/in-flight weekly progress qualifies for official leaderboard submission. */
+export function isWeeklyProgressCompleteForLeaderboard(progress, targetAtBats = null) {
+  if (!progress) return false;
+  if (progress.weeklyRunComplete === true) return true;
+  const target = targetAtBats ?? getWeeklyTargetFromProgress(progress);
+  return countWeeklyCompletedAbs(progress.weeklyPlaylistABs) >= target;
+}
+
+export function challengeProgressMatchesLeaderboardPeriod(progress, periodKey) {
+  if (!periodKey || !progress?.weeklyChallengeWeekId) return true;
+  return progress.weeklyChallengeWeekId === periodKey;
+}
+
+export function weeklyProgressQualifiesForLeaderboardSubmit(progress, periodKey) {
+  if (!isWeeklyProgressCompleteForLeaderboard(progress)) return false;
+  return challengeProgressMatchesLeaderboardPeriod(progress, periodKey);
 }
