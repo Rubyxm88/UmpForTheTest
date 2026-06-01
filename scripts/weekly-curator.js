@@ -1,9 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Weekly Curator CLI — reads config, writes bundle library + live file + schedule assignment.
- */
-
 import fs from 'node:fs';
 import {
   CONFIG_PATH,
@@ -15,6 +11,7 @@ import {
   assignBundleToWeek,
   deployBundleToLiveApp,
   persistCuratorResult,
+  loadBundleJson,
 } from './lib/weekly-schedule.mjs';
 import { getIsoWeekKey } from '../api/_lib/period.js';
 
@@ -34,23 +31,23 @@ async function main() {
     console.log(`   Week: ${weekId} · Games: ${config.games.count} · Playlist: ${config.playlist.targetAtBats} ABs`);
 
     const result = await runWeeklyCurator(config, { log: true });
-    const { bundle } = persistCuratorResult(result, {
+    const { bundle } = await persistCuratorResult(result, {
       label: config.label || `Bundle ${weekId}`,
       bundleId: `bundle-${weekId}`,
     });
 
-    const writeInfo = writeWeeklyBundle(result.games, result.meta);
-    assignBundleToWeek(weekId, bundle.id);
+    writeWeeklyBundle(result.games, result.meta);
+    await assignBundleToWeek(weekId, bundle.id);
 
     const current = getIsoWeekKey();
     if (weekId === current) {
-      deployBundleToLiveApp(bundle.id);
-      console.log('\n📡 Deployed to live weekly_challenge.js (current week)');
+      const full = await loadBundleJson(bundle.id);
+      const deploy = deployBundleToLiveApp(full);
+      if (deploy.published) console.log('\n📡 Deployed to live weekly_challenge.js');
     }
 
     console.log(`\n📊 Playlist: ${result.playlistStats.selectedAbs}/${result.playlistStats.targetAtBats} ABs`);
     console.log(`📦 Bundle id: ${bundle.id}`);
-    console.log(`📝 Wrote live file (${(writeInfo.bytes / 1024).toFixed(0)} KB)`);
     console.log('\n✅ Weekly curator completed successfully!\n');
   } catch (err) {
     console.error(`\n❌ Fatal error: ${err.message}`);

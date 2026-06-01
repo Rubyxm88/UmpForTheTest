@@ -445,20 +445,30 @@ function healthBadge(ok, label) {
 let challengePanelData = null;
 let selectedWeekId = null;
 let selectedBundleId = null;
+let activeChallengeStep = 'build';
+let reviewBundleDetail = null;
 
-function setChallengeStatus(message, tone = 'ok') {
-  const el = document.getElementById('admin-challenge-status');
-  if (!el) return;
+function showAdminToast(message, tone = 'ok') {
+  let el = document.getElementById('admin-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'admin-toast';
+    el.setAttribute('role', 'alert');
+    el.setAttribute('aria-live', 'assertive');
+    document.body.appendChild(el);
+  }
   if (!message) {
     el.classList.add('hidden');
-    el.textContent = '';
     return;
   }
   el.textContent = message;
-  el.classList.remove('hidden', 'admin-status-ok', 'admin-status-warn', 'admin-status-err');
-  el.classList.add(
-    tone === 'err' ? 'admin-status-err' : tone === 'warn' ? 'admin-status-warn' : 'admin-status-ok'
-  );
+  el.className = `admin-toast admin-toast--${tone === 'err' ? 'err' : tone === 'warn' ? 'warn' : 'ok'}`;
+  el.classList.remove('hidden');
+  requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
+}
+
+function setChallengeStatus(message, tone = 'ok') {
+  showAdminToast(message, tone);
 }
 
 function periodLabel(period) {
@@ -514,78 +524,92 @@ function readConfigFromForm() {
   };
 }
 
-function renderGenerationForm(config) {
+function renderGenerationForm(config, weekHint) {
   const c = config || {};
   const games = c.games || {};
   const playlist = c.playlist || {};
   const filters = c.filters || {};
   const manualPks = (games.manualGamePks || []).join(', ');
+  const targetWeek = weekHint || selectedWeekId || challengePanelData?.currentIsoWeek || '';
 
   return `
-    <form id="admin-gen-form" class="admin-gen-form">
-      <label class="admin-gen-field admin-gen-field--wide">
-        <span class="ump-label">Draft label</span>
-        <input class="ump-input" name="label" type="text" value="${escapeHtml(c.label || '')}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Schedule for week</span>
-        <input class="ump-input" name="scheduleForWeekId" type="text" placeholder="2026-W22 (empty = current)" value="${escapeHtml(c.scheduleForWeekId || '')}" />
-        <small>Pre-load a future ISO week before Monday reset.</small>
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Target at-bats</span>
-        <input class="ump-input" name="targetAtBats" type="number" min="5" max="200" value="${playlist.targetAtBats ?? 20}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Borderline mix (0–1)</span>
-        <input class="ump-input" name="borderlineRatio" type="number" min="0" max="1" step="0.05" value="${playlist.borderlineRatio ?? 0.5}" />
-        <small>Share of edge-case ABs in the playlist.</small>
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Edge threshold (ft)</span>
-        <input class="ump-input" name="borderlineEdgeThresholdFt" type="number" min="0.05" max="0.5" step="0.01" value="${playlist.borderlineEdgeThresholdFt ?? 0.15}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Games in bundle</span>
-        <input class="ump-input" name="gameCount" type="number" min="1" max="10" value="${games.count ?? 5}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Lookback days</span>
-        <input class="ump-input" name="lookbackDays" type="number" min="1" max="30" value="${games.lookbackDays ?? 7}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Game selection</span>
-        <select class="ump-input" name="selectionMode">
-          <option value="high_scoring_diverse" ${games.selectionMode === 'high_scoring_diverse' ? 'selected' : ''}>High scoring + diversity</option>
-          <option value="latest_final" ${games.selectionMode === 'latest_final' ? 'selected' : ''}>Latest finals</option>
-          <option value="manual_pks" ${games.selectionMode === 'manual_pks' ? 'selected' : ''}>Manual game PKs</option>
-        </select>
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Min total runs</span>
-        <input class="ump-input" name="minTotalRuns" type="number" min="0" max="30" value="${games.minTotalRuns ?? 0}" />
-      </label>
-      <label class="admin-gen-field admin-gen-field--wide">
-        <span class="ump-label">Manual game PKs</span>
-        <input class="ump-input" name="manualGamePks" type="text" placeholder="824839, 824840" value="${escapeHtml(manualPks)}" />
-        <small>Comma-separated MLB game PKs when using manual selection.</small>
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Max ABs per game</span>
-        <input class="ump-input" name="perGameCap" type="number" min="1" max="50" placeholder="optional" value="${playlist.perGameCap ?? ''}" />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Favor late innings</span>
-        <input name="prioritizeLateInning" type="checkbox" ${playlist.prioritizeLateInning ? 'checked' : ''} />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Require called pitch</span>
-        <input name="requireCalledPitch" type="checkbox" ${filters.requireCalledPitch !== false ? 'checked' : ''} />
-      </label>
-      <label class="admin-gen-field">
-        <span class="ump-label">Exclude swing-only ABs</span>
-        <input name="excludeSwingOnlyAbs" type="checkbox" ${filters.excludeSwingOnlyAbs ? 'checked' : ''} />
-      </label>
+    <form id="admin-gen-form" class="admin-gen-form-v2">
+      <fieldset class="admin-fieldset">
+        <legend>Bundle</legend>
+        <label class="admin-gen-field admin-gen-field--wide">
+          <span class="ump-label">Name</span>
+          <input class="ump-input" name="label" type="text" placeholder="e.g. Week 23 — high leverage" value="${escapeHtml(c.label || '')}" />
+        </label>
+        <label class="admin-gen-field">
+          <span class="ump-label">Target ISO week (optional)</span>
+          <input class="ump-input" name="scheduleForWeekId" type="text" placeholder="${escapeHtml(targetWeek)}" value="${escapeHtml(c.scheduleForWeekId || targetWeek)}" />
+        </label>
+      </fieldset>
+      <fieldset class="admin-fieldset">
+        <legend>Playlist (what players see)</legend>
+        <div class="admin-gen-row">
+          <label class="admin-gen-field">
+            <span class="ump-label">At-bats</span>
+            <input class="ump-input" name="targetAtBats" type="number" min="5" max="200" value="${playlist.targetAtBats ?? 20}" />
+          </label>
+          <label class="admin-gen-field">
+            <span class="ump-label">Borderline mix</span>
+            <input class="ump-input" name="borderlineRatio" type="number" min="0" max="1" step="0.05" value="${playlist.borderlineRatio ?? 0.5}" title="0 = routine only, 1 = all borderline" />
+          </label>
+          <label class="admin-gen-field">
+            <span class="ump-label">Edge (ft)</span>
+            <input class="ump-input" name="borderlineEdgeThresholdFt" type="number" min="0.05" max="0.5" step="0.01" value="${playlist.borderlineEdgeThresholdFt ?? 0.15}" />
+          </label>
+          <label class="admin-gen-field">
+            <span class="ump-label">Max AB / game</span>
+            <input class="ump-input" name="perGameCap" type="number" min="1" max="50" placeholder="none" value="${playlist.perGameCap ?? ''}" />
+          </label>
+        </div>
+        <label class="admin-gen-check">
+          <input name="prioritizeLateInning" type="checkbox" ${playlist.prioritizeLateInning ? 'checked' : ''} />
+          <span>Favor 7th inning and later</span>
+        </label>
+      </fieldset>
+      <fieldset class="admin-fieldset">
+        <legend>MLB games (source data)</legend>
+        <div class="admin-gen-row">
+          <label class="admin-gen-field">
+            <span class="ump-label"># of games</span>
+            <input class="ump-input" name="gameCount" type="number" min="1" max="10" value="${games.count ?? 5}" />
+          </label>
+          <label class="admin-gen-field">
+            <span class="ump-label">Lookback days</span>
+            <input class="ump-input" name="lookbackDays" type="number" min="1" max="30" value="${games.lookbackDays ?? 7}" />
+          </label>
+          <label class="admin-gen-field">
+            <span class="ump-label">Min runs</span>
+            <input class="ump-input" name="minTotalRuns" type="number" min="0" max="30" value="${games.minTotalRuns ?? 0}" />
+          </label>
+        </div>
+        <label class="admin-gen-field admin-gen-field--wide">
+          <span class="ump-label">Selection</span>
+          <select class="ump-input" name="selectionMode">
+            <option value="high_scoring_diverse" ${games.selectionMode === 'high_scoring_diverse' ? 'selected' : ''}>High scoring + team diversity</option>
+            <option value="latest_final" ${games.selectionMode === 'latest_final' ? 'selected' : ''}>Most recent finals</option>
+            <option value="manual_pks" ${games.selectionMode === 'manual_pks' ? 'selected' : ''}>Manual game PKs</option>
+          </select>
+        </label>
+        <label class="admin-gen-field admin-gen-field--wide">
+          <span class="ump-label">Manual game PKs</span>
+          <input class="ump-input" name="manualGamePks" type="text" placeholder="824839, 824840" value="${escapeHtml(manualPks)}" />
+        </label>
+      </fieldset>
+      <fieldset class="admin-fieldset">
+        <legend>Filters</legend>
+        <label class="admin-gen-check">
+          <input name="requireCalledPitch" type="checkbox" ${filters.requireCalledPitch !== false ? 'checked' : ''} />
+          <span>Each AB must include a called ball/strike</span>
+        </label>
+        <label class="admin-gen-check">
+          <input name="excludeSwingOnlyAbs" type="checkbox" ${filters.excludeSwingOnlyAbs ? 'checked' : ''} />
+          <span>Exclude swing-only at-bats</span>
+        </label>
+      </fieldset>
     </form>
   `;
 }
@@ -598,70 +622,112 @@ async function postChallengeAction(action, extra = {}) {
   });
 }
 
-function renderWeekDetail(data, weekId) {
-  const slot = data.timeline.find((t) => t.weekId === weekId);
-  if (!slot) return '<p class="admin-meta-line">Select a week from the schedule.</p>';
+function renderReviewPanel(data) {
+  const bundleMeta = (data.catalog || []).find((b) => b.id === selectedBundleId);
+  const used = bundleMeta?.usedByWeeks || [];
+  const canDelete = bundleMeta && used.length === 0;
+  const d = reviewBundleDetail;
 
-  const bundle = slot.bundle;
-  const isCurrent = slot.period === 'current';
-  const assignSelect = (data.catalog || [])
+  const assignOptions = (data.catalog || [])
     .map(
       (b) =>
-        `<option value="${escapeHtml(b.id)}" ${b.id === selectedBundleId ? 'selected' : ''}>${escapeHtml(b.label || b.id)} (${b.targetAtBats ?? '?'} AB)</option>`
+        `<option value="${escapeHtml(b.id)}" ${b.id === selectedBundleId ? 'selected' : ''}>${escapeHtml(b.label || b.id)}</option>`
     )
     .join('');
 
+  const weekOptions = (data.timeline || [])
+    .map((t) => `<option value="${escapeHtml(t.weekId)}" ${t.weekId === selectedWeekId ? 'selected' : ''}>${escapeHtml(t.weekId)} (${periodLabel(t.period)})</option>`)
+    .join('');
+
+  let playlistHtml = '<p class="admin-meta-line">Select a bundle from the library or build a new one to review its playlist.</p>';
+  if (d) {
+    const ps = d.playlistStats || {};
+    const abRows = (d.atBatsPreview || [])
+      .map(
+        (ab, i) =>
+          `<tr><td>${i + 1}</td><td>${escapeHtml(ab.gameTitle)}</td><td>${escapeHtml(ab.batter)}</td><td>${escapeHtml(ab.pitcher)}</td><td>${ab.pitchCount}</td></tr>`
+      )
+      .join('');
+    playlistHtml = `
+      <div class="admin-review-kpis">
+        <span><strong>${ps.selectedAbs ?? '?'}</strong> / ${ps.targetAtBats ?? '?'} playlist ABs</span>
+        <span>${(d.games || []).length} games</span>
+        <span>${d.atBatTotal ?? 0} ABs in pool</span>
+      </div>
+      <p class="admin-meta-line">${(d.games || []).map((g) => escapeHtml(g.title)).join(' · ')}</p>
+      <div class="admin-table-wrap admin-table-wrap--nested">
+        <table class="admin-table admin-table--compact">
+          <thead><tr><th>#</th><th>Game</th><th>Batter</th><th>Pitcher</th><th>Px</th></tr></thead>
+          <tbody>${abRows}</tbody>
+        </table>
+      </div>
+      ${d.atBatTotal > 50 ? `<p class="admin-meta-line">First 50 of ${d.atBatTotal} ABs in source pool.</p>` : ''}`;
+  }
+
+  const usedBadges =
+    used.length > 0
+      ? used.map((w) => `<span class="admin-used-badge">${escapeHtml(w)}</span>`).join('')
+      : '<span class="admin-table__muted">Not assigned to any week</span>';
+
   return `
-    <h3 class="admin-section__title">${escapeHtml(weekId)} <span class="admin-week-badge ${periodBadgeClass(slot.period)}">${periodLabel(slot.period)}</span></h3>
-    <p class="admin-meta-line">Leaderboard entries: <strong>${slot.leaderboardEntries ?? '—'}</strong></p>
-    ${
-      bundle
-        ? `<p class="admin-meta-line">Assigned: <strong>${escapeHtml(bundle.label || bundle.id)}</strong><br><code>${escapeHtml(bundle.id)}</code> · ${bundle.gameCount ?? 0} games · ${bundle.targetAtBats ?? '?'} AB playlist</p>`
-        : '<p class="admin-meta-line admin-status-warn">No challenge assigned for this week.</p>'
-    }
-    <div class="admin-week-actions">
-      <label class="admin-field admin-field--inline">
-        <span class="ump-label">Bundle to assign</span>
-        <select id="admin-assign-bundle-select" class="ump-input">${assignSelect || '<option value="">— No bundles —</option>'}</select>
-      </label>
-      <button type="button" class="ump-btn ump-btn--primary ump-btn--sm" data-action="assign-week" data-week="${escapeHtml(weekId)}">Assign to this week</button>
-      ${
-        isCurrent
-          ? `<button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="deploy-live" data-week="${escapeHtml(weekId)}">Deploy live app</button>
-             <button type="button" class="ump-btn admin-btn--danger ump-btn--sm" data-action="reset-lb" data-week="${escapeHtml(weekId)}">Reset leaderboard</button>`
-          : slot.period === 'past'
-            ? ''
-            : `<button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="unassign-week" data-week="${escapeHtml(weekId)}">Clear assignment</button>`
-      }
-      ${bundle ? `<button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="view-bundle" data-bundle="${escapeHtml(bundle.id)}">View playlist</button>` : ''}
+    <div class="admin-review-header">
+      <div>
+        <h3 class="admin-section__title">${bundleMeta ? escapeHtml(bundleMeta.label || bundleMeta.id) : 'No bundle selected'}</h3>
+        ${bundleMeta ? `<code class="admin-review-id">${escapeHtml(bundleMeta.id)}</code>` : ''}
+      </div>
+      <div class="admin-review-badges">
+        <span class="ump-label">Assigned weeks</span>
+        <div class="admin-used-badges">${usedBadges}</div>
+      </div>
     </div>
-    ${
-      isCurrent
-        ? `<p class="admin-meta-line"><small>Assigning a different bundle to <strong>this week</strong> resets the weekly leaderboard and updates the live player file.</small></p>`
-        : ''
-    }
-    <div id="admin-bundle-detail" class="admin-preview-box hidden"></div>
+    <div class="admin-review-actions">
+      <label class="admin-gen-field">
+        <span class="ump-label">Bundle</span>
+        <select id="admin-review-bundle-select" class="ump-input">${assignOptions || '<option value="">—</option>'}</select>
+      </label>
+      <label class="admin-gen-field">
+        <span class="ump-label">Assign to week</span>
+        <select id="admin-review-week-select" class="ump-input">${weekOptions}</select>
+      </label>
+      <button type="button" id="admin-review-assign" class="ump-btn ump-btn--primary ump-btn--sm" ${!selectedBundleId ? 'disabled' : ''}>Assign</button>
+      ${
+        canDelete
+          ? '<button type="button" id="admin-review-delete" class="ump-btn admin-btn--danger ump-btn--sm">Delete unused bundle</button>'
+          : used.length
+            ? '<span class="admin-meta-line">Unassign from all weeks before deleting.</span>'
+            : ''
+      }
+    </div>
+    <div id="admin-review-playlist" class="admin-review-playlist">${playlistHtml}</div>
   `;
 }
 
-function renderChallengesPanel(data) {
-  if (!selectedWeekId) {
-    selectedWeekId = data.currentIsoWeek;
-  }
+function renderLibraryRows(catalog) {
+  return (catalog || [])
+    .map((b) => {
+      const sel = b.id === selectedBundleId ? ' admin-bundle-row--selected' : '';
+      const used =
+        b.usedByWeeks?.length > 0
+          ? b.usedByWeeks.map((w) => escapeHtml(w)).join(', ')
+          : '—';
+      return `
+        <tr class="admin-bundle-row${sel}" data-bundle="${escapeHtml(b.id)}" tabindex="0" role="button">
+          <td>${escapeHtml(b.label || b.id)}</td>
+          <td>${b.targetAtBats ?? '—'} AB</td>
+          <td>${b.gameCount ?? 0}</td>
+          <td class="admin-table__muted">${used}</td>
+        </tr>`;
+    })
+    .join('');
+}
 
-  const live = data.live || {};
-  const liveStatus = live.meta
-    ? live.weekAligned
-      ? '<span class="health-ok">Live file matches calendar week</span>'
-      : '<span class="health-warn">Live file week ≠ calendar week</span>'
-    : '<span class="health-warn">No live weekly_challenge.js</span>';
-
-  const timelineRows = (data.timeline || [])
+function renderScheduleTable(data) {
+  return (data.timeline || [])
     .map((slot) => {
       const sel = slot.weekId === selectedWeekId ? ' admin-week-row--selected' : '';
       const bundleLabel = slot.bundle
         ? escapeHtml(slot.bundle.label || slot.bundle.id)
-        : '<span class="admin-table__muted">Unassigned</span>';
+        : '<span class="admin-table__muted">—</span>';
       return `
         <tr class="admin-week-row${sel}" data-week="${escapeHtml(slot.weekId)}" tabindex="0" role="button">
           <td><span class="admin-week-badge ${periodBadgeClass(slot.period)}">${periodLabel(slot.period)}</span></td>
@@ -671,185 +737,224 @@ function renderChallengesPanel(data) {
         </tr>`;
     })
     .join('');
+}
 
-  const catalogRows = (data.catalog || [])
-    .map((b) => {
-      const sel = b.id === selectedBundleId ? ' admin-bundle-row--selected' : '';
-      return `
-        <tr class="admin-bundle-row${sel}" data-bundle="${escapeHtml(b.id)}" tabindex="0" role="button">
-          <td>${escapeHtml(b.label || b.id)}</td>
-          <td><code>${escapeHtml(b.id)}</code></td>
-          <td>${b.gameCount ?? 0}</td>
-          <td>${b.targetAtBats ?? '—'}</td>
-          <td>${b.pitchCount ?? '—'}</td>
-        </tr>`;
-    })
-    .join('');
+function renderChallengesPanel(data) {
+  if (!selectedWeekId) selectedWeekId = data.currentIsoWeek;
+
+  const storageBanner = data.canPersistBundles
+    ? `<span class="health-ok">Storage: ${escapeHtml(data.storageMode || 'ok')} — bundles save to database</span>`
+    : `<span class="health-warn">Storage unavailable — set Supabase env vars on this deployment</span>`;
+
+  const live = data.live || {};
+  const liveLine = live.meta
+    ? live.weekAligned
+      ? 'Live player file matches this calendar week'
+      : 'Live player file is for a different week than today'
+    : 'No live weekly_challenge.js in build';
+
+  const step = (id, label, key) =>
+    `<button type="button" class="admin-stepper__btn ${activeChallengeStep === key ? 'admin-stepper__btn--active' : ''}" data-step="${key}">${id}. ${label}</button>`;
 
   return `
-    <p id="admin-challenge-status" class="admin-meta-line hidden" aria-live="polite"></p>
-    <div class="admin-challenges-header ump-panel--subtle">
-      <div>
-        <p class="ump-kicker">Calendar week</p>
-        <p class="admin-challenges-header__week">${escapeHtml(data.currentIsoWeek)}</p>
-      </div>
-      <div class="admin-challenges-header__meta">
-        ${liveStatus}
-        <span class="${data.writable ? 'health-ok' : 'health-warn'}">${data.writable ? 'Can write bundles' : 'Read-only — assign locally'}</span>
-      </div>
-      <button type="button" id="admin-refresh-challenges" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
-    </div>
-
-    <section class="admin-section">
-      <h3 class="admin-section__title">Schedule</h3>
-      <p class="admin-meta-line">5 upcoming weeks · current · 12 past. Click a row to manage that week.</p>
-      <div class="admin-table-wrap">
-        <table class="admin-table admin-table--compact admin-week-table">
-          <thead>
-            <tr><th>When</th><th>ISO week</th><th>Challenge bundle</th><th>LB entries</th></tr>
-          </thead>
-          <tbody>${timelineRows}</tbody>
-        </table>
-      </div>
-    </section>
-
-    <div class="admin-challenges-split">
-      <section class="admin-section admin-section--half" id="admin-week-panel">
-        ${renderWeekDetail(data, selectedWeekId)}
-      </section>
-      <section class="admin-section admin-section--half">
-        <h3 class="admin-section__title">Bundle library</h3>
-        <p class="admin-meta-line">Generate once, assign to any week. Click a row to preview.</p>
-        <div class="admin-toolbar admin-toolbar--wrap">
-          <button type="button" id="admin-generate-bundle" class="ump-btn ump-btn--primary ump-btn--sm">Generate new bundle</button>
-          <button type="button" id="admin-preview-generate" class="ump-btn ump-btn--ghost ump-btn--sm">Quick preview (2 games)</button>
+    <div class="admin-challenge-layout">
+      <header class="admin-challenges-header ump-panel--subtle">
+        <div>
+          <p class="ump-kicker">Today</p>
+          <p class="admin-challenges-header__week">${escapeHtml(data.currentIsoWeek)}</p>
+          <p class="admin-meta-line">${escapeHtml(liveLine)}</p>
         </div>
+        <div class="admin-challenges-header__meta">
+          ${storageBanner}
+          <button type="button" id="admin-refresh-challenges" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
+        </div>
+      </header>
+
+      <nav class="admin-stepper" aria-label="Workflow">
+        ${step(1, 'Customize & build', 'build')}
+        ${step(2, 'Review playlist', 'review')}
+        ${step(3, 'Week schedule', 'schedule')}
+      </nav>
+
+      <section id="admin-step-build" class="admin-step-panel ${activeChallengeStep === 'build' ? '' : 'hidden'}">
+        <h3 class="admin-section__title">Customize, then build</h3>
+        <p class="admin-meta-line">Tune the playlist and MLB sources, then fetch games. Build takes ~30 seconds.</p>
+        ${renderGenerationForm(data.config, selectedWeekId)}
+        <div class="admin-build-actions">
+          <button type="button" id="admin-preview-generate" class="ump-btn ump-btn--ghost">Quick preview (2 games)</button>
+          <button type="button" id="admin-generate-bundle" class="ump-btn ump-btn--primary">Build full bundle</button>
+        </div>
+        <div id="admin-preview-result" class="admin-preview-box hidden"></div>
+        <h4 class="admin-subtitle">Saved bundles</h4>
         <div class="admin-table-wrap admin-table-wrap--nested">
           <table class="admin-table admin-table--compact">
-            <thead><tr><th>Label</th><th>ID</th><th>Games</th><th>ABs</th><th>Pitches</th></tr></thead>
-            <tbody>${catalogRows || '<tr><td colspan="5">No bundles yet — generate one below.</td></tr>'}</tbody>
+            <thead><tr><th>Name</th><th>Playlist</th><th>Games</th><th>Used by weeks</th></tr></thead>
+            <tbody>${renderLibraryRows(data.catalog) || '<tr><td colspan="4">No bundles yet.</td></tr>'}</tbody>
           </table>
         </div>
       </section>
-    </div>
 
-    <details class="admin-generator-details">
-      <summary class="admin-section__title">Generator settings</summary>
-      ${renderGenerationForm(data.config)}
-      <div class="admin-toolbar admin-toolbar--wrap">
-        <button type="button" id="admin-save-challenge-config" class="ump-btn ump-btn--ghost ump-btn--sm">Save defaults</button>
-      </div>
-      <div id="admin-challenge-preview" class="admin-preview-box hidden"></div>
-    </details>
+      <section id="admin-step-review" class="admin-step-panel ${activeChallengeStep === 'review' ? '' : 'hidden'}">
+        ${renderReviewPanel(data)}
+      </section>
+
+      <section id="admin-step-schedule" class="admin-step-panel ${activeChallengeStep === 'schedule' ? '' : 'hidden'}">
+        <h3 class="admin-section__title">Assign challenges to weeks</h3>
+        <p class="admin-meta-line">5 weeks ahead · current · 12 past. Reassigning <strong>this week</strong> resets the weekly leaderboard.</p>
+        <div class="admin-table-wrap">
+          <table class="admin-table admin-table--compact">
+            <thead><tr><th>When</th><th>Week</th><th>Bundle</th><th>Leaderboard</th></tr></thead>
+            <tbody>${renderScheduleTable(data)}</tbody>
+          </table>
+        </div>
+        <div id="admin-schedule-week-actions" class="admin-week-actions hidden"></div>
+      </section>
+    </div>
   `;
+}
+
+function switchChallengeStep(step) {
+  activeChallengeStep = step;
+  document.querySelectorAll('.admin-step-panel').forEach((el) => el.classList.add('hidden'));
+  document.getElementById(`admin-step-${step}`)?.classList.remove('hidden');
+  document.querySelectorAll('.admin-stepper__btn').forEach((btn) => {
+    btn.classList.toggle('admin-stepper__btn--active', btn.getAttribute('data-step') === step);
+  });
 }
 
 function bindChallengesPanelEvents() {
   document.getElementById('admin-refresh-challenges')?.addEventListener('click', () => {
-    setChallengeStatus('');
+    showAdminToast('');
     loadChallenges();
   });
 
-  challengesRoot?.querySelectorAll('.admin-week-row').forEach((row) => {
-    row.addEventListener('click', () => {
-      selectedWeekId = row.getAttribute('data-week');
-      if (challengePanelData) {
-        document.getElementById('admin-week-panel').innerHTML = renderWeekDetail(
-          challengePanelData,
-          selectedWeekId
-        );
-        bindWeekPanelEvents();
-        challengesRoot.querySelectorAll('.admin-week-row').forEach((r) => {
-          r.classList.toggle('admin-week-row--selected', r.getAttribute('data-week') === selectedWeekId);
-        });
-      }
-    });
+  challengesRoot?.querySelectorAll('.admin-stepper__btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchChallengeStep(btn.getAttribute('data-step')));
   });
 
   challengesRoot?.querySelectorAll('.admin-bundle-row').forEach((row) => {
     row.addEventListener('click', async () => {
       selectedBundleId = row.getAttribute('data-bundle');
-      challengesRoot.querySelectorAll('.admin-bundle-row').forEach((r) => {
-        r.classList.toggle('admin-bundle-row--selected', r.getAttribute('data-bundle') === selectedBundleId);
+      await loadBundleReview(selectedBundleId);
+      switchChallengeStep('review');
+      refreshReviewPanelOnly();
+    });
+  });
+
+  challengesRoot?.querySelectorAll('.admin-week-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      selectedWeekId = row.getAttribute('data-week');
+      switchChallengeStep('schedule');
+      updateScheduleWeekActions();
+      challengesRoot.querySelectorAll('.admin-week-row').forEach((r) => {
+        r.classList.toggle('admin-week-row--selected', r.getAttribute('data-week') === selectedWeekId);
       });
-      const sel = document.getElementById('admin-assign-bundle-select');
-      if (sel) sel.value = selectedBundleId;
-      await viewBundle(selectedBundleId);
     });
   });
 
   document.getElementById('admin-generate-bundle')?.addEventListener('click', onGenerateBundle);
   document.getElementById('admin-preview-generate')?.addEventListener('click', onPreviewGenerate);
-  document.getElementById('admin-save-challenge-config')?.addEventListener('click', onSaveConfig);
-  bindWeekPanelEvents();
-}
-
-function bindWeekPanelEvents() {
-  document.querySelectorAll('[data-action="assign-week"]').forEach((btn) => {
-    btn.addEventListener('click', () => onAssignWeek(btn.getAttribute('data-week')));
-  });
-  document.querySelectorAll('[data-action="deploy-live"]').forEach((btn) => {
-    btn.addEventListener('click', () => onDeployLive(btn.getAttribute('data-week')));
-  });
-  document.querySelectorAll('[data-action="reset-lb"]').forEach((btn) => {
-    btn.addEventListener('click', () => onResetLeaderboard(btn.getAttribute('data-week')));
-  });
-  document.querySelectorAll('[data-action="unassign-week"]').forEach((btn) => {
-    btn.addEventListener('click', () => onUnassignWeek(btn.getAttribute('data-week')));
-  });
-  document.querySelectorAll('[data-action="view-bundle"]').forEach((btn) => {
-    btn.addEventListener('click', () => viewBundle(btn.getAttribute('data-bundle')));
+  document.getElementById('admin-review-assign')?.addEventListener('click', onReviewAssign);
+  document.getElementById('admin-review-delete')?.addEventListener('click', onDeleteBundle);
+  document.getElementById('admin-review-bundle-select')?.addEventListener('change', (e) => {
+    selectedBundleId = e.target.value;
+    loadBundleReview(selectedBundleId).then(refreshReviewPanelOnly);
   });
 }
 
-async function viewBundle(bundleId) {
-  if (!bundleId) return;
-  const box = document.getElementById('admin-bundle-detail');
-  if (!box) return;
-  box.classList.remove('hidden');
-  box.textContent = 'Loading playlist…';
-  try {
-    const result = await api('/api/admin/challenges', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'getBundle', bundleId }),
+function updateScheduleWeekActions() {
+  const wrap = document.getElementById('admin-schedule-week-actions');
+  if (!wrap || !challengePanelData) return;
+  const slot = challengePanelData.timeline.find((t) => t.weekId === selectedWeekId);
+  if (!slot) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  const isCurrent = slot.period === 'current';
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `
+    <p class="ump-label">Selected: ${escapeHtml(selectedWeekId)}</p>
+    <button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="pick-for-review">Review assigned bundle</button>
+    ${
+      isCurrent
+        ? `<button type="button" class="ump-btn admin-btn--danger ump-btn--sm" data-action="reset-lb" data-week="${escapeHtml(selectedWeekId)}">Reset leaderboard</button>
+           <button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="deploy-live" data-week="${escapeHtml(selectedWeekId)}">Deploy live file</button>`
+        : slot.period !== 'past'
+          ? `<button type="button" class="ump-btn ump-btn--ghost ump-btn--sm" data-action="unassign-week" data-week="${escapeHtml(selectedWeekId)}">Clear assignment</button>`
+          : ''
+    }
+  `;
+  wrap.querySelector('[data-action="pick-for-review"]')?.addEventListener('click', () => {
+    if (slot.bundle?.id) {
+      selectedBundleId = slot.bundle.id;
+      loadBundleReview(selectedBundleId).then(() => {
+        switchChallengeStep('review');
+        refreshReviewPanelOnly();
+      });
+    } else {
+      setChallengeStatus('No bundle assigned to this week', 'warn');
+    }
+  });
+  wrap.querySelector('[data-action="reset-lb"]')?.addEventListener('click', () =>
+    onResetLeaderboard(selectedWeekId)
+  );
+  wrap.querySelector('[data-action="deploy-live"]')?.addEventListener('click', () =>
+    onDeployLive(selectedWeekId)
+  );
+  wrap.querySelector('[data-action="unassign-week"]')?.addEventListener('click', () =>
+    onUnassignWeek(selectedWeekId)
+  );
+}
+
+async function loadBundleReview(bundleId) {
+  if (!bundleId) {
+    reviewBundleDetail = null;
+    return;
+  }
+  const result = await api('/api/admin/challenges', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'getBundle', bundleId }),
+  });
+  reviewBundleDetail = result.detail;
+}
+
+function refreshReviewPanelOnly() {
+  const el = document.getElementById('admin-step-review');
+  if (el && challengePanelData) {
+    el.innerHTML = renderReviewPanel(challengePanelData);
+    document.getElementById('admin-review-assign')?.addEventListener('click', onReviewAssign);
+    document.getElementById('admin-review-delete')?.addEventListener('click', onDeleteBundle);
+    document.getElementById('admin-review-bundle-select')?.addEventListener('change', (e) => {
+      selectedBundleId = e.target.value;
+      loadBundleReview(selectedBundleId).then(refreshReviewPanelOnly);
     });
-    const d = result.detail;
-    const ps = d.playlistStats || {};
-    const abRows = (d.atBatsPreview || [])
-      .map(
-        (ab, i) =>
-          `<tr><td>${i + 1}</td><td>${escapeHtml(ab.gameTitle)}</td><td>${escapeHtml(ab.batter)}</td><td>${escapeHtml(ab.pitcher)}</td><td>${ab.pitchCount}</td></tr>`
-      )
-      .join('');
-    box.innerHTML = `
-      <p><strong>${escapeHtml(d.label)}</strong> · Playlist <strong>${ps.selectedAbs}/${ps.targetAtBats}</strong> ABs</p>
-      <p class="admin-meta-line">Games: ${(d.games || []).map((g) => escapeHtml(g.title)).join(' · ')}</p>
-      <div class="admin-table-wrap admin-table-wrap--nested">
-        <table class="admin-table admin-table--compact">
-          <thead><tr><th>#</th><th>Game</th><th>Batter</th><th>Pitcher</th><th>Pitches</th></tr></thead>
-          <tbody>${abRows}</tbody>
-        </table>
-      </div>
-      ${d.atBatTotal > 40 ? `<p class="admin-meta-line">Showing first 40 of ${d.atBatTotal} ABs in pool.</p>` : ''}
-    `;
-  } catch (err) {
-    box.textContent = err.message;
   }
 }
 
-async function onAssignWeek(weekId) {
-  const sel = document.getElementById('admin-assign-bundle-select');
-  const bundleId = sel?.value || selectedBundleId;
+async function onReviewAssign() {
+  const bundleId = document.getElementById('admin-review-bundle-select')?.value || selectedBundleId;
+  const weekId = document.getElementById('admin-review-week-select')?.value || selectedWeekId;
+  if (!bundleId || !weekId) {
+    setChallengeStatus('Choose a bundle and a week', 'err');
+    return;
+  }
+  await onAssignWeek(weekId, bundleId);
+}
+
+async function onAssignWeek(weekId, bundleIdArg) {
+  const bundleId = bundleIdArg || selectedBundleId;
   if (!bundleId) {
     setChallengeStatus('Pick a bundle first', 'err');
     return;
   }
   const isCurrent = weekId === challengePanelData?.currentIsoWeek;
   const msg = isCurrent
-    ? `Assign "${bundleId}" to CURRENT week ${weekId}? This resets the weekly leaderboard and updates the live game file.`
-    : `Assign "${bundleId}" to ${weekId}?`;
+    ? `Assign to CURRENT week ${weekId}? This resets the weekly leaderboard.`
+    : `Assign to ${weekId}?`;
   if (!window.confirm(msg)) return;
 
+  const btn = document.getElementById('admin-review-assign');
+  if (btn) btn.disabled = true;
   try {
     setChallengeStatus('Assigning…', 'warn');
     const result = await api('/api/admin/challenges', {
@@ -857,6 +962,26 @@ async function onAssignWeek(weekId) {
       body: JSON.stringify({ action: 'assignWeek', weekId, bundleId, deployLive: true, resetLeaderboard: true }),
     });
     setChallengeStatus(result.message || 'Assigned', 'ok');
+    await loadChallenges();
+    switchChallengeStep('review');
+  } catch (err) {
+    setChallengeStatus(err.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function onDeleteBundle() {
+  if (!selectedBundleId) return;
+  if (!window.confirm(`Delete bundle ${selectedBundleId}? This cannot be undone.`)) return;
+  try {
+    await api('/api/admin/challenges', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'deleteBundle', bundleId: selectedBundleId }),
+    });
+    selectedBundleId = null;
+    reviewBundleDetail = null;
+    setChallengeStatus('Bundle deleted', 'ok');
     await loadChallenges();
   } catch (err) {
     setChallengeStatus(err.message, 'err');
@@ -906,44 +1031,60 @@ async function onUnassignWeek(weekId) {
 }
 
 async function onGenerateBundle() {
-  const weekInput = selectedWeekId || challengePanelData?.currentIsoWeek;
+  const weekInput =
+    document.querySelector('[name="scheduleForWeekId"]')?.value ||
+    selectedWeekId ||
+    challengePanelData?.currentIsoWeek;
+  const label = document.querySelector('[name="label"]')?.value || `Bundle ${weekInput}`;
+  const btn = document.getElementById('admin-generate-bundle');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Building…';
+  }
   try {
-    setChallengeStatus('Generating bundle from MLB (~30s)…', 'warn');
+    setChallengeStatus('Fetching MLB and building bundle (~30s)…', 'warn');
     const result = await postChallengeAction('generateBundle', {
       weekId: weekInput,
-      label: `Bundle for ${weekInput}`,
+      label,
     });
     selectedBundleId = result.bundleId;
-    setChallengeStatus(`Created ${result.bundleId}`, 'ok');
+    await loadBundleReview(result.bundleId);
+    setChallengeStatus(`Built “${label}”. Review the playlist, then assign to a week.`, 'ok');
     await loadChallenges();
-    await viewBundle(result.bundleId);
+    switchChallengeStep('review');
   } catch (err) {
     setChallengeStatus(err.message, 'err');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Build full bundle';
+    }
   }
 }
 
 async function onPreviewGenerate() {
+  const btn = document.getElementById('admin-preview-generate');
+  if (btn) btn.disabled = true;
   try {
-    setChallengeStatus('Preview…', 'warn');
+    setChallengeStatus('Quick preview…', 'warn');
     const result = await postChallengeAction('previewGenerate', { maxGames: 2 });
-    const box = document.getElementById('admin-challenge-preview');
+    const box = document.getElementById('admin-preview-result');
     if (box) {
       const ps = result.playlistStats || {};
-      box.innerHTML = `<p>Would build <strong>${ps.selectedAbs}/${ps.targetAtBats}</strong> AB playlist · ${result.note || ''}</p>`;
+      const games = (result.games || [])
+        .map((g) => `<li>${escapeHtml(g.title)} (${g.pitchCount} pitches)</li>`)
+        .join('');
+      box.innerHTML = `
+        <p><strong>Preview only</strong> — not saved. ${escapeHtml(result.note || '')}</p>
+        <p>Would create a <strong>${ps.selectedAbs}/${ps.targetAtBats}</strong> AB playlist.</p>
+        <ul>${games}</ul>`;
       box.classList.remove('hidden');
     }
-    setChallengeStatus('Preview done', 'ok');
+    setChallengeStatus('Preview ready — adjust settings or build full bundle', 'ok');
   } catch (err) {
     setChallengeStatus(err.message, 'err');
-  }
-}
-
-async function onSaveConfig() {
-  try {
-    await postChallengeAction('saveConfig');
-    setChallengeStatus('Generator defaults saved', 'ok');
-  } catch (err) {
-    setChallengeStatus(err.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -954,10 +1095,20 @@ async function loadChallenges() {
     const data = await api('/api/admin/challenges');
     challengePanelData = data;
     if (!selectedWeekId) selectedWeekId = data.currentIsoWeek;
+    if (selectedBundleId) {
+      try {
+        await loadBundleReview(selectedBundleId);
+      } catch {
+        reviewBundleDetail = null;
+      }
+    }
     challengesRoot.innerHTML = renderChallengesPanel(data);
     bindChallengesPanelEvents();
+    switchChallengeStep(activeChallengeStep);
+    if (activeChallengeStep === 'schedule') updateScheduleWeekActions();
   } catch (err) {
     challengesRoot.innerHTML = `<p class="admin-status-err">${escapeHtml(err.message || 'Failed to load')}</p>`;
+    setChallengeStatus(err.message, 'err');
   }
 }
 

@@ -89,9 +89,16 @@ To link the CLI later:
 npx supabase link --project-ref wrtwqfvicftxpduukzwm
 ```
 
-## 5. Weekly leaderboard reset
+## 5. Weekly challenge admin (required on Vercel)
 
-Update `scripts/weekly-curator.js` to delete rows for the old week (or rely on `period_key` per ISO week so old weeks remain historical).
+Production admin cannot write to `src/data/` (read-only filesystem). Apply migration `supabase/migrations/20260601120000_weekly_challenge_admin.sql`, which creates:
+
+- `weekly_challenge_bundles` — full challenge payloads (meta + games JSON)
+- `weekly_challenge_assignments` — which ISO week uses which bundle
+
+With `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set on Vercel, **Build full bundle** and **Assign** persist to Supabase. Reassigning the current week resets `leaderboard_entries` for that `period_key`.
+
+Local dev still mirrors bundles to `src/data/weekly_bundles/` when the filesystem is writable.
 
 ## 6. Security notes
 

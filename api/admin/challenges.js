@@ -1,9 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { sendJson, readJsonBody } from '../_lib/http.js';
 import { getAdminFromRequest } from '../_lib/admin-session.js';
 import { getIsoWeekKey } from '../_lib/period.js';
 import { normalizeWeeklyGenerationConfig } from '../../src/js/weekly-generation-config.js';
-import fs from 'node:fs';
-import path from 'node:path';
 import {
   CONFIG_PATH,
   loadConfigFromFile,
@@ -12,17 +12,16 @@ import {
 import {
   assignBundleToWeek,
   unassignWeek,
-  deployBundleToLiveApp,
-  deleteBundle,
-  loadBundleJson,
-  summarizeBundleForAdmin,
-  persistCuratorResult,
   buildAdminDashboard,
   bootstrapFromLiveBundleIfEmpty,
   resetWeeklyLeaderboard,
-  getLeaderboardEntryCount,
+  persistCuratorResult,
+  loadBundleJson,
+  summarizeBundleForAdmin,
+  deleteBundle,
   getWeeksUsingBundle,
-  canWriteDataFiles,
+  deployBundleToLiveApp,
+  LIVE_BUNDLE_PATH,
 } from '../../scripts/lib/weekly-schedule.mjs';
 
 function readGenerationConfig() {
@@ -33,24 +32,9 @@ function readGenerationConfig() {
   }
 }
 
-async function enrichTimelineWithLeaderboardCounts(timeline) {
-  const out = [];
-  for (const slot of timeline) {
-    let leaderboardEntries = null;
-    try {
-      leaderboardEntries = await getLeaderboardEntryCount(slot.weekId);
-    } catch {
-      leaderboardEntries = null;
-    }
-    out.push({ ...slot, leaderboardEntries });
-  }
-  return out;
-}
-
 async function handleGet() {
-  bootstrapFromLiveBundleIfEmpty();
-  const dash = buildAdminDashboard();
-  dash.timeline = await enrichTimelineWithLeaderboardCounts(dash.timeline);
+  await bootstrapFromLiveBundleIfEmpty();
+  const dash = await buildAdminDashboard();
   dash.config = readGenerationConfig();
   return { ok: true, ...dash };
 }
@@ -65,11 +49,11 @@ async function handlePost(body) {
     }
     const current = getIsoWeekKey();
     const isCurrent = weekId === current;
-    const previous = buildAdminDashboard().schedule.assignments[weekId];
-    const reassigned =
-      isCurrent && previous?.bundleId && previous.bundleId !== bundleId;
+    const schedule = (await buildAdminDashboard()).schedule;
+    const previous = schedule.assignments[weekId];
+    const reassigned = isCurrent && previous?.bundleId && previous.bundleId !== bundleId;
 
-    assignBundleToWeek(weekId, bundleId, { assignedBy: 'admin' });
+    await assignBundleToWeek(weekId, bundleId, { assignedBy: 'admin' });
 
     let leaderboardReset = null;
     if (isCurrent && (body.resetLeaderboard !== false || reassigned)) {
@@ -77,8 +61,9 @@ async function handlePost(body) {
     }
 
     let deploy = null;
-    if (isCurrent && body.deployLive !== false && canWriteDataFiles()) {
-      deploy = deployBundleToLiveApp(bundleId);
+    if (isCurrent && body.deployLive !== false) {
+      const bundle = await loadBundleJson(bundleId);
+      deploy = deployBundleToLiveApp(bundle);
     }
 
     return {
@@ -91,7 +76,9 @@ async function handlePost(body) {
       leaderboardReset,
       deploy,
       message: isCurrent
-        ? 'Assigned to current week. Leaderboard reset and live app bundle updated.'
+        ? deploy?.published
+          ? 'Assigned, leaderboard reset, and live app file updated.'
+          : 'Assigned and leaderboard reset. Live file unchanged (read-only deploy) — sync via CI or local deploy.'
         : `Assigned to ${weekId}.`,
     };
   }
@@ -99,11 +86,10 @@ async function handlePost(body) {
   if (action === 'unassignWeek') {
     const { weekId } = body;
     if (!weekId) return { ok: false, error: 'weekId required' };
-    const current = getIsoWeekKey();
-    if (weekId === current) {
-      return { ok: false, error: 'Cannot unassign the current calendar week — assign a different bundle instead.' };
+    if (weekId === getIsoWeekKey()) {
+      return { ok: false, error: 'Cannot unassign the current week — assign a different bundle instead.' };
     }
-    unassignWeek(weekId);
+    await unassignWeek(weekId);
     return { ok: true, action, weekId };
   }
 
@@ -115,54 +101,48 @@ async function handlePost(body) {
 
   if (action === 'deployLive') {
     const weekId = body.weekId || getIsoWeekKey();
-    const assignment = buildAdminDashboard().schedule.assignments[weekId];
+    const assignment = (await buildAdminDashboard()).schedule.assignments[weekId];
     if (!assignment?.bundleId) {
       return { ok: false, error: `No bundle assigned to ${weekId}` };
     }
-    if (!canWriteDataFiles()) {
-      return { ok: false, error: 'Filesystem read-only — deploy from local dev or CI.' };
-    }
-    const deploy = deployBundleToLiveApp(assignment.bundleId);
+    const bundle = await loadBundleJson(assignment.bundleId);
+    const deploy = deployBundleToLiveApp(bundle);
     return { ok: true, action, weekId, bundleId: assignment.bundleId, deploy };
   }
 
   if (action === 'getBundle') {
-    const bundle = loadBundleJson(body.bundleId);
+    const bundle = await loadBundleJson(body.bundleId);
     if (!bundle) return { ok: false, error: 'Bundle not found' };
-    const usedByWeeks = getWeeksUsingBundle(body.bundleId);
+    const usedByWeeks = await getWeeksUsingBundle(body.bundleId);
     return {
       ok: true,
       action,
       bundleId: body.bundleId,
       usedByWeeks,
+      canDelete: usedByWeeks.length === 0,
       detail: summarizeBundleForAdmin(bundle),
     };
   }
 
   if (action === 'deleteBundle') {
-    const used = getWeeksUsingBundle(body.bundleId);
-    if (used.length) {
-      return { ok: false, error: `Bundle is assigned to: ${used.join(', ')}` };
-    }
-    deleteBundle(body.bundleId);
+    await deleteBundle(body.bundleId);
     return { ok: true, action, bundleId: body.bundleId };
   }
 
   if (action === 'generateBundle') {
     const config = normalizeWeeklyGenerationConfig(body.config || readGenerationConfig());
-    if (body.weekId) {
-      config.scheduleForWeekId = body.weekId;
-    }
+    if (body.weekId) config.scheduleForWeekId = body.weekId;
     const result = await runWeeklyCurator(config, { log: false, delayMs: 600 });
-    const { bundle, summary } = persistCuratorResult(result, {
+    const { bundle, summary } = await persistCuratorResult(result, {
       label: body.label || `Generated ${result.meta?.challengeWeekId || 'draft'}`,
       bundleId: body.bundleId,
     });
+    const usedByWeeks = await getWeeksUsingBundle(bundle.id);
     return {
       ok: true,
       action,
       bundleId: bundle.id,
-      summary,
+      summary: { ...summary, usedByWeeks },
       playlistStats: result.playlistStats,
       meta: result.meta,
     };
@@ -192,7 +172,17 @@ async function handlePost(body) {
   if (action === 'saveConfig') {
     const normalized = normalizeWeeklyGenerationConfig(body.config);
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-    fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+    try {
+      fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+    } catch (e) {
+      if (e.code === 'EROFS') {
+        return {
+          ok: false,
+          error: 'Cannot save generator defaults on read-only deploy. Edit weekly_generation_config.json locally.',
+        };
+      }
+      throw e;
+    }
     return { ok: true, action, config: normalized };
   }
 
@@ -207,8 +197,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const data = await handleGet();
-      sendJson(res, 200, data);
+      sendJson(res, 200, await handleGet());
       return;
     }
 
@@ -222,6 +211,10 @@ export default async function handler(req, res) {
     sendJson(res, 405, { error: 'Method not allowed' });
   } catch (err) {
     console.error('admin/challenges:', err);
-    sendJson(res, 500, { error: err.message || 'Challenge admin request failed' });
+    const message =
+      err.code === 'EROFS'
+        ? 'Server storage is read-only. Configure Supabase (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY) on this deployment.'
+        : err.message || 'Challenge admin request failed';
+    sendJson(res, 500, { error: message });
   }
 }

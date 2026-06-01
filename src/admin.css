@@ -606,6 +606,168 @@ body {
   display: none;
 }
 
+.admin-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  left: 1.25rem;
+  max-width: 32rem;
+  margin-left: auto;
+  z-index: 10000;
+  padding: 1rem 1.15rem;
+  border-radius: var(--ump-radius-2);
+  font-family: var(--ump-font-body);
+  font-size: 1.05rem;
+  line-height: 1.4;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  border: 2px solid var(--ump-color-border);
+  background: rgba(12, 18, 28, 0.96);
+}
+
+.admin-toast--ok {
+  border-color: rgba(92, 219, 149, 0.5);
+  color: var(--ump-color-ok);
+}
+
+.admin-toast--warn {
+  border-color: rgba(196, 154, 60, 0.55);
+  color: var(--ump-color-warn);
+}
+
+.admin-toast--err {
+  border-color: rgba(224, 85, 85, 0.65);
+  color: #fca5a5;
+  background: rgba(40, 12, 12, 0.97);
+}
+
+.admin-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.admin-stepper__btn {
+  font-family: var(--ump-font-ui, sans-serif);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: var(--ump-radius-1);
+  border: 1px solid var(--ump-color-border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ump-color-text-dim);
+  cursor: pointer;
+}
+
+.admin-stepper__btn--active {
+  border-color: rgba(168, 85, 247, 0.55);
+  background: rgba(168, 85, 247, 0.15);
+  color: var(--ump-color-text);
+}
+
+.admin-step-panel.hidden {
+  display: none;
+}
+
+.admin-fieldset {
+  border: 1px solid var(--ump-color-border);
+  border-radius: var(--ump-radius-2);
+  padding: 0.85rem 1rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.admin-fieldset legend {
+  font-family: var(--ump-font-ui, sans-serif);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ump-color-accent);
+  padding: 0 0.35rem;
+}
+
+.admin-gen-form-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-gen-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-gen-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.35rem 0;
+  font-size: 0.95rem;
+}
+
+.admin-build-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.admin-subtitle {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  color: var(--ump-color-text-dim);
+}
+
+.admin-review-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-review-id {
+  font-size: 0.85rem;
+  color: var(--ump-color-text-dim);
+}
+
+.admin-review-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.admin-used-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.admin-used-badge {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--ump-radius-1);
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.admin-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.admin-review-playlist {
+  margin-top: 0.5rem;
+}
+
 .admin-gen-form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));

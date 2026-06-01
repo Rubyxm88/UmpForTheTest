@@ -1,119 +1,43 @@
 /**
- * Weekly challenge schedule + bundle library (filesystem).
+ * Weekly challenge schedule + bundle library orchestration.
  */
 
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getIsoWeekKey } from '../../api/_lib/period.js';
 import { getSupabaseAdmin } from '../../api/_lib/supabase.js';
-import {
-  formatWeeklyBundleFile,
-  writeWeeklyBundle,
-  DEFAULT_OUTPUT_PATH,
-} from './weekly-curator-core.mjs';
+import { writeWeeklyBundle, DEFAULT_OUTPUT_PATH } from './weekly-curator-core.mjs';
 import { summarizePlaylistBuild } from '../../src/js/weekly-playlist.js';
+import {
+  attachUsedByWeeks,
+  canWriteFilesystem,
+  deleteBundle as storageDeleteBundle,
+  getStorageMode,
+  getWeeksUsingBundle,
+  loadBundle,
+  loadCatalog,
+  loadSchedule,
+  removeScheduleAssignment,
+  saveBundle,
+  saveScheduleAssignment,
+} from './weekly-storage.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_ROOT = path.resolve(__dirname, '../../src/data');
-export const SCHEDULE_PATH = path.join(DATA_ROOT, 'weekly_schedule.json');
-export const BUNDLES_DIR = path.join(DATA_ROOT, 'weekly_bundles');
-export const CATALOG_PATH = path.join(BUNDLES_DIR, 'catalog.json');
+export { SCHEDULE_PATH, BUNDLES_DIR, CATALOG_PATH } from './weekly-storage.mjs';
 export const LIVE_BUNDLE_PATH = DEFAULT_OUTPUT_PATH;
 
-const DEFAULT_SCHEDULE = { version: 1, assignments: {} };
-
 export function canWriteDataFiles() {
-  try {
-    const probe = path.join(DATA_ROOT, '.write_probe');
-    fs.writeFileSync(probe, 'ok', 'utf8');
-    fs.unlinkSync(probe);
-    return true;
-  } catch {
-    return false;
-  }
+  return canWriteFilesystem();
 }
 
-export function loadSchedule() {
-  if (!fs.existsSync(SCHEDULE_PATH)) {
-    return { ...DEFAULT_SCHEDULE, assignments: {} };
-  }
-  return { ...DEFAULT_SCHEDULE, ...JSON.parse(fs.readFileSync(SCHEDULE_PATH, 'utf8')) };
+export async function saveBundleJson(bundle) {
+  return saveBundle(bundle);
 }
 
-export function saveSchedule(schedule) {
-  fs.mkdirSync(path.dirname(SCHEDULE_PATH), { recursive: true });
-  fs.writeFileSync(SCHEDULE_PATH, `${JSON.stringify(schedule, null, 2)}\n`, 'utf8');
+export async function loadBundleJson(bundleId) {
+  return loadBundle(bundleId);
 }
 
-export function loadCatalog() {
-  if (!fs.existsSync(CATALOG_PATH)) {
-    return { version: 1, bundles: [] };
-  }
-  const raw = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
-  return { version: 1, bundles: raw.bundles || [] };
-}
+export { deleteBundle } from './weekly-storage.mjs';
 
-export function saveCatalog(catalog) {
-  fs.mkdirSync(BUNDLES_DIR, { recursive: true });
-  fs.writeFileSync(CATALOG_PATH, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8');
-}
-
-export function bundleFilePath(bundleId) {
-  return path.join(BUNDLES_DIR, `${bundleId}.json`);
-}
-
-export function loadBundleJson(bundleId) {
-  const file = bundleFilePath(bundleId);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-export function saveBundleJson(bundle) {
-  const id = bundle.id;
-  if (!id) throw new Error('Bundle id required');
-  fs.mkdirSync(BUNDLES_DIR, { recursive: true });
-  fs.writeFileSync(bundleFilePath(id), `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
-
-  const catalog = loadCatalog();
-  const pitchCount = (bundle.games || []).reduce((s, g) => s + (g.pitches?.length || 0), 0);
-  const summary = {
-    id,
-    label: bundle.label || id,
-    createdAt: bundle.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    challengeWeekId: bundle.meta?.challengeWeekId || null,
-    gameCount: bundle.games?.length || 0,
-    targetAtBats: bundle.meta?.targetAtBats ?? 20,
-    pitchCount,
-    gameTitles: (bundle.games || []).slice(0, 5).map((g) => g.title),
-  };
-
-  const idx = catalog.bundles.findIndex((b) => b.id === id);
-  if (idx >= 0) catalog.bundles[idx] = { ...catalog.bundles[idx], ...summary };
-  else catalog.bundles.unshift(summary);
-  saveCatalog(catalog);
-  return summary;
-}
-
-export function deleteBundle(bundleId) {
-  const file = bundleFilePath(bundleId);
-  if (fs.existsSync(file)) fs.unlinkSync(file);
-  const catalog = loadCatalog();
-  catalog.bundles = catalog.bundles.filter((b) => b.id !== bundleId);
-  saveCatalog(catalog);
-  const schedule = loadSchedule();
-  let changed = false;
-  for (const [weekId, a] of Object.entries(schedule.assignments || {})) {
-    if (a?.bundleId === bundleId) {
-      delete schedule.assignments[weekId];
-      changed = true;
-    }
-  }
-  if (changed) saveSchedule(schedule);
-}
-
-/** Newest-first timeline: future (5) → current → past (12). */
 export function buildWeekTimeline(anchorDate = new Date(), { futureCount = 5, pastCount = 12 } = {}) {
   const current = getIsoWeekKey(anchorDate);
   const ids = new Set();
@@ -135,10 +59,6 @@ export function buildWeekTimeline(anchorDate = new Date(), { futureCount = 5, pa
       weekId,
       period: weekId > current ? 'future' : weekId === current ? 'current' : 'past',
     }));
-}
-
-export function getBundleSummary(bundleId, catalog = loadCatalog()) {
-  return catalog.bundles.find((b) => b.id === bundleId) || null;
 }
 
 export function summarizeBundleForAdmin(bundle) {
@@ -180,6 +100,7 @@ export function summarizeBundleForAdmin(bundle) {
   return {
     meta: bundle.meta,
     label: bundle.label,
+    id: bundle.id,
     playlistStats,
     games: games.map((g) => ({
       id: g.id,
@@ -187,47 +108,38 @@ export function summarizeBundleForAdmin(bundle) {
       gamePk: g.gamePk,
       pitchCount: g.pitches?.length || 0,
     })),
-    atBatsPreview: abs.slice(0, 40),
+    atBatsPreview: abs.slice(0, 50),
     atBatTotal: abs.length,
   };
 }
 
-export function assignBundleToWeek(weekId, bundleId, { assignedBy = 'admin' } = {}) {
-  const bundle = loadBundleJson(bundleId);
+export async function assignBundleToWeek(weekId, bundleId, { assignedBy = 'admin' } = {}) {
+  const bundle = await loadBundle(bundleId);
   if (!bundle) throw new Error(`Bundle not found: ${bundleId}`);
 
-  const schedule = loadSchedule();
-  schedule.assignments[weekId] = {
-    bundleId,
-    assignedAt: new Date().toISOString(),
-    assignedBy,
-  };
-  saveSchedule(schedule);
+  await saveScheduleAssignment(weekId, bundleId, assignedBy);
 
   bundle.meta = { ...bundle.meta, challengeWeekId: weekId };
-  saveBundleJson(bundle);
+  const summary = await saveBundle(bundle);
 
-  return { schedule, bundle: getBundleSummary(bundleId) };
+  return { bundle: summary };
 }
 
-export function unassignWeek(weekId) {
-  const schedule = loadSchedule();
-  delete schedule.assignments[weekId];
-  saveSchedule(schedule);
-  return schedule;
+export async function unassignWeek(weekId) {
+  return removeScheduleAssignment(weekId);
 }
 
-export function deployBundleToLiveApp(bundleId) {
-  const bundle = loadBundleJson(bundleId);
-  if (!bundle) throw new Error(`Bundle not found: ${bundleId}`);
+export function deployBundleToLiveApp(bundle) {
+  if (!canWriteFilesystem()) {
+    return {
+      published: false,
+      writable: false,
+      message:
+        'Assignment saved in database. To update the player app file, run deploy from local dev or merge a CI commit to weekly_challenge.js.',
+    };
+  }
   const writeInfo = writeWeeklyBundle(bundle.games, bundle.meta, LIVE_BUNDLE_PATH);
-  return { writeInfo, meta: bundle.meta };
-}
-
-export function getWeeksUsingBundle(bundleId, schedule = loadSchedule()) {
-  return Object.entries(schedule.assignments || {})
-    .filter(([, a]) => a?.bundleId === bundleId)
-    .map(([weekId]) => weekId);
+  return { published: true, writable: true, writeInfo, meta: bundle.meta };
 }
 
 export async function resetWeeklyLeaderboard(weekId) {
@@ -242,29 +154,35 @@ export async function resetWeeklyLeaderboard(weekId) {
 }
 
 export async function getLeaderboardEntryCount(weekId) {
-  const supabase = getSupabaseAdmin();
-  const { count, error } = await supabase
-    .from('leaderboard_entries')
-    .select('*', { count: 'exact', head: true })
-    .eq('board', 'weekly')
-    .eq('period_key', weekId);
-  if (error) return null;
-  return count ?? 0;
+  try {
+    const supabase = getSupabaseAdmin();
+    const { count, error } = await supabase
+      .from('leaderboard_entries')
+      .select('*', { count: 'exact', head: true })
+      .eq('board', 'weekly')
+      .eq('period_key', weekId);
+    if (error) return null;
+    return count ?? 0;
+  } catch {
+    return null;
+  }
 }
 
-export function buildAdminDashboard() {
-  const schedule = loadSchedule();
-  const catalog = loadCatalog();
+export async function buildAdminDashboard() {
+  const schedule = await loadSchedule();
+  let catalog = attachUsedByWeeks(await loadCatalog(), schedule);
   const currentIsoWeek = getIsoWeekKey();
-  const timeline = buildWeekTimeline().map((slot) => {
+  const timeline = buildWeekTimeline();
+
+  const enriched = [];
+  for (const slot of timeline) {
     const assignment = schedule.assignments[slot.weekId] || null;
-    const bundle = assignment ? getBundleSummary(assignment.bundleId, catalog) : null;
-    return {
-      ...slot,
-      assignment,
-      bundle,
-    };
-  });
+    const bundle = assignment
+      ? catalog.find((b) => b.id === assignment.bundleId) || null
+      : null;
+    const leaderboardEntries = await getLeaderboardEntryCount(slot.weekId);
+    enriched.push({ ...slot, assignment, bundle, leaderboardEntries });
+  }
 
   let live = null;
   if (fs.existsSync(LIVE_BUNDLE_PATH)) {
@@ -278,9 +196,6 @@ export function buildAdminDashboard() {
           meta,
           fileBytes: text.length,
           weekAligned: meta.challengeWeekId === currentIsoWeek,
-          matchesAssignment:
-            assigned?.bundleId &&
-            meta.challengeWeekId === currentIsoWeek,
           assignedBundleId: assigned?.bundleId || null,
         };
       }
@@ -289,21 +204,24 @@ export function buildAdminDashboard() {
     }
   }
 
+  const storageMode = getStorageMode();
+
   return {
     currentIsoWeek,
-    timeline,
+    timeline: enriched,
     schedule,
-    catalog: catalog.bundles,
+    catalog,
     live,
-    writable: canWriteDataFiles(),
+    writable: canWriteFilesystem(),
+    storageMode,
+    canPersistBundles: storageMode !== 'none',
   };
 }
 
-/** Create catalog entry + JSON from curator result. */
-export function persistCuratorResult(result, { label, bundleId } = {}) {
+export async function persistCuratorResult(result, { label, bundleId } = {}) {
   const id =
     bundleId ||
-    `bundle-${(result.meta?.challengeWeekId || 'draft').replace('-', '')}-${Date.now().toString(36).slice(-4)}`;
+    `bundle-${(result.meta?.challengeWeekId || 'draft').replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}`;
   const bundle = {
     id,
     label: label || `Bundle ${id}`,
@@ -311,47 +229,32 @@ export function persistCuratorResult(result, { label, bundleId } = {}) {
     meta: result.meta,
     games: result.games,
   };
-  saveBundleJson(bundle);
-  return { bundle, summary: getBundleSummary(id) };
+  const summary = await saveBundle(bundle);
+  return { bundle, summary };
 }
 
-export function parseLiveBundleMeta() {
+export async function bootstrapFromLiveBundleIfEmpty() {
+  const catalog = await loadCatalog();
+  if (catalog.length > 0) return null;
   if (!fs.existsSync(LIVE_BUNDLE_PATH)) return null;
+
   const text = fs.readFileSync(LIVE_BUNDLE_PATH, 'utf8');
   const metaMatch = text.match(/export const WEEKLY_CHALLENGE_META = (\{[\s\S]*?\n\});/);
-  if (!metaMatch) return null;
-  return Function(`"use strict"; return (${metaMatch[1]});`)();
-}
-
-/** Bootstrap schedule + catalog from existing weekly_challenge.js once. */
-export function bootstrapFromLiveBundleIfEmpty() {
-  const catalog = loadCatalog();
-  if (catalog.bundles.length > 0) return null;
-
-  const meta = parseLiveBundleMeta();
-  if (!meta) return null;
-
-  const text = fs.readFileSync(LIVE_BUNDLE_PATH, 'utf8');
   const dataMatch = text.match(/export const WEEKLY_CHALLENGE_DATA = (\[[\s\S]*\]);/);
-  if (!dataMatch) return null;
+  if (!metaMatch || !dataMatch) return null;
 
+  const meta = Function(`"use strict"; return (${metaMatch[1]});`)();
   const games = Function(`"use strict"; return (${dataMatch[1]});`)();
   const weekId = meta.challengeWeekId || getIsoWeekKey();
   const id = `bundle-${weekId}`;
-  const bundle = {
+
+  await saveBundle({
     id,
     label: `Imported ${weekId}`,
     createdAt: new Date().toISOString(),
     meta,
     games,
-  };
-  saveBundleJson(bundle);
-  const schedule = loadSchedule();
-  schedule.assignments[weekId] = {
-    bundleId: id,
-    assignedAt: new Date().toISOString(),
-    assignedBy: 'bootstrap',
-  };
-  saveSchedule(schedule);
+  });
+  await saveScheduleAssignment(weekId, id, 'bootstrap');
   return { bundleId: id, weekId };
 }
