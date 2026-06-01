@@ -237,6 +237,118 @@ body {
   width: 100% !important;
 }
 
+/* Compact pitch detail + side-by-side action buttons (matches mobile on all breakpoints) */
+#quick-preview-controls #pitch-detail-bug,
+.quick-preview-dock #pitch-detail-bug {
+  width: 100% !important;
+  max-width: 340px !important;
+  padding: 0.35rem 0.5rem !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(232, 197, 71, 0.2) !important;
+  background: rgba(10, 22, 40, 0.95) !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+  box-sizing: border-box;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.5rem !important;
+}
+
+#quick-preview-controls #pitch-detail-bug .pitch-detail-head,
+.quick-preview-dock #pitch-detail-bug .pitch-detail-head {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  flex-shrink: 0;
+}
+
+#quick-preview-controls #pitch-detail-bug .pitch-detail-stats,
+.quick-preview-dock #pitch-detail-bug .pitch-detail-stats {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  gap: 0.5rem !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  flex-grow: 1;
+}
+
+#quick-preview-controls #pitch-detail-bug .pitch-detail-label,
+.quick-preview-dock #pitch-detail-bug .pitch-detail-label {
+  display: none !important;
+}
+
+#quick-preview-controls #pitch-detail-type,
+.quick-preview-dock #pitch-detail-type {
+  font-size: 11px !important;
+}
+
+#quick-preview-controls #pitch-detail-speed,
+.quick-preview-dock #pitch-detail-speed {
+  font-size: 11px !important;
+}
+
+#quick-preview-controls #pitch-detail-break,
+.quick-preview-dock #pitch-detail-break,
+#quick-preview-controls #pitch-detail-loc,
+.quick-preview-dock #pitch-detail-loc {
+  font-size: 10px !important;
+}
+
+#quick-preview-controls .quick-preview-actions,
+.quick-preview-dock .quick-preview-actions {
+  flex-direction: row !important;
+  align-items: center !important;
+  width: 100% !important;
+  max-width: 340px !important;
+  margin: 0 auto !important;
+  gap: 0.4rem !important;
+}
+
+.quick-preview-btn {
+  flex: 1 !important;
+  width: 50% !important;
+  min-height: 2.75rem !important;
+  height: 2.75rem !important;
+  font-size: 10px !important;
+  padding: 0 0.35rem !important;
+  border-radius: 8px !important;
+  font-family: inherit !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.02em !important;
+  margin-top: 0 !important;
+  line-height: 1.2 !important;
+}
+
+.quick-preview-btn--primary {
+  background: linear-gradient(180deg, var(--retro-stitch) 0%, #8b1428 100%) !important;
+  border: 3px solid rgba(232, 197, 71, 0.55) !important;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.08), 0 4px 0 rgba(3, 8, 16, 0.9) !important;
+}
+
+.quick-preview-btn--primary:hover {
+  filter: brightness(1.08) !important;
+}
+
+.quick-preview-btn--secondary {
+  background: rgba(10, 22, 40, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45) !important;
+}
+
+.quick-preview-btn--secondary:hover {
+  background: rgba(18, 34, 56, 0.98) !important;
+  border-color: rgba(232, 197, 71, 0.28) !important;
+}
+
+.quick-preview-btn:active {
+  transform: scale(0.97) !important;
+  filter: brightness(0.92) !important;
+}
+
 body.broadcast-review-active #close-call-pill,
 body.game-paused #close-call-pill {
   display: none !important;
@@ -382,6 +494,7 @@ body.broadcast-review-active #quick-preview-controls {
   min-height: 2.75rem;
   justify-content: center !important;
   margin: 0 !important;
+  flex: none !important;
 }
 
 @media (min-width: 769px) {
@@ -410,29 +523,6 @@ body.broadcast-review-active #quick-preview-controls {
   .abs-broadcast-ruling {
     flex: 1 1 160px;
     max-width: 220px;
-  }
-
-  .abs-review-dock {
-    width: min(92vw, 420px);
-    max-width: 420px;
-    gap: 0.65rem;
-  }
-
-  .abs-telemetry-stats {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.5rem;
-  }
-
-  .abs-stat-label {
-    font-size: 10px;
-  }
-
-  .abs-stat-value {
-    font-size: 13px;
-  }
-
-  #abs-stat-blurb {
-    font-size: 12px !important;
   }
 }
 
@@ -850,80 +940,10 @@ input[type="range"] {
     color: var(--retro-chalk) !important;
   }
 
-  /* 6. Quick preview controls / review buttons */
-  #quick-preview-controls,
-  .quick-preview-dock {
-    bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
-    width: min(92vw, 340px) !important;
-    max-width: 340px !important;
-  }
-  #quick-preview-controls #pitch-detail-bug,
-  .quick-preview-dock #pitch-detail-bug {
-    width: 100% !important;
-    max-width: 320px !important;
-    padding: 0.35rem 0.5rem !important;
-    border-radius: 8px !important;
-    border: 1px solid rgba(232, 197, 71, 0.2) !important;
-    background: rgba(10, 22, 40, 0.95) !important;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.5) !important;
-    box-sizing: border-box;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    gap: 0.5rem !important;
-  }
-  #quick-preview-controls #pitch-detail-bug .border-b {
-    border-bottom: none !important;
-    padding-bottom: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    flex-shrink: 0;
-  }
-  #quick-preview-controls #pitch-detail-bug .grid {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    gap: 0.5rem !important;
-    justify-content: flex-end !important;
-    align-items: center !important;
-    flex-grow: 1;
-  }
-  #quick-preview-controls #pitch-detail-bug span.text-\[9px\] {
-    display: none !important;
-  }
-  #quick-preview-controls #pitch-detail-type {
-    font-size: 11px !important;
-  }
-  #quick-preview-controls #pitch-detail-speed {
-    font-size: 11px !important;
-  }
-  #quick-preview-controls #pitch-detail-break,
-  #quick-preview-controls #pitch-detail-loc {
-    font-size: 10px !important;
-  }
-  #quick-preview-controls .quick-preview-actions,
-  .quick-preview-dock .quick-preview-actions {
-    flex-direction: row !important;
-    align-items: center !important;
-    width: 100% !important;
-    max-width: 340px !important;
-    margin: 0 auto !important;
-    gap: 0.4rem !important;
-  }
+  /* 6. Quick preview controls — compact layout is global; touch targets only here */
   #quick-preview-controls button,
   .quick-preview-dock button {
-    flex: 1 !important;
-    width: 50% !important;
-    height: 2.25rem !important;
-    font-size: 9px !important;
-    padding: 0 0.25rem !important;
-    border-radius: 8px !important;
-    font-family: inherit !important;
-    font-weight: 800 !important;
-    letter-spacing: 0.02em !important;
-    margin-top: 0 !important;
+    min-height: 44px !important;
   }
 
   /* ABS Review Broadcast Overlay — layout handled by .abs-broadcast-shell / .abs-review-dock */

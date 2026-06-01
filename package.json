@@ -12,6 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "weekly-curator": "node scripts/weekly-curator.js",
+    "audit-handedness": "node scripts/audit-handedness.js",
     "test": "node scratch/run_headless.js"
   },
   "devDependencies": {

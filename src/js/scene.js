@@ -652,11 +652,11 @@ function buildField() {
   const leftBBoxOutlineGeo = new THREE.EdgesGeometry(leftBBoxGeo);
   
   const leftBBox = new THREE.LineSegments(leftBBoxOutlineGeo, chalkLineMat);
-  leftBBox.position.set(-bboxOffset, 0.005, 0.7083);
+  leftBBox.position.set(-bboxOffset, 0.005, 0.7083); // 1B-side box (umpire screen right)
   fieldGroup.add(leftBBox);
 
   const rightBBox = new THREE.LineSegments(leftBBoxOutlineGeo, chalkLineMat);
-  rightBBox.position.set(bboxOffset, 0.005, 0.7083);
+  rightBBox.position.set(bboxOffset, 0.005, 0.7083); // 3B-side box (umpire screen left)
   fieldGroup.add(rightBBox);
 
   // Foul lines
@@ -1288,20 +1288,21 @@ function resolvePitcherSide(handedness) {
 export function updateHolographicBatter(handedness, sz_bot, sz_top) {
   currentBatterHandedness = resolveBatterSide(handedness);
   const isLHB = currentBatterHandedness === 'LHB';
-  /** Mirror local X for left-handed stance (mesh defaults to RHB open stance). */
-  const bx = (x) => (isLHB ? -x : x);
+  /** Mirror local X for LHB open stance (canonical mesh is RHB). Do not use scale.x = -1 — it inverts rotation. */
+  const lx = (x) => (isLHB ? -x : x);
   
   // Set camera positions based on batter handedness (LHB vs RHB slots)
+  // Umpire cam: world −x renders screen-right (1B); world +x renders screen-left (3B).
   if (isLHB) {
-    umpireXOffset = 0.35;
-    umpireYOffset = 3.95;
-    if (topCamera) topCamera.position.set(-5.8, 2.5, 0.7083);
-    if (summaryReviewCamera) summaryReviewCamera.position.set(-4.2, 2.8, 5.0);
-  } else {
     umpireXOffset = -0.35;
     umpireYOffset = 3.95;
     if (topCamera) topCamera.position.set(5.8, 2.5, 0.7083);
     if (summaryReviewCamera) summaryReviewCamera.position.set(4.2, 2.8, 5.0);
+  } else {
+    umpireXOffset = 0.35;
+    umpireYOffset = 3.95;
+    if (topCamera) topCamera.position.set(-5.8, 2.5, 0.7083);
+    if (summaryReviewCamera) summaryReviewCamera.position.set(-4.2, 2.8, 5.0);
   }
   
   if (umpireCamera) {
@@ -1378,27 +1379,27 @@ export function updateHolographicBatter(handedness, sz_bot, sz_top) {
   
   // Left leg (back/bent)
   const leftLeg = new THREE.Mesh(legGeo, holoMat);
-  leftLeg.position.set(bx(-0.35), legLength / 2 + 0.1, -0.1);
+  leftLeg.position.set(lx(-0.35), legLength / 2 + 0.1, -0.1);
   leftLeg.rotation.x = 0.3; // bent knee stance
   batterGroup.add(leftLeg);
 
   // Right leg (front/bent)
   const rightLeg = new THREE.Mesh(legGeo, holoMat);
-  rightLeg.position.set(bx(0.35), legLength / 2 + 0.1, 0.1);
+  rightLeg.position.set(lx(0.35), legLength / 2 + 0.1, 0.1);
   rightLeg.rotation.x = -0.1;
   batterGroup.add(rightLeg);
 
   // Humanesque Joint-Based Arms (Shoulder -> Elbow -> Hand)
-  const shoulderLeft = new THREE.Vector3(bx(0.42), shoulderHeight, 0.0);
-  const shoulderRight = new THREE.Vector3(bx(-0.42), shoulderHeight, 0.0);
+  const shoulderLeft = new THREE.Vector3(lx(0.42), shoulderHeight, 0.0);
+  const shoulderRight = new THREE.Vector3(lx(-0.42), shoulderHeight, 0.0);
   
   // Hands clustered together at the bat handle
-  const handLeft = new THREE.Vector3(bx(-0.38), sz_top + 1.05, -0.3);
-  const handRight = new THREE.Vector3(bx(-0.42), sz_top + 1.13, -0.34);
+  const handLeft = new THREE.Vector3(lx(-0.38), sz_top + 1.05, -0.3);
+  const handRight = new THREE.Vector3(lx(-0.42), sz_top + 1.13, -0.34);
   
   // Elbow positions for a natural batting load posture
-  const elbowLeft = new THREE.Vector3(bx(0.08), sz_top + 0.35, 0.18);
-  const elbowRight = new THREE.Vector3(bx(-0.58), sz_top + 0.65, -0.15);
+  const elbowLeft = new THREE.Vector3(lx(0.08), sz_top + 0.35, 0.18);
+  const elbowRight = new THREE.Vector3(lx(-0.58), sz_top + 0.65, -0.15);
   
   const armRadius = 0.08;
 
@@ -1441,17 +1442,20 @@ export function updateHolographicBatter(handedness, sz_bot, sz_top) {
   bat.rotation.x = -Math.PI / 4.5;
   bat.rotation.y = isLHB ? Math.PI / 6 : -Math.PI / 6;
   bat.rotation.z = Math.PI / 3.2;
-  bat.position.set(bx(-0.4), sz_top + 1.1, -0.32); // Position at hands
+  bat.position.set(lx(-0.4), sz_top + 1.1, -0.32); // Position at hands
   batterGroup.add(bat);
 
   // Position batter in the box relative to plate midpoint (z = 0.7083)
-  // -x = 3rd-base box (RHB), +x = 1st-base box (LHB) — matches chalk outlines
+  // Umpire view: world −x = 1B side (screen right), world +x = 3B side (screen left)
+  // leftBBox chalk at −x → LHB; rightBBox chalk at +x → RHB
+  batterGroup.scale.set(1, 1, 1);
+  batterGroup.userData.batterSide = currentBatterHandedness;
   if (isLHB) {
-    batterGroup.position.set(2.2, 0, 0.7083);
-    batterGroup.rotation.y = -Math.PI / 2; // face plate from 1B side
-  } else {
     batterGroup.position.set(-2.2, 0, 0.7083);
-    batterGroup.rotation.y = Math.PI / 2; // face plate from 3B side
+    batterGroup.rotation.y = Math.PI / 2;
+  } else {
+    batterGroup.position.set(2.2, 0, 0.7083);
+    batterGroup.rotation.y = -Math.PI / 2;
   }
 
   makeGlowingHolographic(batterGroup, true);
@@ -1480,7 +1484,10 @@ export function animateBatterSwing(progress, handedness) {
   });
 
   const batterSide = resolveBatterSide(handedness);
-  const baseGroupRotation = batterSide === 'RHB' ? Math.PI / 2 : -Math.PI / 2;
+  const isLHB = batterSide === 'LHB';
+  const baseGroupRotation = isLHB ? Math.PI / 2 : -Math.PI / 2;
+  const batRestX = isLHB ? 0.4 : -0.4;
+  const batRestY = isLHB ? Math.PI / 6 : -Math.PI / 6;
 
   if (progress < 0) {
     // Reset to normal batting stance
@@ -1490,17 +1497,15 @@ export function animateBatterSwing(progress, handedness) {
       torso.rotation.z = 0;
     }
     if (bat) {
-      const batY = batterSide === 'RHB' ? Math.PI / 6 : -Math.PI / 6;
-      bat.rotation.set(-Math.PI / 4.5, batY, Math.PI / 3.2);
-      const batX = batterSide === 'LHB' ? 0.4 : -0.4;
-      bat.position.set(batX, currentSzTop + 1.1, -0.32);
+      bat.rotation.set(-Math.PI / 4.5, batRestY, Math.PI / 3.2);
+      bat.position.set(batRestX, currentSzTop + 1.1, -0.32);
     }
     return;
   }
 
   // Swing progress: 0.0 to 1.0
   if (bat) {
-    const isRHB = batterSide === 'RHB';
+    const isRHB = !isLHB;
     
     // Smooth interpolation curves for realistic 3-axis swing plane
     let rx, ry, rz;
@@ -1524,7 +1529,6 @@ export function animateBatterSwing(progress, handedness) {
     
     // Whip bat forward and outward through contact zone
     const handOffset = isRHB ? -1 : 1;
-    const batRestX = isRHB ? -0.4 : 0.4;
     bat.position.x = batRestX + progress * 0.45 * handOffset;
     bat.position.z = -0.32 + progress * 0.35;
   }
@@ -1609,18 +1613,19 @@ export function updateHolographicPitcher(handedness) {
   pitcherThrowingArm = new THREE.Mesh(armGeo, holoMat);
   pitcherThrowingArm.position.y = shoulderHeight;
   if (pitcherSide === 'RHP') {
-    pitcherThrowingArm.position.x = 0.55;
-  } else {
+    // Local -x → world +x after rotation.y = PI (1B / first-base side release)
     pitcherThrowingArm.position.x = -0.55;
+  } else {
+    pitcherThrowingArm.position.x = 0.55;
   }
   pitcherGroup.add(pitcherThrowingArm);
 
   pitcherGloveArm = new THREE.Mesh(armGeo, holoMat);
   pitcherGloveArm.position.y = shoulderHeight;
   if (pitcherSide === 'RHP') {
-    pitcherGloveArm.position.x = -0.55;
-  } else {
     pitcherGloveArm.position.x = 0.55;
+  } else {
+    pitcherGloveArm.position.x = -0.55;
   }
   pitcherGroup.add(pitcherGloveArm);
 
@@ -1664,12 +1669,12 @@ export function animatePitcherWindup(progress, handedness) {
   
   pitcherThrowingArm.rotation.set(0, 0, 0);
   pitcherThrowingArm.position.y = shoulderHeight;
-  pitcherThrowingArm.position.x = (pitcherSide === 'RHP' ? 0.55 : -0.55);
+  pitcherThrowingArm.position.x = (pitcherSide === 'RHP' ? -0.55 : 0.55);
   pitcherThrowingArm.position.z = 0;
   
   pitcherGloveArm.rotation.set(0, 0, 0);
   pitcherGloveArm.position.y = shoulderHeight;
-  pitcherGloveArm.position.x = (pitcherSide === 'RHP' ? -0.55 : 0.55);
+  pitcherGloveArm.position.x = (pitcherSide === 'RHP' ? 0.55 : -0.55);
   pitcherGloveArm.position.z = 0;
   
   pitcherTorso.rotation.set(0, 0, 0);
@@ -1745,6 +1750,36 @@ export function animatePitcherWindup(progress, handedness) {
     pitcherThrowingArm.rotation.x = (Math.PI * 0.78) + 0.8 * p;
     pitcherThrowingArm.rotation.z = (pitcherSide === 'RHP' ? -0.95 : 0.95) + 0.4 * p;
   }
+}
+
+export function getMatchupSceneAudit(handednessPitcher, handednessBatter) {
+  const pitcherSide = resolvePitcherSide(handednessPitcher);
+  const batterSide = resolveBatterSide(handednessBatter);
+  let throwingArmWorldX = null;
+  let batWorldX = null;
+  if (pitcherThrowingArm) {
+    const pos = new THREE.Vector3(0, -0.75, 0);
+    pitcherThrowingArm.localToWorld(pos);
+    throwingArmWorldX = pos.x;
+  }
+  if (batterGroup) {
+    batterGroup.traverse((child) => {
+      if (batWorldX != null || !child.isMesh || child.geometry?.type !== 'CylinderGeometry') return;
+      const p = new THREE.Vector3();
+      child.getWorldPosition(p);
+      batWorldX = p.x;
+    });
+  }
+  return {
+    pitcherSide,
+    batterSide,
+    batterWorldX: batterGroup?.position.x ?? null,
+    batterScaleX: batterGroup?.scale.x ?? null,
+    batWorldX,
+    throwingArmWorldX,
+    expectedBatterWorldX: batterSide === 'LHB' ? -2.2 : 2.2,
+    throwOnFirstBaseSide: throwingArmWorldX != null ? throwingArmWorldX > 0 : null,
+  };
 }
 
 /**
@@ -2073,7 +2108,7 @@ export function setCameraAngle(angleName) {
  */
 export function verifyAndForceUmpireCameraPosition() {
   const isLHB = (currentBatterHandedness || 'RHB').includes('L');
-  const expectedX = isLHB ? 0.35 : -0.35;
+  const expectedX = isLHB ? -0.35 : 0.35;
   const expectedY = 3.95;
   const expectedZ = -4.5;
   

@@ -276,7 +276,7 @@
                 </div>
                 <div class="ab-summary-player-meta min-w-0 flex-1">
                   <span class="ab-summary-player-role"><span class="hidden sm:inline">Pitcher</span><span class="inline sm:hidden">P</span></span>
-                  <span id="card-pitcher-hand" class="ab-summary-hand-badge">RHP</span>
+                  <span id="card-pitcher-hand" class="ab-summary-hand-badge">--</span>
                   <div class="name-marquee-wrap">
                     <span class="name-marquee-track">
                       <span id="card-pitcher-name" class="ab-summary-player-name name-marquee-text">--</span>
@@ -293,7 +293,7 @@
               <div id="gameplay-batter-card-trigger" class="ab-summary-player ab-summary-player--batter ab-summary-player--mini cursor-pointer hover:brightness-125 transition-all">
                 <div class="ab-summary-player-meta ab-summary-player-meta--right min-w-0 flex-1 text-right">
                   <span class="ab-summary-player-role"><span class="hidden sm:inline">Batter</span><span class="inline sm:hidden">B</span></span>
-                  <span id="card-batter-hand" class="ab-summary-hand-badge">LHB</span>
+                  <span id="card-batter-hand" class="ab-summary-hand-badge">--</span>
                   <div class="name-marquee-wrap">
                     <span class="name-marquee-track">
                       <span id="card-batter-name" class="ab-summary-player-name name-marquee-text">--</span>
@@ -1165,31 +1165,30 @@
             <span>CLOSE CALL: </span><span id="close-call-dist-text" class="font-mono-tech font-bold text-amber-300">0.0 INCHES</span>
           </div>
           <!-- Pitch Detail Bug -->
-          <div id="pitch-detail-bug" class="glass-panel backdrop-blur-md border border-white/10 px-5 py-3.5 rounded-xl flex flex-col gap-2.5 pointer-events-none w-full max-w-[340px] text-left shadow-lg">
-            <div class="flex justify-between items-center border-b border-white/10 pb-1.5">
-              <span id="pitch-detail-type" class="font-extrabold text-sm md:text-base text-white tracking-wide">FASTBALL</span>
-              <span id="pitch-detail-speed" class="text-sm md:text-base text-purple-400 font-mono-tech font-extrabold">95.4 MPH</span>
+          <div id="pitch-detail-bug" class="glass-panel backdrop-blur-md border border-white/10 rounded-xl flex flex-col pointer-events-none w-full text-left shadow-lg">
+            <div class="pitch-detail-head flex justify-between items-center border-b border-white/10">
+              <span id="pitch-detail-type" class="font-extrabold text-white tracking-wide">FASTBALL</span>
+              <span id="pitch-detail-speed" class="text-purple-400 font-mono-tech font-extrabold">95.4 MPH</span>
             </div>
-            <div class="grid grid-cols-2 gap-4 text-xs md:text-sm font-mono-tech">
+            <div class="pitch-detail-stats grid grid-cols-2 font-mono-tech">
               <div class="flex flex-col gap-0.5">
-                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">Pitch Breaks</span>
+                <span class="pitch-detail-label text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">Pitch Breaks</span>
                 <span id="pitch-detail-break" class="text-white font-bold">H: +4.2"  V: -12.1"</span>
               </div>
               <div class="flex flex-col gap-0.5 items-end">
-                <span class="text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">ABS Zone</span>
+                <span class="pitch-detail-label text-[9px] uppercase tracking-wider text-purple-300 font-extrabold">ABS Zone</span>
                 <span id="pitch-detail-loc" class="text-white font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] uppercase">IN ZONE</span>
               </div>
             </div>
           </div>
 
           <!-- Quick Actions Button Group -->
-          <div id="quick-preview-actions" class="quick-preview-actions flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full max-w-[340px] pointer-events-auto">
-            <button id="btn-view-details" class="px-4 py-2 sm:px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer text-center w-full">
-              <span class="hidden sm:inline">View ABS Review Details [V]</span>
-              <span class="inline sm:hidden">ABS Review [V]</span>
+          <div id="quick-preview-actions" class="quick-preview-actions flex flex-row items-center gap-2 w-full pointer-events-auto">
+            <button id="btn-view-details" class="quick-preview-btn quick-preview-btn--primary font-bold uppercase tracking-wider text-white shadow-lg transition-all cursor-pointer text-center">
+              ABS Review [V]
             </button>
-            <button id="btn-quick-continue" class="px-4 py-2 sm:px-6 h-12 bg-gray-800 hover:bg-gray-700 border border-white/10 rounded-xl font-bold uppercase tracking-wider text-[10px] sm:text-xs text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer text-center w-full">
-              Continue <span id="quick-continue-timer" class="font-mono-tech text-emerald-400 ml-1"></span>
+            <button id="btn-quick-continue" class="quick-preview-btn quick-preview-btn--secondary font-bold uppercase tracking-wider text-white shadow-lg transition-all cursor-pointer text-center">
+              Continue <span id="quick-continue-timer" class="font-mono-tech ml-1"></span>
             </button>
           </div>
         </div>
@@ -1282,9 +1281,8 @@
               </div>
             </div>
 
-            <button id="btn-broadcast-continue" class="abs-review-continue px-6 h-12 bg-gradient-to-r from-emerald-700 to-green-700 hover:from-emerald-600 hover:to-green-600 border border-emerald-500/30 rounded-xl font-bold uppercase tracking-wider text-sm text-white shadow-lg hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2 w-full">
-              Continue <span class="hidden sm:inline">[Space]</span>
-              <svg class="w-4 h-4 fill-current hidden sm:block" viewBox="0 0 24 24"><path d="M5 13h11.86l-5.43 5.43 1.42 1.42L21.14 12l-8.29-8.29-1.42 1.42L16.86 11H5v2z"/></svg>
+            <button id="btn-broadcast-continue" class="abs-review-continue quick-preview-btn quick-preview-btn--primary font-bold uppercase tracking-wider text-sm text-white shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 w-full">
+              Continue <span class="broadcast-continue-hint hidden sm:inline">[Space]</span>
             </button>
           </div>
         </div>

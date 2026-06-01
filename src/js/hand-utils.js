@@ -15,8 +15,10 @@ export function normalizeRoleHand(hand, role) {
 }
 
 export function isLeftHanded(hand) {
-  return String(hand || '').toUpperCase().includes('L');
+  return isLeftHandCode(hand);
 }
+
+export { isLeftHandCode };
 
 export function formatHandForPopout(hand, role) {
   return normalizeRoleHand(hand, role);

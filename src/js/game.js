@@ -23,6 +23,7 @@ import {
   normalizeRoleHand,
   formatHandForPopout,
   handPopoutLabel,
+  isLeftHandCode,
 } from './hand-utils.js';
 import { getTeamLogoUrl } from './team-logos.js';
 import { 
@@ -88,6 +89,7 @@ import {
   updateWelcomeCamera,
   getActiveCameraName,
   verifyAndForceUmpireCameraPosition,
+  getMatchupSceneAudit,
 } from './scene.js';
 import {
   XP_PER_LEVEL,
@@ -576,7 +578,7 @@ function setMarqueePlayerName(primaryEl, dupSelectorOrEl, name, options = {}) {
 /** Normalize R/L/RHP/LHP/RHB/LHB into display label + badge class. */
 function formatHandBadge(hand, role) {
   const isPitcher = role === 'pitcher';
-  const isLeft = String(hand || '').toUpperCase().includes('L');
+  const isLeft = isLeftHandCode(hand);
   const label = isPitcher ? (isLeft ? 'LHP' : 'RHP') : (isLeft ? 'LHB' : 'RHB');
   const modifier = isPitcher ? (isLeft ? 'lhp' : 'rhp') : (isLeft ? 'lhb' : 'rhb');
   return {
@@ -2316,6 +2318,28 @@ export async function startGameSession() {
   const canvas = document.getElementById('three-canvas');
   
   initScene(container, canvas);
+
+  window.__auditMatchup = () => {
+    const pitch = pitchesList?.[currentPitchIndex] || currentPitch;
+    const hands = getPitchMatchupHands(pitch);
+    return {
+      ...hands,
+      activeWeeklyAbIndex,
+      gameMode,
+      pitchIndex: currentPitchIndex,
+      pitchMeta: pitch
+        ? {
+            batter: pitch.batter,
+            pitcher: pitch.pitcher,
+            batter_hand: pitch.batter_hand,
+            pitcher_hand: pitch.pitcher_hand,
+          }
+        : null,
+      scene: getMatchupSceneAudit(hands.pitcherHand, hands.batterHand),
+      cardPitcherHand: cardPitcherHand?.textContent?.trim() ?? null,
+      cardBatterHand: cardBatterHand?.textContent?.trim() ?? null,
+    };
+  };
   
   window.addEventListener('resize', () => {
     onResize(container.clientWidth, container.clientHeight);
@@ -5180,6 +5204,9 @@ function updateDemoPitch() {
       // Randomize pitcher/batter hands for variety
       demoPitchData.pitcher_hand = Math.random() > 0.5 ? 'R' : 'L';
       demoPitchData.batter_hand = Math.random() > 0.5 ? 'R' : 'L';
+      
+      updateHolographicPitcher(demoPitchData.pitcher_hand);
+      updateHolographicBatter(demoPitchData.batter_hand, demoPitchData.sz_bot, demoPitchData.sz_top);
       
       demoPitchActive = true;
       demoPitchStartTime = performance.now();
@@ -10468,9 +10495,6 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   if (!abData || pitchesList.length === 0) {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
-  if (!isResume && pitchesList.length > 0) {
-    syncMatchupFromPitch(pitchesList[currentPitchIndex] || pitchesList[0]);
-  }
   if (!isResume) {
     activeAbEnded = false;
     currentPitchIndex = 0;
@@ -10513,6 +10537,8 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
     }
     activeAbEnded = false;
   }
+
+  syncMatchupFromPitch(pitchesList[currentPitchIndex] || pitchesList[0]);
   
   abOverviewSecondsUsed = 0;
   isGamePaused = false;
@@ -12310,6 +12336,10 @@ function launchGame(rawABs, gameMeta, options = {}) {
     abBalls = 0;
     abStrikes = 0;
     pitchHistory = [];
+  }
+
+  if (normalizedABs.length === 1) {
+    activeWeeklyAbIndex = 0;
   }
 
   loadWeeklyAtBat(activeWeeklyAbIndex);
