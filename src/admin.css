@@ -489,6 +489,27 @@ body {
   gap: 0.5rem;
 }
 
+.admin-streak-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-streak-step {
+  font-size: 0.9rem;
+}
+
+.admin-streak-step--done {
+  color: var(--retro-grass, #3d8f4a);
+}
+
+.admin-streak-root .admin-section {
+  margin-top: 1.25rem;
+}
+
 .admin-challenges-root {
   display: flex;
   flex-direction: column;

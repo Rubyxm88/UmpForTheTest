@@ -100,6 +100,21 @@ With `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set on Vercel, **Build full 
 
 Local dev still mirrors bundles to `src/data/weekly_bundles/` when the filesystem is writable.
 
+## 6. Streak pool (20k+ path)
+
+Migrations:
+
+- `20260601000000_streak_pool.sql` — `streak_at_bats`, `streak_daily_rotations`
+- `20260601130000_streak_analytics.sql` — `streak_ab_stats`, `streak_sessions`
+
+After applying migrations:
+
+```bash
+npm run streak-pool:ingest   # uploads src/data/streak_pool.js → Supabase
+```
+
+Admin → **Streak pool** shows readiness, AB play stats, and logged sessions. The game still ships a small bundle (`STREAK_POOL_META.totalAbs`); full 20k requires ingest plus a future client change to load ABs via `GET /api/streak-pool?abId=…` instead of the JS bundle.
+
 ## 6. Security notes
 
 - Do **not** commit `.env` or service role keys.

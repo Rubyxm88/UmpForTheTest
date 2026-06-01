@@ -4,8 +4,13 @@ const API = { credentials: 'include' };
 
 function formatApiError(res, data) {
   if (data.error && data.error !== 'Internal Server Error') return data.error;
-  if (res.status === 500 && (!data.error || data.error === 'Internal Server Error')) {
-    return 'API unavailable — run npm run dev:full (or npm run dev:api in another terminal)';
+  if (res.status === 500) {
+    const host = typeof location !== 'undefined' ? location.hostname : '';
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    if (isLocal && (!data.error || data.error === 'Internal Server Error')) {
+      return 'API unavailable — run npm run dev:full (or npm run dev:api in another terminal)';
+    }
+    return data.error || 'Server error — check Vercel env (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) and function logs';
   }
   return data.error || res.statusText || 'Request failed';
 }
@@ -94,6 +99,7 @@ const userDetail = document.getElementById('admin-user-detail');
 const detailBody = document.getElementById('admin-detail-body');
 const detailHandle = document.getElementById('admin-detail-handle');
 const challengesRoot = document.getElementById('admin-challenges-root');
+const streakRoot = document.getElementById('admin-streak-root');
 
 let allUsers = [];
 let selectedHandle = null;
@@ -128,6 +134,7 @@ async function checkSession() {
       if (signedInAs) signedInAs.textContent = `Signed in as ${me.username}`;
       await loadUsers();
       await loadChallenges();
+      await loadStreak();
     }
   } catch {
     showScreen(loginScreen);
@@ -151,6 +158,7 @@ loginForm?.addEventListener('submit', async (e) => {
       if (signedInAs) signedInAs.textContent = `Signed in as ${data.username}`;
       await loadUsers();
       await loadChallenges();
+      await loadStreak();
     }
   } catch (err) {
     showError(loginError, err.message || 'Login failed');
@@ -171,6 +179,7 @@ passwordForm?.addEventListener('submit', async (e) => {
     showScreen(panelScreen);
     await loadUsers();
     await loadChallenges();
+    await loadStreak();
   } catch (err) {
     showError(passwordError, err.message || 'Update failed');
   }
@@ -189,6 +198,8 @@ document.querySelectorAll('[data-admin-tab]').forEach((btn) => {
     });
     document.getElementById('admin-tab-users')?.classList.toggle('hidden', tab !== 'users');
     document.getElementById('admin-tab-challenges')?.classList.toggle('hidden', tab !== 'challenges');
+    document.getElementById('admin-tab-streak')?.classList.toggle('hidden', tab !== 'streak');
+    if (tab === 'streak') loadStreak();
   });
 });
 
@@ -1109,6 +1120,205 @@ async function loadChallenges() {
   } catch (err) {
     challengesRoot.innerHTML = `<p class="admin-status-err">${escapeHtml(err.message || 'Failed to load')}</p>`;
     setChallengeStatus(err.message, 'err');
+  }
+}
+
+let streakPanelData = null;
+let streakAbsPage = 1;
+let streakSessionsPage = 1;
+
+function renderStreakReadiness(data) {
+  const steps = data.readiness?.steps || [];
+  const items = steps
+    .map(
+      (s) =>
+        `<li class="admin-streak-step ${s.done ? 'admin-streak-step--done' : ''}"><strong>${s.done ? '✓' : '○'}</strong> ${escapeHtml(s.label)}${s.detail ? ` <span class="admin-meta-line">(${escapeHtml(s.detail)})</span>` : ''}</li>`
+    )
+    .join('');
+  const phase = data.readiness?.phase || 'unknown';
+  const phaseLabel = {
+    bundle_only: 'Bundle only (client ships ABs in JS)',
+    partial_ingest: 'Partial DB pool',
+    supabase_pool: 'Supabase pool active',
+  }[phase] || phase;
+
+  return `
+    <header class="admin-challenges-header ump-panel--subtle">
+      <div>
+        <h2 class="ump-title ump-title--sm">Streak pool</h2>
+        <p class="admin-meta-line">20k+ path: ingest → client fetches by ID → telemetry fills admin stats</p>
+      </div>
+      <button type="button" id="admin-refresh-streak" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
+    </header>
+    <div class="admin-kpi-row">
+      <div class="admin-kpi"><span class="admin-kpi__label">Phase</span><span class="admin-kpi__value">${escapeHtml(phaseLabel)}</span></div>
+      <div class="admin-kpi"><span class="admin-kpi__label">DB pool (eligible)</span><span class="admin-kpi__value">${data.poolCount ?? 0} (${data.eligibleCount ?? 0})</span></div>
+      <div class="admin-kpi"><span class="admin-kpi__label">Build bundle</span><span class="admin-kpi__value">${data.bundleMeta?.totalAbs ?? '—'} ABs</span></div>
+      <div class="admin-kpi"><span class="admin-kpi__label">Sessions logged</span><span class="admin-kpi__value">${data.sessionCount ?? 0}</span></div>
+      <div class="admin-kpi"><span class="admin-kpi__label">ABs with stats</span><span class="admin-kpi__value">${data.statsRowCount ?? 0}</span></div>
+    </div>
+    <section class="admin-section">
+      <h3 class="admin-section__title">Readiness checklist</h3>
+      <ul class="admin-streak-checklist">${items || '<li>Loading…</li>'}</ul>
+      <p class="admin-meta-line">Ingest: <code>npm run streak-pool:ingest</code> (from machine with service role key). Vercel production needs migrations applied first.</p>
+    </section>`;
+}
+
+function renderStreakAbsTable(rows, total, page, limit) {
+  if (!rows?.length) {
+    return '<p class="admin-meta-line">No ABs in Supabase yet — run ingest or play streak (telemetry creates stat rows for served ABs).</p>';
+  }
+  const body = rows
+    .map((r) => {
+      const s = r.stats || {};
+      const acc =
+        s.pitches_seen > 0
+          ? `${Math.round((100 * (s.correct_calls || 0)) / s.pitches_seen)}%`
+          : '—';
+      return `<tr>
+        <td class="admin-table__mono admin-table__truncate" title="${escapeHtml(r.id)}">${escapeHtml(r.id.slice(0, 36))}${r.id.length > 36 ? '…' : ''}</td>
+        <td>${escapeHtml(r.pitcher || '—')} vs ${escapeHtml(r.batter || '—')}</td>
+        <td>${r.difficulty ?? '—'}</td>
+        <td>${s.times_served ?? 0}</td>
+        <td>${s.times_completed ?? 0}</td>
+        <td>${s.pitches_seen ?? 0}</td>
+        <td>${acc}</td>
+        <td>${formatDate(s.last_played_at)}</td>
+      </tr>`;
+    })
+    .join('');
+  const pages = Math.max(1, Math.ceil(total / limit));
+  return `
+    <div class="admin-toolbar">
+      <input id="admin-streak-ab-search" type="search" class="ump-input admin-input--search" placeholder="Search pitcher, batter, id…" />
+      <select id="admin-streak-ab-sort" class="ump-input">
+        <option value="times_served">Most played</option>
+        <option value="difficulty">Difficulty</option>
+        <option value="last_used">Last used</option>
+        <option value="id">ID</option>
+      </select>
+      <button type="button" id="admin-streak-abs-prev" class="ump-btn ump-btn--ghost ump-btn--sm" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+      <span class="admin-meta-line">Page ${page} / ${pages} (${total} total)</span>
+      <button type="button" id="admin-streak-abs-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= pages ? 'disabled' : ''}>Next</button>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr>
+          <th>AB id</th><th>Matchup</th><th>Diff</th><th>Served</th><th>Completed</th><th>Pitches</th><th>Accuracy</th><th>Last played</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderStreakSessionsTable(rows, total, page, limit) {
+  if (!rows?.length) {
+    return '<p class="admin-meta-line">No streak sessions recorded yet. Logged-in players send data when a streak run ends.</p>';
+  }
+  const body = rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.handle)}</td>
+        <td>${escapeHtml(r.date_key)}</td>
+        <td>${r.correct_streak}</td>
+        <td>${r.abs_played}</td>
+        <td>${r.correct_pitches}/${r.pitches_called}</td>
+        <td class="admin-table__mono admin-table__truncate">${escapeHtml((r.used_ab_ids || []).slice(0, 3).join(', '))}${(r.used_ab_ids?.length || 0) > 3 ? '…' : ''}</td>
+        <td>${formatDate(r.ended_at)}</td>
+      </tr>`
+    )
+    .join('');
+  const pages = Math.max(1, Math.ceil(total / limit));
+  return `
+    <div class="admin-toolbar">
+      <input id="admin-streak-session-handle" type="search" class="ump-input admin-input--search" placeholder="Filter handle…" />
+      <button type="button" id="admin-streak-sessions-prev" class="ump-btn ump-btn--ghost ump-btn--sm" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+      <span class="admin-meta-line">Page ${page} / ${pages}</span>
+      <button type="button" id="admin-streak-sessions-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= pages ? 'disabled' : ''}>Next</button>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Player</th><th>Date</th><th>Streak</th><th>ABs</th><th>Pitches</th><th>AB ids</th><th>Ended</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+}
+
+function bindStreakPanelEvents() {
+  if (!streakRoot || streakRoot.dataset.bound) return;
+  streakRoot.dataset.bound = '1';
+  streakRoot.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.id === 'admin-refresh-streak') loadStreak();
+    if (t.id === 'admin-streak-abs-prev' && streakAbsPage > 1) {
+      streakAbsPage--;
+      loadStreakAbs();
+    }
+    if (t.id === 'admin-streak-abs-next') {
+      streakAbsPage++;
+      loadStreakAbs();
+    }
+    if (t.id === 'admin-streak-sessions-prev' && streakSessionsPage > 1) {
+      streakSessionsPage--;
+      loadStreakSessions();
+    }
+    if (t.id === 'admin-streak-sessions-next') {
+      streakSessionsPage++;
+      loadStreakSessions();
+    }
+  });
+  streakRoot.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.id === 'admin-streak-ab-search' || t.id === 'admin-streak-ab-sort') {
+      streakAbsPage = 1;
+      loadStreakAbs();
+    }
+    if (t.id === 'admin-streak-session-handle') {
+      streakSessionsPage = 1;
+      loadStreakSessions();
+    }
+  });
+}
+
+async function loadStreakAbs() {
+  const search = document.getElementById('admin-streak-ab-search')?.value || '';
+  const sort = document.getElementById('admin-streak-ab-sort')?.value || 'times_served';
+  const abs = await api(
+    `/api/admin/streak?view=abs&page=${streakAbsPage}&limit=50&search=${encodeURIComponent(search)}&sort=${encodeURIComponent(sort)}`
+  );
+  const mount = document.getElementById('admin-streak-abs-mount');
+  if (mount) {
+    mount.innerHTML = renderStreakAbsTable(abs.rows, abs.total, abs.page, abs.limit);
+  }
+}
+
+async function loadStreakSessions() {
+  const handle = document.getElementById('admin-streak-session-handle')?.value || '';
+  const data = await api(
+    `/api/admin/streak?view=sessions&page=${streakSessionsPage}&limit=30&handle=${encodeURIComponent(handle)}`
+  );
+  const mount = document.getElementById('admin-streak-sessions-mount');
+  if (mount) {
+    mount.innerHTML = renderStreakSessionsTable(data.rows, data.total, data.page, data.limit);
+  }
+}
+
+async function loadStreak() {
+  if (!streakRoot) return;
+  streakRoot.innerHTML = '<p class="admin-meta-line">Loading…</p>';
+  try {
+    const dash = await api('/api/admin/streak');
+    streakPanelData = dash;
+    streakRoot.innerHTML = `${renderStreakReadiness(dash)}
+      <section class="admin-section"><h3 class="admin-section__title">At-bats (Supabase + play stats)</h3><div id="admin-streak-abs-mount"></div></section>
+      <section class="admin-section"><h3 class="admin-section__title">Streak sessions</h3><div id="admin-streak-sessions-mount"></div></section>`;
+    delete streakRoot.dataset.bound;
+    bindStreakPanelEvents();
+    await loadStreakAbs();
+    await loadStreakSessions();
+  } catch (err) {
+    streakRoot.innerHTML = `<p class="admin-status-err">${escapeHtml(err.message)}</p>`;
+    showAdminToast(err.message, 'err');
   }
 }
 

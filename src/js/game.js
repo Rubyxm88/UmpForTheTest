@@ -28,6 +28,13 @@ import {
   getStreakPool,
   STREAK_POOL_META,
 } from './streak-rotation.js';
+import {
+  markStreakSessionStart,
+  streakTelemetryAbServed,
+  streakTelemetryPitch,
+  streakTelemetryAbCompleted,
+  streakTelemetrySessionEnd,
+} from './streak-telemetry.js';
 import { clearPreviewState, collapsePreviewGameDetails } from './mlb-games-preview.js';
 import { formatMlbAbOutcomeText, MLB_GAME_FEED_PARSE_VERSION, fetchMlbPlayerProfile } from './mlb-api.js';
 import { applyMlbPitchPlaybackState } from './mlb-playback.js';
@@ -4988,6 +4995,10 @@ function transitionToState(newState, options = {}) {
         showABOutcomeToast("STREAK ENDED! MISSED CALL");
         updateDailyStreakStatusUI();
       }
+
+      if (gameMode === 'daily_streak' && !userHistoryItem.isSwingPlay && currentStreakAbMeta?.id) {
+        streakTelemetryPitch(currentStreakAbMeta.id, userHistoryItem.userCorrect);
+      }
       
       // Save game progress after each called pitch decision
       saveGameProgress();
@@ -7768,6 +7779,7 @@ async function startDailyStreakChallenge(isResume = false, opts = {}) {
   }
 
   if (!isResume && !restored) {
+    markStreakSessionStart();
     initNewStreakRunSeed();
     streakSessionUsedIds = new Set();
     currentStreakAbMeta = null;
@@ -7823,7 +7835,10 @@ function loadNextStreakAtBat(isResume = false) {
     }
     streakSessionUsedIds.add(abData.id);
     currentStreakAbMeta = abData;
-    if (!isResume) activeStreakAbIndex = Math.max(0, streakSessionUsedIds.size - 1);
+    if (!isResume) {
+      activeStreakAbIndex = Math.max(0, streakSessionUsedIds.size - 1);
+      streakTelemetryAbServed(abData.id);
+    }
   }
 
   pitchesList = abData.pitches;
@@ -7922,6 +7937,9 @@ function advanceStreakToNextAtBat() {
   if (isSessionOver) {
     showStreakSummaryScreen();
     return;
+  }
+  if (currentStreakAbMeta?.id) {
+    streakTelemetryAbCompleted(currentStreakAbMeta.id);
   }
   activeAbEnded = false;
   currentStreakAbMeta = null;
@@ -8673,6 +8691,16 @@ async function showStreakSummaryScreen() {
 
   streakFlowEpoch++;
   cancelPendingStreakFlowTimers();
+  const abPitchesForTelemetry = streakPitchHistory.filter((p) => !p.isSwingPlay);
+  const correctForTelemetry = abPitchesForTelemetry.filter((x) => x.userCorrect).length;
+  streakTelemetrySessionEnd({
+    dateKey: getStreakDateKey(),
+    correctStreak: correctForTelemetry,
+    absPlayed: streakSessionUsedIds.size,
+    pitchesCalled: abPitchesForTelemetry.length,
+    correctPitches: correctForTelemetry,
+    usedAbIds: streakSessionUsedIds,
+  });
   recordStreakDaySeenIds(streakSessionUsedIds);
   clearStreakChallengeSession();
 
