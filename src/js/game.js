@@ -5927,6 +5927,10 @@ function submitSwingDecision() {
     const lastItem = pitchHistory[pitchHistory.length - 1];
     if (lastItem) streakPitchHistory.push(lastItem);
   }
+
+  if (gameMode === 'weekly_challenge') {
+    persistWeeklyChallengeProgress();
+  }
   
   transitionToState(STATES.ABS_REVIEW);
 }
@@ -6027,6 +6031,10 @@ function submitUserDecision(userCall) {
     let isSqueeze = (absCall === 'S' && userCall === 'B');
     let isExpansion = (absCall === 'B' && userCall === 'S');
     const todayStr = new Date().toISOString().slice(0, 10);
+
+  if (gameMode === 'weekly_challenge') {
+    persistWeeklyChallengeProgress();
+  }
 
     userStats.recentPitches.push({
       x: pitchTrajectory.crossPoint.x,
@@ -6875,6 +6883,9 @@ function returnToMainMenu() {
   pitchesList = [];
 
   if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
+    if (gameMode === 'weekly_challenge') {
+      syncWeeklyPlaylistFromActiveAtBat();
+    }
     saveChallengeSessionToLocal();
     void saveGameProgress();
   } else {
@@ -7697,6 +7708,9 @@ async function goToMainMenu() {
     if (inningCard) inningCard.classList.add('hidden');
 
     if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
+      if (gameMode === 'weekly_challenge') {
+        syncWeeklyPlaylistFromActiveAtBat();
+      }
       saveChallengeSessionToLocal();
       await saveGameProgress();
     }
@@ -9502,7 +9516,7 @@ async function showAtBatSummaryScreen(outcomeText) {
       weeklyPlaylistABs[activeWeeklyAbIndex].userCorrectCount = correctCount;
       weeklyPlaylistABs[activeWeeklyAbIndex].userTotalCount = abPitches.length;
       weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
-      saveChallengeSessionToLocal();
+      persistWeeklyChallengeProgress();
     }
 
     let overallCorrect = 0;
@@ -9624,8 +9638,12 @@ function advanceNextAtBat() {
   
   // Advance in weekly challenge playlist
   if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
+    if (gameMode === 'weekly_challenge' && weeklyPlaylistABs[activeWeeklyAbIndex]) {
+      weeklyPlaylistABs[activeWeeklyAbIndex].completed = true;
+      syncWeeklyPlaylistFromActiveAtBat();
+    }
     activeWeeklyAbIndex++;
-    saveChallengeSessionToLocal();
+    persistWeeklyChallengeProgress();
     if (gameMode === 'weekly_challenge') {
       updateChallengeProgressUI();
     }
@@ -9682,9 +9700,11 @@ function saveChallengeSessionToLocal() {
   const sanitizedPlaylist = sanitizeWeeklyPlaylist(weeklyPlaylistABs);
   const sanitizedHistory = sanitizeHistory(pitchHistory);
 
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
   const data = {
     completedABsCount,
     weeklyPlaylistABs: sanitizedPlaylist,
+    weeklyChallengeWeekId: meta.challengeWeekId,
     streakPlaylistABs: streakPlaylistABs?.length ? streakPlaylistABs.map((ab) => {
       const cleanAb = { ...ab };
       if (cleanAb.pitches) cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
@@ -9827,78 +9847,248 @@ function findFirstPlayableWeeklyAbIndex(playlist, startAt = 0) {
   return 0;
 }
 
-function isSavedWeeklyPlaylistCompatible(savedPlaylist, rawABs) {
-  if (!savedPlaylist?.length || !rawABs?.length) return false;
-  if (savedPlaylist.length !== rawABs.length) return false;
-  const hasTeammates = savedPlaylist.some((ab) =>
-    ab.pitches?.some((p) => {
-      const teamP = getPlayerTeam(p.pitcher);
-      const teamB = getPlayerTeam(p.batter);
-      return teamP && teamB && teamP === teamB;
-    })
-  );
-  if (hasTeammates) return false;
-  const rawFirstId = rawABs[0]?.pitches?.[0]?.id;
-  const savedFirstId = savedPlaylist[0]?.pitches?.[0]?.id;
-  return rawFirstId !== undefined && savedFirstId !== undefined && rawFirstId === savedFirstId;
+function weeklyPitchProgressKey(pitch) {
+  if (!pitch) return '';
+  if (pitch.id != null) return `id:${pitch.id}`;
+  return `ab:${pitch.at_bat_number ?? ''}:${pitch.pitch_number ?? ''}:${pitch.batter ?? ''}:${pitch.pitcher ?? ''}`;
 }
 
-function pickWeeklyPitchState(...candidates) {
-  for (const c of candidates) {
-    if (c && hasSavedWeeklyPitchProgress(c)) return c;
+function weeklyAbProgressKey(ab) {
+  const p0 = getAbPitches(ab)[0];
+  if (p0) return weeklyPitchProgressKey(p0);
+  return `gi:${ab?.gameIndex ?? ''}:${ab?.batter ?? ''}:${ab?.pitcher ?? ''}`;
+}
+
+function applyWeeklyPitchCallFields(target, source) {
+  if (!target || !source || source.userCall === undefined) return;
+  target.userCall = source.userCall;
+  target.absCall = source.absCall;
+  target.realCall = source.realCall;
+  target.userCorrect = source.userCorrect;
+  target.realCorrect = source.realCorrect;
+  target.isSwingPlay = !!source.isSwingPlay;
+  if (source.swingOutcome != null) target.swingOutcome = source.swingOutcome;
+  if (source.swingHitType != null) target.swingHitType = source.swingHitType;
+}
+
+function weeklyPlaylistHasProgress(playlist) {
+  if (!playlist?.length) return false;
+  return playlist.some(
+    (ab) =>
+      ab.completed ||
+      getAbPitches(ab).some((p) => p.userCall !== undefined)
+  );
+}
+
+function weeklyAbHasMidPitchProgress(ab) {
+  if (!ab || ab.completed) return false;
+  return getAbPitches(ab).some((p) => p.userCall !== undefined);
+}
+
+function mergeWeeklyAbEntry(freshAb, savedAb) {
+  const freshPitches = (freshAb.pitches || []).map((p) => ({ ...p }));
+  if (!savedAb) {
+    return {
+      ...freshAb,
+      pitches: freshPitches,
+      completed: !!freshAb.completed,
+      userCorrectCount: freshAb.userCorrectCount || 0,
+      userTotalCount: freshAb.userTotalCount || 0,
+    };
   }
-  return candidates.find(Boolean) || null;
+
+  const savedPitches = getAbPitches(savedAb);
+  const savedPitchMap = new Map();
+  savedPitches.forEach((p) => savedPitchMap.set(weeklyPitchProgressKey(p), p));
+
+  const mergedPitches = freshPitches.map((fp, pi) => {
+    const fromKey = savedPitchMap.get(weeklyPitchProgressKey(fp));
+    const fromIndex = savedPitches[pi];
+    const fromSaved = fromKey || fromIndex;
+    if (!fromSaved) return fp;
+    const merged = { ...fp };
+    applyWeeklyPitchCallFields(merged, fromSaved);
+    return merged;
+  });
+
+  const calledCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay).length;
+  const correctCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay && p.userCorrect).length;
+
+  return {
+    ...freshAb,
+    pitches: mergedPitches,
+    completed: !!savedAb.completed,
+    userCorrectCount: savedAb.userCorrectCount ?? correctCount,
+    userTotalCount: savedAb.userTotalCount ?? calledCount,
+    gameIndex: freshAb.gameIndex ?? savedAb.gameIndex,
+    gameTitle: freshAb.gameTitle || savedAb.gameTitle,
+    filmRoomUrl: freshAb.filmRoomUrl || savedAb.filmRoomUrl,
+    umpScorecardUrl: freshAb.umpScorecardUrl || savedAb.umpScorecardUrl,
+    batter: freshAb.batter || savedAb.batter,
+    pitcher: freshAb.pitcher || savedAb.pitcher,
+  };
+}
+
+/** Merge saved user calls / AB completion onto the current week's fresh playlist (by pitch id + index). */
+function mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist) {
+  if (!freshPlaylist?.length) return [];
+  if (!savedPlaylist?.length) {
+    return freshPlaylist.map((ab) => ({
+      ...ab,
+      pitches: (ab.pitches || []).map((p) => ({ ...p })),
+      completed: !!ab.completed,
+      userCorrectCount: ab.userCorrectCount || 0,
+      userTotalCount: ab.userTotalCount || 0,
+    }));
+  }
+
+  const savedByAbKey = new Map();
+  savedPlaylist.forEach((ab) => savedByAbKey.set(weeklyAbProgressKey(ab), ab));
+
+  return freshPlaylist.map((freshAb, idx) => {
+    const savedAb = savedByAbKey.get(weeklyAbProgressKey(freshAb)) || savedPlaylist[idx];
+    return mergeWeeklyAbEntry(freshAb, savedAb);
+  });
+}
+
+/** Pick the at-bat with the most advanced saved progress (not merely the first incomplete slot). */
+function findWeeklyResumeAbIndex(playlist, preferredIndex = null) {
+  if (!playlist?.length) return 0;
+
+  let bestScore = -1;
+  let bestIdx = 0;
+
+  playlist.forEach((ab, i) => {
+    const pitches = getAbPitches(ab);
+    const called = pitches.filter((p) => p.userCall !== undefined).length;
+    let score = -1;
+    if (weeklyAbHasMidPitchProgress(ab)) {
+      score = i * 10000 + called;
+    } else if (ab.completed) {
+      score = i * 10000 + pitches.length + 500;
+    } else if (called > 0) {
+      score = i * 10000 + called;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  });
+
+  if (
+    Number.isFinite(preferredIndex) &&
+    preferredIndex >= 0 &&
+    preferredIndex < playlist.length
+  ) {
+    const prefAb = playlist[preferredIndex];
+    const prefPitches = getAbPitches(prefAb);
+    const prefCalled = prefPitches.filter((p) => p.userCall !== undefined).length;
+    if (prefCalled > 0 || prefAb.completed || weeklyAbHasMidPitchProgress(prefAb)) {
+      bestIdx = preferredIndex;
+    }
+  }
+
+  if (bestScore < 0) {
+    return findFirstPlayableWeeklyAbIndex(playlist, 0);
+  }
+
+  const bestAb = playlist[bestIdx];
+  const bestPitches = getAbPitches(bestAb);
+  const allCalled =
+    bestPitches.length > 0 && bestPitches.every((p) => p.userCall !== undefined);
+
+  if (bestAb.completed || (allCalled && checkWeeklyAbIsFinished(bestAb, bestPitches))) {
+    const next = bestIdx + 1;
+    if (next < playlist.length) {
+      return findFirstPlayableWeeklyAbIndex(playlist, next);
+    }
+    return playlist.length;
+  }
+
+  return findFirstPlayableWeeklyAbIndex(playlist, bestIdx);
+}
+
+function checkWeeklyAbIsFinished(ab, pitches = getAbPitches(ab)) {
+  if (!pitches.length) return false;
+  let balls = 0;
+  let strikes = 0;
+  for (const pitch of pitches) {
+    if (pitch.userCall === undefined) return false;
+    if (pitch.isSwingPlay) {
+      if (pitch.swingOutcome === 'WHIFF') strikes++;
+      else if (pitch.swingOutcome === 'FOUL' && strikes < 2) strikes++;
+      else if (pitch.swingOutcome === 'HIT' || pitch.swingOutcome === 'OUT') return true;
+    } else if (pitch.userCall === 'S' || pitch.userCall === 'TIMEOUT') {
+      strikes++;
+    } else if (pitch.userCall === 'B') {
+      balls++;
+    }
+    if (balls >= 4 || strikes >= 3) return true;
+  }
+  return pitches.every((p) => p.userCall !== undefined);
+}
+
+function syncWeeklyPlaylistFromActiveAtBat() {
+  if (gameMode !== 'weekly_challenge' && gameMode !== 'mlb_game') return;
+  const ab = weeklyPlaylistABs[activeWeeklyAbIndex];
+  if (!ab) return;
+  const pitches = getAbPitches(ab);
+  pitches.forEach((pitch, i) => {
+    const live = pitchesList[i];
+    if (live?.userCall !== undefined) {
+      applyWeeklyPitchCallFields(pitch, live);
+    }
+  });
+  pitchHistory.forEach((item, idx) => {
+    const pitch = pitches[idx];
+    if (!pitch) return;
+    const src = item.pitchData || item;
+    if (src.userCall !== undefined) {
+      applyWeeklyPitchCallFields(pitch, src);
+    }
+  });
+}
+
+function persistWeeklyChallengeProgress() {
+  if (gameMode !== 'weekly_challenge') return;
+  syncWeeklyPlaylistFromActiveAtBat();
+  saveChallengeSessionToLocal();
+  void saveGameProgress();
 }
 
 /**
- * Restore weekly playlist + AB index + in-progress pitch state from IndexedDB / localStorage.
- * @returns {{ playlist: object[], abIndex: number, pitchState: object|null, hasMidAbProgress: boolean }}
+ * Restore weekly playlist + AB index from saved progress (playlist pitches are source of truth).
  */
 async function resolveWeeklyChallengeResume(rawABs, username) {
-  const freshPlaylist = rawABs?.length ? [...rawABs] : [];
-  let playlist = freshPlaylist;
-  let abIndex = 0;
-  let pitchState = null;
-
+  const freshPlaylist = rawABs?.length ? rawABs : [];
   const savedData = readSavedChallengeData(username);
-  const savedLocal = savedData?.weeklyPlaylistABs?.length && isSavedWeeklyPlaylistCompatible(savedData.weeklyPlaylistABs, rawABs)
-    ? savedData.weeklyPlaylistABs
-    : null;
-  const savedLocalActive =
-    savedData?.activeChallenge?.gameMode === 'weekly_challenge' ? savedData.activeChallenge : null;
+  let savedPlaylist = savedData?.weeklyPlaylistABs?.length ? savedData.weeklyPlaylistABs : null;
+  let preferredIndex = savedData?.activeWeeklyAbIndex;
 
   if (username) {
     try {
       const session = await getActiveSession(username);
-      if (session?.gameMode === 'weekly_challenge' && session.weeklyPlaylistABs?.length) {
-        const idbCompatible = isSavedWeeklyPlaylistCompatible(session.weeklyPlaylistABs, rawABs);
-        playlist = idbCompatible ? session.weeklyPlaylistABs : (savedLocal || freshPlaylist);
-        abIndex = session.activeWeeklyAbIndex ?? savedData?.activeWeeklyAbIndex ?? 0;
-        pitchState = pickWeeklyPitchState(session, savedLocalActive);
+      if (session?.weeklyPlaylistABs?.length) {
+        savedPlaylist = savedPlaylist
+          ? mergeWeeklyPlaylistProgress(savedPlaylist, session.weeklyPlaylistABs)
+          : session.weeklyPlaylistABs;
+        if (session.activeWeeklyAbIndex != null) {
+          preferredIndex = session.activeWeeklyAbIndex;
+        }
       }
     } catch (e) {
       console.error('Failed to read weekly challenge session from IndexedDB:', e);
     }
   }
 
-  if (savedLocal && playlist === freshPlaylist) {
-    playlist = savedLocal;
-    abIndex = savedData.activeWeeklyAbIndex ?? abIndex;
-    pitchState = pickWeeklyPitchState(pitchState, savedLocalActive);
-  }
-
-  abIndex = findFirstPlayableWeeklyAbIndex(playlist, abIndex);
-  if (!getAbPitches(playlist[abIndex]).length && freshPlaylist.length) {
-    playlist = freshPlaylist;
-    abIndex = findFirstPlayableWeeklyAbIndex(playlist, savedData?.activeWeeklyAbIndex ?? 0);
-    pitchState = pickWeeklyPitchState(savedLocalActive, pitchState);
-  }
+  const playlist = mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist || []);
+  const abIndex = findWeeklyResumeAbIndex(playlist, preferredIndex);
 
   return {
     playlist,
     abIndex,
-    pitchState,
-    hasMidAbProgress: hasSavedWeeklyPitchProgress(pitchState),
+    hasMidAbProgress: weeklyAbHasMidPitchProgress(playlist[abIndex]),
+    hasRunProgress: weeklyPlaylistHasProgress(playlist),
   };
 }
 
@@ -9930,7 +10120,9 @@ function restoreChallengePitchState(activeChallenge) {
 }
 
 function hasWeeklyChallengeResumeProgress() {
-  if (weeklyPlaylistABs.some((ab) => ab.completed)) return true;
+  if (weeklyPlaylistHasProgress(weeklyPlaylistABs)) return true;
+  const saved = readSavedChallengeData();
+  if (weeklyPlaylistHasProgress(saved?.weeklyPlaylistABs)) return true;
   if (activeWeeklyAbIndex > 0) return true;
   const active = readSavedActiveChallenge('weekly_challenge');
   if (active && (active.currentPitchIndex > 0 || (active.pitchHistory?.length || 0) > 0)) {
@@ -10052,21 +10244,20 @@ async function loadSavedSessionFromLocal() {
   if (weeklySchedule?.assignments && !weekAssignment?.bundleId) {
     console.warn(`No weekly challenge assigned for calendar week ${calendarWeekId} in schedule.`);
   }
-  const revisionKey = getStoredWeeklyRevisionKey(currentWeekId, activeWeeklyBundleId);
-  const storedRevision = readStoredWeeklyRevision();
+  const storedWeekId = localStorage.getItem('ump_weekly_challenge_week') || '';
   let weeklyWeekJustReset = false;
-  if (storedRevision !== revisionKey) {
+  if (storedWeekId && storedWeekId !== currentWeekId) {
     console.log(
-      'Weekly challenge revision changed — resetting progress.',
+      'Weekly challenge week changed — resetting progress.',
       'was:',
-      storedRevision || '(none)',
+      storedWeekId,
       'now:',
-      revisionKey
+      currentWeekId
     );
     await resetWeeklyChallengeClientProgress(username);
-    writeStoredWeeklyRevision(currentWeekId, activeWeeklyBundleId);
     weeklyWeekJustReset = true;
   }
+  writeStoredWeeklyRevision(currentWeekId, activeWeeklyBundleId);
 
   if (!username) {
     completedABsCount = [0, 0, 0, 0, 0];
@@ -10082,9 +10273,13 @@ async function loadSavedSessionFromLocal() {
     if (session && !weeklyWeekJustReset) {
       console.log("Restoring active session from IndexedDB...");
       if (session.weeklyPlaylistABs?.length) {
-        weeklyPlaylistABs = session.weeklyPlaylistABs;
+        const freshWeekly = extractAtBatsFromWeeklyData();
+        weeklyPlaylistABs = mergeWeeklyPlaylistProgress(freshWeekly, session.weeklyPlaylistABs);
         if (session.gameMode === 'weekly_challenge') {
-          activeWeeklyAbIndex = session.activeWeeklyAbIndex ?? activeWeeklyAbIndex;
+          activeWeeklyAbIndex = findWeeklyResumeAbIndex(
+            weeklyPlaylistABs,
+            session.activeWeeklyAbIndex
+          );
         }
       }
       if (session.streakPlaylistABs?.length) {
@@ -10124,15 +10319,19 @@ async function loadSavedSessionFromLocal() {
       const data = JSON.parse(rawWeekly);
       if (data.completedABsCount) completedABsCount = data.completedABsCount;
       if (data.activeGameIndex !== undefined) activeGameIndex = data.activeGameIndex;
+      const freshWeekly = extractAtBatsFromWeeklyData();
       if (data.weeklyPlaylistABs && data.weeklyPlaylistABs.length > 0) {
-        weeklyPlaylistABs = data.weeklyPlaylistABs;
+        weeklyPlaylistABs = mergeWeeklyPlaylistProgress(freshWeekly, data.weeklyPlaylistABs);
       } else if (!weeklyPlaylistABs.length) {
-        weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+        weeklyPlaylistABs = freshWeekly;
       }
       if (data.streakPlaylistABs?.length) {
         streakPlaylistABs = data.streakPlaylistABs;
       }
-      if (data.activeWeeklyAbIndex !== undefined) activeWeeklyAbIndex = data.activeWeeklyAbIndex;
+      activeWeeklyAbIndex = findWeeklyResumeAbIndex(
+        weeklyPlaylistABs,
+        data.activeWeeklyAbIndex
+      );
       if (data.activeStreakAbIndex !== undefined) activeStreakAbIndex = data.activeStreakAbIndex;
     } catch (e) {
       console.error(e);
@@ -11271,57 +11470,43 @@ async function startWeeklyChallenge() {
   const resume = await resolveWeeklyChallengeResume(rawABs, username);
   weeklyPlaylistABs = resume.playlist;
   activeWeeklyAbIndex = resume.abIndex;
-  if (resume.pitchState) {
-    restoreChallengePitchState(resume.pitchState);
-  } else {
-    currentPitchIndex = 0;
-    pitchHistory = [];
-    abBalls = 0;
-    abStrikes = 0;
-  }
 
   if (!weeklyPlaylistABs.length) {
     throw new Error('Weekly challenge playlist is empty');
   }
-  if (!getAbPitches(weeklyPlaylistABs[activeWeeklyAbIndex]).length) {
+
+  if (!resume.hasRunProgress) {
+    activeWeeklyAbIndex = 0;
+  }
+
+  if (activeWeeklyAbIndex >= weeklyPlaylistABs.length) {
+    saveChallengeSessionToLocal();
+    transitionToState(STATES.SCOREBOARD);
+    return;
+  }
+
+  const resumeAb = weeklyPlaylistABs[activeWeeklyAbIndex];
+  if (!getAbPitches(resumeAb).length) {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
 
-  const resumeMidAb = resume.hasMidAbProgress;
-  const resumeRun =
-    resumeMidAb ||
-    activeWeeklyAbIndex > 0 ||
-    weeklyPlaylistABs.some((ab) => ab.completed);
   console.log(
-    resumeMidAb
-      ? `Resuming weekly challenge at AB ${activeWeeklyAbIndex + 1} (mid at-bat)`
+    resume.hasMidAbProgress
+      ? `Resuming weekly challenge at AB ${activeWeeklyAbIndex + 1} (mid at-bat, pitch-by-pitch)`
       : `Resuming weekly challenge at AB ${activeWeeklyAbIndex + 1}`
   );
-  loadWeeklyAtBat(activeWeeklyAbIndex, resumeRun);
+  loadWeeklyAtBat(activeWeeklyAbIndex, true);
   } catch (err) {
     console.error('Failed to start weekly challenge:', err);
     if (toastMessage) {
       toastMessage.innerHTML =
-        '<span class="text-amber-300 font-bold font-mono-tech">Could not resume — starting a fresh weekly run</span>';
+        '<span class="text-amber-300 font-bold font-mono-tech">Resume issue — retry from Play tab</span>';
       toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
       toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
       setTimeout(() => {
         toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
         toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
       }, 3200);
-    }
-    try {
-      weeklyPlaylistABs = [...rawABs];
-      activeWeeklyAbIndex = 0;
-      currentPitchIndex = 0;
-      pitchHistory = [];
-      abBalls = 0;
-      abStrikes = 0;
-      if (weeklyPlaylistABs.length && getAbPitches(weeklyPlaylistABs[0]).length) {
-        loadWeeklyAtBat(0, false);
-      }
-    } catch (fallbackErr) {
-      console.error('Weekly challenge fallback start failed:', fallbackErr);
     }
   }
 }
@@ -11407,7 +11592,24 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
   if (!abData || pitchesList.length === 0) {
     throw new Error('Weekly challenge at-bat has no pitch data');
   }
-  if (!isResume) {
+
+  if (gameMode === 'weekly_challenge' && abData.completed) {
+    const allCalled =
+      pitchesList.length > 0 && pitchesList.every((p) => p.userCall !== undefined);
+    if (allCalled || checkWeeklyAbIsFinished(abData, pitchesList)) {
+      const nextIdx = abIdx + 1;
+      if (nextIdx < weeklyPlaylistABs.length) {
+        loadWeeklyAtBat(nextIdx, true);
+        return;
+      }
+    }
+  }
+
+  const playlistHasSavedCalls =
+    gameMode === 'weekly_challenge' && pitchesList.some((p) => p.userCall !== undefined);
+  const shouldRestoreFromPlaylist = isResume || playlistHasSavedCalls;
+
+  if (!shouldRestoreFromPlaylist) {
     activeAbEnded = false;
     currentPitchIndex = 0;
     pitchHistory = [];
@@ -11421,16 +11623,18 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
       if (pitchesList[0].outs != null) inningOuts = pitchesList[0].outs;
     }
   } else {
-    if (pitchHistory.length > 0) {
-      enrichPitchHistoryWithPitchData();
-      applyPitchHistoryToPitchesList();
-    } else {
-      reconstructActiveAtBatState();
-    }
-    
-    // If At-Bat is completed, show summary overlay directly (do not auto-start next pitch)
+    reconstructActiveAtBatState();
+    syncWeeklyPlaylistFromActiveAtBat();
+
     if (checkReconstructedAbCompleted()) {
-      console.log("Resumed At-Bat is completed. Loading summary overlay directly.");
+      if (gameMode === 'weekly_challenge' && abData.completed) {
+        const nextIdx = abIdx + 1;
+        if (nextIdx < weeklyPlaylistABs.length) {
+          loadWeeklyAtBat(nextIdx, true);
+          return;
+        }
+      }
+      console.log('Resumed at-bat is complete — showing summary.');
       cancelAutoPlayPitch();
       activeAbEnded = true;
       if (pitchesList.length > 0) {
@@ -11438,12 +11642,12 @@ function loadWeeklyAtBat(abIdx, isResume = false) {
         const matchup = getMatchupNames(lastCompletedPitch);
         lastAbPitcher = matchup.pitcher;
         lastAbBatter = matchup.batter;
-        lastAbBlurb = lastCompletedPitch.historical_blurb || "No play-by-play description available.";
+        lastAbBlurb = lastCompletedPitch.historical_blurb || 'No play-by-play description available.';
         lastAbOutcomeText = gameMode === 'mlb_game'
           ? formatMlbAbOutcomeText(lastCompletedPitch)
           : determineAbOutcomeFromHistory();
         transitionToState(STATES.IDLE);
-        showAtBatSummaryScreen(lastAbOutcomeText);
+        void showAtBatSummaryScreen(lastAbOutcomeText);
       }
       return;
     }
