@@ -17,6 +17,7 @@
     "streak-refresh": "node scripts/streak-pool-builder.js && node scripts/streak-rotation-generator.js",
     "streak-pool:ingest": "node scripts/streak-pool-ingest.mjs",
     "vercel:env": "node scripts/vercel-env-setup.mjs",
+    "vercel:supabase": "node scripts/vercel-supabase-connect.mjs",
     "audit-handedness": "node scripts/audit-handedness.js",
     "test": "node scratch/run_headless.js"
   },

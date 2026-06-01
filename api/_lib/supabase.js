@@ -3,13 +3,25 @@ import { createClient } from '@supabase/supabase-js';
 let adminClient = null;
 
 export const SUPABASE_SETUP_HINT =
-  'Copy .env.example to .env.local, set SUPABASE_SERVICE_ROLE_KEY from Supabase → Project Settings → API (service_role), then restart npm run dev:api or dev:full. See docs/SUPABASE_SETUP.md.';
+  'Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY on Vercel (copy service_role from Supabase dashboard). See docs/SUPABASE_SETUP.md — do not use the Vercel Supabase marketplace integration for this project.';
+
+/** Vercel Marketplace uses SUPABASE_SECRET_KEY; manual setup uses SUPABASE_SERVICE_ROLE_KEY. */
+export function resolveSupabaseEnv() {
+  const url =
+    process.env.SUPABASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+    '';
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+    process.env.SUPABASE_SECRET_KEY?.trim() ||
+    '';
+  return { url, serviceKey };
+}
 
 export function isSupabaseConfigured() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return false;
-  if (/your_service_role|placeholder|changeme/i.test(key)) return false;
+  const { url, serviceKey } = resolveSupabaseEnv();
+  if (!url || !serviceKey) return false;
+  if (/your_service_role|placeholder|changeme/i.test(serviceKey)) return false;
   return true;
 }
 
@@ -21,13 +33,14 @@ export function tryGetSupabaseAdmin() {
 export function getSupabaseAdmin() {
   if (adminClient) return adminClient;
 
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  const { url, serviceKey } = resolveSupabaseEnv();
+  if (!url || !serviceKey) {
+    throw new Error(
+      'Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or install the Vercel Supabase integration — it provides SUPABASE_SECRET_KEY).'
+    );
   }
 
-  adminClient = createClient(url, key, {
+  adminClient = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return adminClient;

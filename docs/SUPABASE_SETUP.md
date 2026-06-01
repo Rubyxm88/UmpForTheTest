@@ -10,19 +10,43 @@ Your Supabase project **UmpSim3000** (`wrtwqfvicftxpduukzwm`) is provisioned wit
 
 The game talks to **Vercel serverless routes** under `/api/*`, which use the **service role** key (never exposed to the browser).
 
-## 1. Vercel environment variables
+## 1. Vercel environment variables (no plan upgrade)
 
-In [Vercel](https://vercel.com) → your project → **Settings → Environment Variables**, add:
+Production admin **cannot save passwords** or weekly bundles until Vercel has a Supabase **service** key (not just `SUPABASE_URL`).
 
-| Name | Value |
-|------|--------|
-| `SUPABASE_URL` | `https://wrtwqfvicftxpduukzwm.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → **Project Settings → API → service_role** (secret) |
-| `SESSION_SECRET` | Long random string (e.g. `openssl rand -hex 32`) |
+**Do not use** `vercel integration add supabase` for this repo. That marketplace flow **provisions a new Supabase database** through Vercel and can prompt you to **upgrade your Vercel plan**. You already have **UmpSim3000** on Supabase — only copy keys into Vercel env vars (Hobby-friendly).
 
-Apply to **Production** and **Preview**.
+### Steps
 
-Redeploy after saving.
+1. Supabase → [UmpSim3000 API keys](https://supabase.com/dashboard/project/wrtwqfvicftxpduukzwm/settings/api-keys) → copy **`service_role`** (secret, not `anon`).
+
+2. In the repo, edit `.env.local`:
+
+   ```
+   SUPABASE_URL=https://wrtwqfvicftxpduukzwm.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<paste service_role here>
+   ```
+
+3. Push to Vercel and redeploy:
+
+   ```bash
+   npm run vercel:env
+   npx vercel deploy --prod
+   ```
+
+4. Verify (no secrets printed):
+
+   ```bash
+   npm run vercel:supabase
+   ```
+
+Or set the same two variables manually in [Vercel → umpsim3000 → Environment Variables](https://vercel.com/randy-phillips-projects/umpsim3000/settings/environment-variables) (Production). `SESSION_SECRET` is already set.
+
+Apply to **Production** and **Preview** if you use preview deploys.
+
+### Vercel Supabase integration (optional, not used here)
+
+Only use the marketplace integration if you intentionally want Vercel to bill/provision a **new** Supabase project. For **UmpSim3000**, use manual env vars above.
 
 ### Admin panel (`/admin`)
 
@@ -100,18 +124,6 @@ With `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set on Vercel, **Build full 
 
 Local dev still mirrors bundles to `src/data/weekly_bundles/` when the filesystem is writable.
 
-## 6. Vercel environment variables (production)
-
-In **Vercel → Project → Settings → Environment Variables** (Production), set:
-
-| Variable | Where to get it |
-|----------|-----------------|
-| `SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Same page → `service_role` secret (not the anon key) |
-| `SESSION_SECRET` | Any long random string (32+ characters) for signing cookies |
-
-Redeploy after adding or changing variables. Without `SESSION_SECRET`, admin login returns a 500. Without Supabase keys, weekly admin cannot save bundles (read-only server).
-
 ## 7. Streak pool (20k+ path)
 
 Migrations:
@@ -127,7 +139,7 @@ npm run streak-pool:ingest   # uploads src/data/streak_pool.js → Supabase
 
 Admin → **Streak pool** shows readiness, AB play stats, and logged sessions. The game still ships a small bundle (`STREAK_POOL_META.totalAbs`); full 20k requires ingest plus a future client change to load ABs via `GET /api/streak-pool?abId=…` instead of the JS bundle.
 
-## 6. Security notes
+## 8. Security notes
 
 - Do **not** commit `.env` or service role keys.
 - RLS is enabled; writes go through the API with the service role.

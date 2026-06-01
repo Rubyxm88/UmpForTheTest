@@ -112,7 +112,7 @@ export async function upsertAdminPassword(username, newPassword) {
 
   if (isProduction() && !supabase) {
     throw new Error(
-      'Cannot save admin password without Supabase. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY on Vercel.'
+      'Cannot save admin password without Supabase. Set SUPABASE_SERVICE_ROLE_KEY on Vercel (service_role from Supabase dashboard for UmpSim3000), then redeploy. See docs/SUPABASE_SETUP.md.'
     );
   }
   devAdminAccounts.set(user, row);
