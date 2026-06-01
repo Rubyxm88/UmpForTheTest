@@ -75,7 +75,7 @@ import {
   apiSubmitLeaderboard,
   apiUpdatePin,
 } from './api-client.js';
-import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime, getDistanceToABSZone as calcDistanceToABSZone, getABSZoneBounds, formatAbsZoneDistance, formatAbsZoneLocation, getPitchCrossPoint, resolvePitchTrajectory, BORDERLINE_FT } from './physics.js';
+import { calculateTrajectoryPoints, isStrikeABS, getCrossingTime, getBallPositionAtTime, getDistanceToABSZone as calcDistanceToABSZone, getABSZoneBounds, formatAbsZoneDistance, formatAbsZoneLocation, getPitchCrossPoint, resolvePitchTrajectory, BORDERLINE_FT, PLATE_HALF_WIDTH } from './physics.js';
 import { 
   initScene, 
   updateStrikeZone, 
@@ -4050,19 +4050,14 @@ function attachEvents() {
     });
   }
 
-  const performLogout = (e) => {
+  const performLogout = async (e) => {
     if (e && e.stopPropagation) {
       e.stopPropagation();
     }
     initAudio();
-    apiLogout().catch(() => {});
-    goToMainMenu();
     localStorage.removeItem('ump_username');
-    loadSavedSessionFromLocal();
+    apiLogout().catch(() => {});
     activeFavoriteTeam = null;
-    updateXpBarColors();
-    updateProfileStatsUI();
-    initProfileSettingsUI();
     if (loginHandleInput) loginHandleInput.value = "";
     if (loginPinInput) loginPinInput.value = "";
     if (loginErrorMsg) loginErrorMsg.classList.add('hidden');
@@ -4070,7 +4065,7 @@ function attachEvents() {
       loginConfirmBox.classList.add('hidden');
       loginConfirmBox.classList.remove('flex');
     }
-    
+
     // Clear demo/active state
     if (autoPlayTimeout) {
       clearTimeout(autoPlayTimeout);
@@ -4081,8 +4076,13 @@ function attachEvents() {
     currentAbStartHistoryIndex = 0;
     abBalls = 0;
     abStrikes = 0;
-    
-    transitionToState(STATES.WELCOME);
+
+    updateXpBarColors();
+    updateWelcomeScreenState();
+    initProfileSettingsUI();
+    void loadSavedSessionFromLocal();
+    void updateProfileStatsUI();
+    await goToMainMenu();
   };
 
   if (btnStatsLogout) {
@@ -4802,10 +4802,16 @@ function updateWelcomeScreenState() {
     }
     refreshWelcomeStatsFromCloud();
   } else {
-    if (loginFields) loginFields.classList.remove('hidden');
+    if (loginFields) {
+      loginFields.classList.remove('hidden');
+      loginFields.style.opacity = '';
+      loginFields.style.transition = '';
+    }
     if (resumeContainer) {
       resumeContainer.classList.add('hidden');
       resumeContainer.classList.remove('flex');
+      resumeContainer.style.opacity = '';
+      resumeContainer.style.transition = '';
     }
     if (welcomeStartBtn) {
       welcomeStartBtn.textContent = "Log In to Play";
@@ -8606,13 +8612,7 @@ function drawStreakSummarySVGMatrix() {
     stdZone.setAttribute('class', 'ab-summary-zone-rulebook');
     streakSummarySvgZone.appendChild(stdZone);
 
-    const plate = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    const plateY = 4.0 - szBot + 0.55;
-    plate.setAttribute('points', '-0.35,' + plateY + ' 0,' + (plateY + 0.18) + ' 0.35,' + plateY);
-    plate.setAttribute('fill', 'rgba(244, 236, 216, 0.15)');
-    plate.setAttribute('stroke', 'rgba(244, 236, 216, 0.45)');
-    plate.setAttribute('stroke-width', '0.02');
-    streakSummarySvgZone.appendChild(plate);
+    appendAbSummaryHomePlate(streakSummarySvgZone, szBot);
   }
 
   abPitches.forEach((item, index) => {
@@ -12252,7 +12252,27 @@ const AB_SUMMARY_COLORS = {
   zoneStroke: '#f4ecd8',
   zoneFill: 'rgba(244, 236, 216, 0.06)',
   distLine: '#e8c547',
+  plateFill: 'rgba(244, 236, 216, 0.22)',
+  plateStroke: 'rgba(244, 236, 216, 0.65)',
 };
+
+/** Home plate on the zone map: front-of-plate view (wide edge toward pitcher / bottom of chart). */
+function appendAbSummaryHomePlate(svgZoneGroup, szBot) {
+  const hw = PLATE_HALF_WIDTH;
+  const flatY = 4.0 - szBot + 0.62;
+  const notchY = flatY - 0.1;
+  const pointY = 4.0 - szBot + 0.34;
+  const plate = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  plate.setAttribute(
+    'points',
+    `${-hw},${flatY} ${hw},${flatY} ${hw},${notchY} 0,${pointY} ${-hw},${notchY}`,
+  );
+  plate.setAttribute('fill', AB_SUMMARY_COLORS.plateFill);
+  plate.setAttribute('stroke', AB_SUMMARY_COLORS.plateStroke);
+  plate.setAttribute('stroke-width', '0.028');
+  plate.setAttribute('class', 'ab-summary-home-plate');
+  svgZoneGroup.appendChild(plate);
+}
 
 function updateAbSummaryZoneDistance(item) {
   const el = document.getElementById('ab-summary-zone-distance');
@@ -12440,13 +12460,7 @@ function drawAbSummarySVGMatrix() {
     stdZone.setAttribute('class', 'ab-summary-zone-rulebook');
     abSummarySvgZone.appendChild(stdZone);
 
-    const plate = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    const plateY = 4.0 - szBot + 0.55;
-    plate.setAttribute('points', '-0.35,' + plateY + ' 0,' + (plateY + 0.18) + ' 0.35,' + plateY);
-    plate.setAttribute('fill', 'rgba(244, 236, 216, 0.15)');
-    plate.setAttribute('stroke', 'rgba(244, 236, 216, 0.45)');
-    plate.setAttribute('stroke-width', '0.02');
-    abSummarySvgZone.appendChild(plate);
+    appendAbSummaryHomePlate(abSummarySvgZone, szBot);
   }
 
   abPitches.forEach((item, index) => {
