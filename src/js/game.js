@@ -6474,6 +6474,34 @@ function showABOutcomeToast(text) {
   }, 2200);
 }
 
+function clearAbStartLoadingOverlay() {
+  const abStartLoadingEl = document.getElementById('ab-start-loading');
+  const abStartMainContentEl = document.getElementById('ab-start-main-content');
+  if (abStartLoadingEl) abStartLoadingEl.classList.add('hidden');
+  if (abStartMainContentEl) abStartMainContentEl.classList.remove('hidden');
+  if (btnAbStartConfirm) {
+    btnAbStartConfirm.disabled = false;
+    btnAbStartConfirm.classList.remove('opacity-50', 'pointer-events-none');
+  }
+}
+
+// #region agent log
+function agentDebugLog(location, message, data, hypothesisId, runId = 'verify') {
+  const payload = { sessionId: 'dbbdbf', location, message, data, timestamp: Date.now(), hypothesisId, runId };
+  try {
+    const key = 'debug-dbbdbf-log';
+    const buf = JSON.parse(sessionStorage.getItem(key) || '[]');
+    buf.push(payload);
+    sessionStorage.setItem(key, JSON.stringify(buf.slice(-80)));
+  } catch (_) {}
+  fetch('http://127.0.0.1:7917/ingest/aa537d84-cbe2-4010-ad43-d792d40cf1e7', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'dbbdbf' },
+    body: JSON.stringify(payload),
+  }).catch(() => {});
+}
+// #endregion
+
 /**
  * Displays the At-Bat Start overlay with matchup info and a 3-second auto-start countdown
  */
@@ -6503,6 +6531,14 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false, startOpts = {
     btnAbStartConfirm.classList.toggle('pointer-events-none', loading);
   }
   if (loading) {
+    // #region agent log
+    agentDebugLog('game.js:showAtBatStartScreen:loading', 'ab start loading on', {
+      loadingMessage,
+      activeWeeklyAbIndex,
+      playlistLen: weeklyPlaylistABs?.length,
+      gameMode,
+    }, 'H3');
+    // #endregion
     window._abStartCallback = onConfirmCallback;
     setAbStartOverlayActive(true);
     abStartOverlay.classList.remove('opacity-0', 'pointer-events-none');
@@ -9694,6 +9730,7 @@ async function advanceNextAtBat() {
       syncWeeklyPlaylistFromActiveAtBat();
     }
     activeWeeklyAbIndex++;
+    activeWeeklyAbIndex = clampWeeklyAbIndex(activeWeeklyAbIndex, weeklyPlaylistABs);
     currentAbStartHistoryIndex = 0;
     pitchHistory = [];
     currentPitchIndex = 0;
@@ -9701,6 +9738,14 @@ async function advanceNextAtBat() {
     abStrikes = 0;
     if (gameMode === 'weekly_challenge') {
       const nextNum = Math.min(activeWeeklyAbIndex + 1, getWeeklyChallengeTargetAtBats());
+      // #region agent log
+      agentDebugLog('game.js:advanceNextAtBat', 'advance weekly', {
+        activeWeeklyAbIndex,
+        nextNum,
+        playlistLen: weeklyPlaylistABs?.length,
+        targetAtBats: getWeeklyChallengeTargetAtBats(),
+      }, 'H3-H5');
+      // #endregion
       showAtBatStartScreen(null, false, {
         loading: true,
         loadingMessage: `Loading at-bat ${nextNum}…`,
@@ -9711,7 +9756,18 @@ async function advanceNextAtBat() {
     if (gameMode === 'weekly_challenge') {
       updateChallengeProgressUI();
     }
-    loadWeeklyAtBat(activeWeeklyAbIndex, { fresh: true });
+    try {
+      loadWeeklyAtBat(activeWeeklyAbIndex, { fresh: true });
+    } catch (err) {
+      console.error('Failed to load next weekly at-bat:', err);
+      clearAbStartLoadingOverlay();
+      setAbStartOverlayActive(false);
+      if (abStartOverlay) {
+        abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+        abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+      }
+      transitionToState(STATES.START);
+    }
   } else if (gameMode === 'daily_streak') {
     loadNextStreakAtBat(false);
   } else {
@@ -9776,7 +9832,7 @@ function saveChallengeSessionToLocal() {
       if (cleanAb.pitches) cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
       return cleanAb;
     }) : [],
-    activeWeeklyAbIndex,
+    activeWeeklyAbIndex: clampWeeklyAbIndex(activeWeeklyAbIndex, weeklyPlaylistABs),
     activeStreakAbIndex,
     activeGameIndex,
     gamePk: activeMlbGamePk,
@@ -10057,78 +10113,58 @@ function mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist) {
   });
 }
 
-/** Pick the at-bat with the most advanced saved progress (not merely the first incomplete slot). */
+function isWeeklyAbFullyComplete(ab, pitches = getAbPitches(ab)) {
+  if (!pitches.length) return true;
+  if (weeklyAbHasMidPitchProgress(ab)) return false;
+  if (ab.completed && checkWeeklyAbIsFinished(ab, pitches)) return true;
+  const allCalled = pitches.every((p) => p.userCall !== undefined);
+  return allCalled && checkWeeklyAbIsFinished(ab, pitches);
+}
+
+/** Resume at the first incomplete at-bat in playlist order (linear weekly challenge). */
 function findWeeklyResumeAbIndex(playlist, preferredIndex = null, leaveState = null) {
   if (!playlist?.length) return 0;
 
-  if (leaveState?.midAbAbIndex != null && leaveState.midAbAbIndex < playlist.length) {
-    const midAb = playlist[leaveState.midAbAbIndex];
+  if (leaveState?.midAbAbIndex != null) {
+    const midIdx = clampWeeklyAbIndex(leaveState.midAbAbIndex, playlist);
+    const midAb = playlist[midIdx];
     if (weeklyAbHasMidPitchProgress(midAb) || weeklyAbHasSavedPitchCalls(midAb)) {
-      return leaveState.midAbAbIndex;
+      return findFirstPlayableWeeklyAbIndex(playlist, midIdx);
     }
   }
-  if (
-    leaveState?.pendingSummaryAbIndex != null &&
-    leaveState.pendingSummaryAbIndex >= 0 &&
-    leaveState.pendingSummaryAbIndex < playlist.length
-  ) {
-    return leaveState.pendingSummaryAbIndex;
+  if (leaveState?.pendingSummaryAbIndex != null) {
+    const summaryIdx = clampWeeklyAbIndex(leaveState.pendingSummaryAbIndex, playlist);
+    return findFirstPlayableWeeklyAbIndex(playlist, summaryIdx);
   }
 
-  let bestScore = -1;
-  let bestIdx = 0;
-
-  playlist.forEach((ab, i) => {
-    const pitches = getAbPitches(ab);
-    const called = pitches.filter((p) => p.userCall !== undefined).length;
-    let score = -1;
-    if (weeklyAbHasMidPitchProgress(ab)) {
-      score = i * 10000 + called;
-    } else if (ab.completed) {
-      score = i * 10000 + pitches.length + 500;
-    } else if (called > 0) {
-      score = i * 10000 + called;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      bestIdx = i;
-    }
-  });
-
-  if (
-    Number.isFinite(preferredIndex) &&
-    preferredIndex >= 0 &&
-    preferredIndex < playlist.length
-  ) {
-    const prefAb = playlist[preferredIndex];
+  if (Number.isFinite(preferredIndex)) {
+    const prefIdx = clampWeeklyAbIndex(preferredIndex, playlist);
+    const prefAb = playlist[prefIdx];
     const prefPitches = getAbPitches(prefAb);
-    const prefCalled = prefPitches.filter((p) => p.userCall !== undefined).length;
-    if (prefCalled > 0 || prefAb.completed || weeklyAbHasMidPitchProgress(prefAb)) {
-      bestIdx = preferredIndex;
+    const prefHasProgress =
+      weeklyAbHasMidPitchProgress(prefAb) ||
+      prefPitches.some((p) => p.userCall !== undefined);
+    if (prefHasProgress && !isWeeklyAbFullyComplete(prefAb, prefPitches)) {
+      return findFirstPlayableWeeklyAbIndex(playlist, prefIdx);
+    }
+    if (prefHasProgress && isWeeklyAbFullyComplete(prefAb, prefPitches)) {
+      const afterPref = findFirstPlayableWeeklyAbIndex(playlist, prefIdx + 1);
+      if (afterPref < playlist.length && !isWeeklyAbFullyComplete(playlist[afterPref])) {
+        return afterPref;
+      }
     }
   }
 
-  if (bestScore < 0) {
-    return findFirstPlayableWeeklyAbIndex(playlist, 0);
-  }
-
-  const bestAb = playlist[bestIdx];
-  const bestPitches = getAbPitches(bestAb);
-  const allCalled =
-    bestPitches.length > 0 && bestPitches.every((p) => p.userCall !== undefined);
-
-  if (
-    !weeklyAbHasMidPitchProgress(bestAb) &&
-    (bestAb.completed || (allCalled && checkWeeklyAbIsFinished(bestAb, bestPitches)))
-  ) {
-    const next = bestIdx + 1;
-    if (next < playlist.length) {
-      return findFirstPlayableWeeklyAbIndex(playlist, next);
+  for (let i = 0; i < playlist.length; i++) {
+    const ab = playlist[i];
+    const pitches = getAbPitches(ab);
+    if (!pitches.length) continue;
+    if (!isWeeklyAbFullyComplete(ab, pitches)) {
+      return findFirstPlayableWeeklyAbIndex(playlist, i);
     }
-    return playlist.length;
   }
 
-  return findFirstPlayableWeeklyAbIndex(playlist, bestIdx);
+  return playlist.length;
 }
 
 function checkWeeklyAbIsFinished(ab, pitches = getAbPitches(ab)) {
@@ -10366,9 +10402,23 @@ async function resolveWeeklyChallengeResume(rawABs, username) {
   const leaveState = savedBundle?.weeklyLeaveState || null;
   const abIndex = findWeeklyResumeAbIndex(playlist, preferredIndex, leaveState);
 
+  // #region agent log
+  agentDebugLog('game.js:resolveWeeklyChallengeResume', 'resume resolved', {
+    freshLen: freshPlaylist.length,
+    savedLen: savedPlaylist?.length || 0,
+    playlistLen: playlist.length,
+    preferredIndex,
+    abIndex,
+    leaveMid: leaveState?.midAbAbIndex,
+    leaveSummary: leaveState?.pendingSummaryAbIndex,
+    savedActive: savedBundle?.activeWeeklyAbIndex,
+    targetAtBats: getWeeklyChallengeTargetAtBats(),
+  }, 'H1-H2-H4');
+  // #endregion
+
   return {
     playlist,
-    abIndex,
+    abIndex: abIndex >= playlist.length ? abIndex : clampWeeklyAbIndex(abIndex, playlist),
     hasMidAbProgress: weeklyAbHasMidPitchProgress(playlist[abIndex]),
     hasRunProgress: weeklyPlaylistHasProgress(playlist),
     weeklyLeaveState: leaveState,
@@ -11753,15 +11803,13 @@ function extractAtBatsFromWeeklyData() {
 
 function getWeeklyChallengeTargetAtBats() {
   const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
-  const onMenu =
-    currentState === STATES.START ||
-    currentState === STATES.WELCOME ||
-    currentState === STATES.TEAM_SELECT;
-  if (!onMenu && weeklyPlaylistABs?.length) {
-    return weeklyPlaylistABs.length;
-  }
   const freshLen = extractAtBatsFromWeeklyData().length;
-  return meta.targetAtBats || freshLen || 20;
+  const playlistLen = weeklyPlaylistABs?.length || 0;
+  const configured = meta.targetAtBats || freshLen || 20;
+  if (playlistLen > 0) {
+    return Math.min(configured, playlistLen);
+  }
+  return configured;
 }
 
 function syncWeeklyChallengeTargetLabels(total) {
@@ -11815,7 +11863,21 @@ async function startWeeklyChallenge() {
 
   const resume = await resolveWeeklyChallengeResume(rawABs, username);
   weeklyPlaylistABs = resume.playlist;
-  activeWeeklyAbIndex = resume.abIndex;
+  activeWeeklyAbIndex =
+    resume.abIndex >= weeklyPlaylistABs.length
+      ? resume.abIndex
+      : clampWeeklyAbIndex(resume.abIndex, weeklyPlaylistABs);
+
+  // #region agent log
+  agentDebugLog('game.js:startWeeklyChallenge', 'start weekly', {
+    rawLen: rawABs.length,
+    playlistLen: weeklyPlaylistABs.length,
+    activeWeeklyAbIndex,
+    resumeAbIdx: resume.abIndex,
+    targetAtBats: getWeeklyChallengeTargetAtBats(),
+    menuCompleted: getWeeklyChallengeCompletedStats().completedCount,
+  }, 'H1-H4-H5');
+  // #endregion
 
   if (!weeklyPlaylistABs.length) {
     throw new Error('Weekly challenge playlist is empty');
@@ -11973,12 +12035,37 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   const pendingSummary = !!opts.pendingSummary;
   const snapshot = opts.snapshot || null;
 
+  // #region agent log
+  agentDebugLog('game.js:loadWeeklyAtBat:entry', 'loadWeeklyAtBat', {
+    abIdx,
+    playlistLen: weeklyPlaylistABs?.length,
+    activeWeeklyAbIndex,
+    resume,
+    fresh,
+    outOfBounds: abIdx >= (weeklyPlaylistABs?.length || 0),
+  }, 'H1-H3');
+  // #endregion
+
   if (abIdx >= weeklyPlaylistABs.length) {
+    // #region agent log
+    agentDebugLog('game.js:loadWeeklyAtBat:oob', 'ab index out of bounds', {
+      abIdx,
+      playlistLen: weeklyPlaylistABs.length,
+      gameMode,
+      activeWeeklyAbIndex,
+    }, 'H3');
+    // #endregion
     if (gameMode === 'mlb_game') {
       exitMlbPlaySessionToPicker();
       return;
     }
     if (gameMode === 'weekly_challenge') {
+      clearAbStartLoadingOverlay();
+      setAbStartOverlayActive(false);
+      if (abStartOverlay) {
+        abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+        abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+      }
       void persistWeeklyChallengeProgress();
       updateChallengeProgressUI();
       transitionToState(STATES.START);
@@ -12092,6 +12179,15 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   };
 
   transitionToState(STATES.IDLE, { deferNavUpdate: true });
+  // #region agent log
+  agentDebugLog('game.js:loadWeeklyAtBat:enterGameplay', 'showing ab start overlay', {
+    abIdx,
+    activeWeeklyAbIndex,
+    showResumeStart,
+    abEndedForUi,
+    playlistLen: weeklyPlaylistABs?.length,
+  }, 'H3');
+  // #endregion
   enterGameplay();
 }
 
