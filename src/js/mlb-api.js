@@ -537,6 +537,18 @@ export function formatLocalDateString(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+/** Before this local hour, yesterday is the sensible default browse date. */
+export const MLB_BROWSE_DAY_ROLLOVER_HOUR = 10;
+
+/** Default MLB browse date — yesterday before rollover, calendar today after. */
+export function getDefaultBrowseDate(now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (now.getHours() < MLB_BROWSE_DAY_ROLLOVER_HOUR) {
+    d.setDate(d.getDate() - 1);
+  }
+  return d;
+}
+
 /** Earliest season year for MLB game browse (Statcast-era schedule feed). */
 export const MLB_BROWSE_MIN_YEAR = 2015;
 

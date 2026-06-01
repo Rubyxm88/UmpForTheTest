@@ -1778,7 +1778,15 @@
                 <div class="ab-summary-xp-title-row">
                   <span id="streak-summary-xp-level" class="ump-level-badge ump-level-badge--rookie">LVL 1</span>
                   <div class="ab-summary-xp-earned-wrap">
-                    <button type="button" id="streak-summary-xp-earned" class="ab-summary-xp-earned-btn">+0 XP</button>
+                    <button type="button" id="streak-summary-xp-earned" class="ab-summary-xp-earned-btn" aria-expanded="false" aria-controls="streak-summary-xp-popover">+0 XP</button>
+                    <div id="streak-summary-xp-popover" class="ab-summary-xp-popover hidden" role="tooltip">
+                      <div class="ab-summary-xp-popover-title">XP breakdown</div>
+                      <ul id="streak-summary-xp-popover-list" class="ab-summary-xp-popover-list"></ul>
+                      <div class="ab-summary-xp-popover-footer">
+                        <span>Total earned</span>
+                        <strong id="streak-summary-xp-popover-total">+0</strong>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="ab-summary-xp-progress-row">
@@ -1836,10 +1844,7 @@
           <footer class="ab-summary-footer-bar text-left">
             <!-- Streak Division standing -->
             <div id="streak-summary-challenge-details" class="ab-streak-summary-dock">
-              <div class="ab-streak-summary-dock__header">
-                <span class="ab-streak-summary-dock__heading">Daily Streak Standings</span>
-                <span class="ab-streak-summary-dock__note">Unlimited plays active</span>
-              </div>
+              <span class="ab-streak-summary-dock__heading">Daily Streak Standings</span>
               <div class="ab-streak-summary-dock__stats" aria-label="Daily streak standings">
                 <div class="ab-streak-summary-dock__stat">
                   <span class="ab-streak-summary-dock__stat-label">Best streak</span>

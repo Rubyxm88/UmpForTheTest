@@ -6,6 +6,7 @@ import {
   fetchAllGamesForDate,
   fetchGamePitches,
   formatLocalDateString,
+  getDefaultBrowseDate,
   MLB_GAME_FEED_PARSE_VERSION,
 } from './mlb-api.js';
 import {
@@ -66,15 +67,23 @@ function syncQuickChipHighlight() {
   setActiveQuickChip(getQuickOffsetForIso(getGameFinderCalendarDate()));
 }
 
-function setBrowseToToday() {
-  browseDateIso = formatLocalDateString(new Date());
-  setGameFinderCalendarDate(new Date());
-  setActiveQuickChip(0);
+function setBrowseToDefault() {
+  const d = getDefaultBrowseDate();
+  browseDateIso = formatLocalDateString(d);
+  setGameFinderCalendarDate(d);
+  syncQuickChipHighlight();
+}
+
+function emptyGamesMessage(dateStr) {
+  if (dateStr === formatLocalDateString()) {
+    return "No games yet today. Use Yesterday for last night's slate.";
+  }
+  return 'No games found for this period. Try another day or check back after first pitch.';
 }
 
 export function initMlbGamesModule(moduleDeps) {
   deps = moduleDeps;
-  setBrowseToToday();
+  setBrowseToDefault();
   sessionStorage.removeItem(MLB_PLAY_RETURN_KEY);
   pruneGameCache().catch((e) => console.warn('Game cache prune failed:', e));
   initGameFinderCalendar({ onDateSelected: () => handleFindGames() });
@@ -245,13 +254,10 @@ function renderEmptyGridMessage(container, message, { pulse = false } = {}) {
   container.replaceChildren(el);
 }
 
-function renderGamesIntoGrid(container, games, onSelect, maxCards = 48) {
+function renderGamesIntoGrid(container, games, onSelect, dateStr, maxCards = 48) {
   if (!container) return;
   if (!games.length) {
-    renderEmptyGridMessage(
-      container,
-      'No games found for this period. Try another day or check back after first pitch.'
-    );
+    renderEmptyGridMessage(container, emptyGamesMessage(dateStr));
     return;
   }
   const slice = games.slice(0, maxCards);
@@ -286,7 +292,7 @@ export function saveMlbBrowseDate(iso) {
 }
 
 export function clearMlbBrowseDate() {
-  setBrowseToToday();
+  setBrowseToDefault();
 }
 
 export function rememberMlbPlayContext(gameSummary) {
@@ -317,7 +323,7 @@ export async function restoreMlbBrowseGrid() {
     await handleFindGames();
     return;
   }
-  setBrowseToToday();
+  setBrowseToDefault();
   await handleFindGames();
 }
 
@@ -337,7 +343,7 @@ export async function loadPlayTabRecentGames(force = false) {
   if (!grid) return;
 
   if (!browseDateIso) {
-    setBrowseToToday();
+    setBrowseToDefault();
   } else {
     setGameFinderCalendarDate(parseIsoDate(browseDateIso));
     syncQuickChipHighlight();
@@ -361,7 +367,7 @@ export async function handleFindGames() {
   const hadCards = grid.querySelector('.mlb-game-card');
 
   if (cached) {
-    renderGamesIntoGrid(grid, cached, onRecentGameSelected);
+    renderGamesIntoGrid(grid, cached, onRecentGameSelected, dateStr);
     setBrowseGridLoading(grid, false);
     showBrowseLoadStatus('Games loaded!', { fadeAfterMs: 1200 });
   } else {
@@ -381,7 +387,7 @@ export async function handleFindGames() {
     const games = await fetchAllGamesForDate(dateStr);
     if (requestId !== browseLoadRequestId) return;
     cacheDateGames(dateStr, games);
-    renderGamesIntoGrid(grid, games, onRecentGameSelected);
+    renderGamesIntoGrid(grid, games, onRecentGameSelected, dateStr);
     showBrowseLoadStatus('Games loaded!', { fadeAfterMs: 1400 });
   } catch (err) {
     if (requestId !== browseLoadRequestId) return;

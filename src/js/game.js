@@ -22,6 +22,7 @@ import {
   getStreakDateKey,
   streakRunSeed,
   getAbById,
+  getStreakPool,
   STREAK_POOL_META,
 } from './streak-rotation.js';
 import { clearPreviewState, collapsePreviewGameDetails } from './mlb-games-preview.js';
@@ -617,16 +618,38 @@ function hideAbSummaryXpPopover() {
   if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
+function hideStreakSummaryXpPopover() {
+  const pop = document.getElementById('streak-summary-xp-popover');
+  const btn = document.getElementById('streak-summary-xp-earned');
+  if (pop) pop.classList.add('hidden');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
 function toggleAbSummaryXpPopover() {
   const pop = document.getElementById('ab-summary-xp-popover');
   const btn = document.getElementById('ab-summary-xp-earned');
   if (!pop || !btn) return;
+  hideStreakSummaryXpPopover();
   const open = pop.classList.contains('hidden');
   if (open) {
     pop.classList.remove('hidden');
     btn.setAttribute('aria-expanded', 'true');
   } else {
     hideAbSummaryXpPopover();
+  }
+}
+
+function toggleStreakSummaryXpPopover() {
+  const pop = document.getElementById('streak-summary-xp-popover');
+  const btn = document.getElementById('streak-summary-xp-earned');
+  if (!pop || !btn || btn.disabled) return;
+  hideAbSummaryXpPopover();
+  const open = pop.classList.contains('hidden');
+  if (open) {
+    pop.classList.remove('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    hideStreakSummaryXpPopover();
   }
 }
 
@@ -660,6 +683,46 @@ function renderAbSummaryXpPopover(xpBreakdown, correctCount, isPerfect) {
   hideAbSummaryXpPopover();
 }
 
+function renderStreakSummaryXpPopover(correctCount, totalXp) {
+  const list = document.getElementById('streak-summary-xp-popover-list');
+  const totalEl = document.getElementById('streak-summary-xp-popover-total');
+  if (!list) return;
+
+  const pitchXp = correctCount * 10;
+  const runBonus = Math.max(0, totalXp - pitchXp);
+
+  list.innerHTML = '';
+  const rows = [
+    { label: `Correct calls (${correctCount})`, pts: `+${pitchXp}`, sub: '10 XP each' },
+  ];
+  if (runBonus > 0) {
+    rows.push({ label: 'Streak run bonus', pts: `+${runBonus}`, sub: 'End of run' });
+  }
+
+  rows.forEach((row) => {
+    const li = document.createElement('li');
+    li.className = 'ab-summary-xp-popover-row';
+    li.innerHTML = `
+      <div class="ab-summary-xp-popover-row-label">
+        <span>${row.label}</span>
+        <span class="ab-summary-xp-popover-row-sub">${row.sub}</span>
+      </div>
+      <span class="ab-summary-xp-popover-row-pts">${row.pts}</span>
+    `;
+    list.appendChild(li);
+  });
+
+  if (totalEl) totalEl.textContent = `+${totalXp}`;
+  hideStreakSummaryXpPopover();
+}
+
+function handleSummaryXpPopoverOutsideClick(e) {
+  const abWrap = document.getElementById('ab-summary-xp-earned')?.closest('.ab-summary-xp-earned-wrap');
+  const streakWrap = document.getElementById('streak-summary-xp-earned')?.closest('.ab-summary-xp-earned-wrap');
+  if (abWrap && !abWrap.contains(e.target)) hideAbSummaryXpPopover();
+  if (streakWrap && !streakWrap.contains(e.target)) hideStreakSummaryXpPopover();
+}
+
 let abSummaryXpPopoverBound = false;
 function bindAbSummaryXpPopoverOnce() {
   if (abSummaryXpPopoverBound) return;
@@ -671,10 +734,20 @@ function bindAbSummaryXpPopoverOnce() {
       toggleAbSummaryXpPopover();
     });
   }
-  document.addEventListener('click', (e) => {
-    const wrap = document.querySelector('.ab-summary-xp-earned-wrap');
-    if (wrap && !wrap.contains(e.target)) hideAbSummaryXpPopover();
-  });
+  document.addEventListener('click', handleSummaryXpPopoverOutsideClick);
+}
+
+let streakSummaryXpPopoverBound = false;
+function bindStreakSummaryXpPopoverOnce() {
+  if (streakSummaryXpPopoverBound) return;
+  streakSummaryXpPopoverBound = true;
+  const btn = document.getElementById('streak-summary-xp-earned');
+  if (btn) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleStreakSummaryXpPopover();
+    });
+  }
 }
 
 function hideGameplayHudForSummary(hide) {
@@ -2544,6 +2617,8 @@ function cacheDOM() {
   streakSummaryScorecardLink = document.getElementById('streak-summary-scorecard-link');
   btnStreakSummaryHome = document.getElementById('btn-streak-summary-home');
   streakSummaryZoneFrame = document.getElementById('streak-summary-zone-frame');
+  bindAbSummaryXpPopoverOnce();
+  bindStreakSummaryXpPopoverOnce();
 
   streakTransitionOverlay = document.getElementById('streak-transition-overlay');
   streakTransitionOutcome = document.getElementById('streak-transition-outcome');
@@ -2787,7 +2862,7 @@ function cacheDOM() {
     btnStreakSummaryAdvance.addEventListener('click', () => {
       initAudio();
       hideStreakSummaryScreen();
-      startDailyStreakChallenge();
+      startDailyStreakChallenge(false, { forceNewRun: true });
     });
   }
 
@@ -5825,6 +5900,21 @@ function recordStreakDaySeenIds(ids) {
   persistStreakDaySeenIds();
 }
 
+async function clearStreakChallengeSession(username = localStorage.getItem('ump_username')) {
+  if (username && username !== 'GUEST_UMPIRE') {
+    try {
+      await clearActiveSession(username);
+    } catch (err) {
+      console.warn('Failed to clear streak IndexedDB session:', err);
+    }
+  }
+  const saved = readSavedChallengeData(username);
+  if (saved) {
+    saved.activeChallenge = null;
+    localStorage.setItem(getChallengeStorageKey(username), JSON.stringify(saved));
+  }
+}
+
 function initNewStreakRunSeed() {
   const username = localStorage.getItem('ump_username') || 'GUEST';
   const dateKey = getStreakDateKey();
@@ -7553,8 +7643,9 @@ function groupPitchesIntoAtBats(pitches) {
 /**
  * Starts a Daily Streak challenge session
  */
-async function startDailyStreakChallenge(isResume = false) {
+async function startDailyStreakChallenge(isResume = false, opts = {}) {
   if (!isResume && !requireLoggedInUser()) return;
+  const forceNewRun = opts.forceNewRun === true;
   try {
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   updateDailyStreakStatusUI();
@@ -7582,7 +7673,7 @@ async function startDailyStreakChallenge(isResume = false) {
   
   let restored = false;
 
-  if (!isResume && username && username !== 'GUEST_UMPIRE') {
+  if (!isResume && !forceNewRun && username && username !== 'GUEST_UMPIRE') {
     try {
       const session = await getActiveSession(username);
       if (session?.gameMode === 'daily_streak' && (session.currentStreakAbMeta || session.streakPitchHistory?.length)) {
@@ -7887,6 +7978,54 @@ function buildUmpScorecardUrl(gamePk) {
   return gamePk ? `https://umpscorecards.com/single_game/?game_id=${gamePk}` : "";
 }
 
+function parseNumericAtBatRef(value) {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const trimmed = String(value).trim();
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed, 10);
+  return null;
+}
+
+function buildGamedayAtBatUrl(gamePk, inning, isTop, atBatNumber = null) {
+  if (!gamePk || inning == null) return null;
+  const half = isTop ? 'top' : 'bottom';
+  const abRef = parseNumericAtBatRef(atBatNumber);
+  const abSegment = abRef != null ? `/${abRef}` : '';
+  return `https://www.mlb.com/gameday/${gamePk}#/game/${gamePk}/${half}/${inning}${abSegment}/`;
+}
+
+function extractGamePkFromUrl(url) {
+  if (!url) return null;
+  const match = String(url).match(/(?:game_id=|\/game\/)(\d+)/);
+  return match ? match[1] : null;
+}
+
+function extractGamePkFromAbMeta(abMeta) {
+  if (!abMeta) return null;
+  if (abMeta.gamePk) return String(abMeta.gamePk);
+  return extractGamePkFromUrl(abMeta.filmRoomUrl || abMeta.film_room_url)
+    || extractGamePkFromUrl(abMeta.umpScorecardUrl || abMeta.ump_scorecard_url);
+}
+
+function applySummaryExternalLink(anchor, url) {
+  if (!anchor) return;
+  if (url) {
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.classList.remove('is-disabled');
+    anchor.removeAttribute('aria-disabled');
+    anchor.onclick = null;
+  } else {
+    anchor.href = '#';
+    anchor.classList.add('is-disabled');
+    anchor.setAttribute('aria-disabled', 'true');
+    anchor.onclick = (e) => {
+      e.preventDefault();
+    };
+  }
+}
+
 function isGenericExternalUrl(url, kind) {
   if (!url) return true;
   const normalized = url.replace(/\/+$/, "");
@@ -7929,16 +8068,69 @@ function normalizePlaylistAbs(rawABs, meta = {}) {
   });
 }
 
+function findStreakPoolAb(meta) {
+  if (!meta) return null;
+  if (meta.id) {
+    const byId = getAbById(meta.id);
+    if (byId) return byId;
+  }
+  const pitcher = meta.pitcher;
+  const batter = meta.batter;
+  const inning = meta.inning ?? meta.pitches?.[0]?.inning;
+  const isTop = meta.is_top ?? meta.pitches?.[0]?.is_top;
+  if (!pitcher || !batter || inning == null) return null;
+  return getStreakPool().find((ab) => {
+    const p0 = ab.pitches?.[0];
+    const abInning = ab.inning ?? p0?.inning;
+    const abTop = ab.is_top ?? p0?.is_top;
+    return ab.pitcher === pitcher && ab.batter === batter && abInning === inning && abTop === isTop;
+  }) || null;
+}
+
 function resolveStreakAbContextForUrls() {
-  if (currentStreakAbMeta?.filmRoomUrl || currentStreakAbMeta?.umpScorecardUrl) {
-    return currentStreakAbMeta;
-  }
-  const lastId = [...streakSessionUsedIds].pop();
-  if (lastId) {
-    const fromPool = getAbById(lastId);
-    if (fromPool) return fromPool;
-  }
-  return currentStreakAbMeta || null;
+  const sessionIds = [...streakSessionUsedIds];
+  const poolId = currentStreakAbMeta?.id || sessionIds[sessionIds.length - 1] || null;
+  let poolEntry = poolId ? getAbById(poolId) : null;
+  if (!poolEntry) poolEntry = findStreakPoolAb(currentStreakAbMeta);
+  const session = currentStreakAbMeta || poolEntry;
+  if (!session && !poolEntry) return null;
+
+  const pitches = session?.pitches?.length ? session.pitches : poolEntry?.pitches;
+  const gamePk = poolEntry?.gamePk || session?.gamePk || extractGamePkFromAbMeta(poolEntry || session);
+  const inning = poolEntry?.inning ?? session?.inning ?? pitches?.[0]?.inning;
+  const is_top = poolEntry?.is_top ?? session?.is_top ?? pitches?.[0]?.is_top;
+  const atBatNumber = poolEntry?.atBatNumber ?? session?.atBatNumber;
+
+  return {
+    ...(poolEntry || {}),
+    ...(session || {}),
+    id: poolEntry?.id || session?.id,
+    gamePk,
+    inning,
+    is_top,
+    atBatNumber,
+    pitches,
+    umpScorecardUrl: poolEntry?.umpScorecardUrl || session?.umpScorecardUrl || session?.ump_scorecard_url,
+    filmRoomUrl: poolEntry?.filmRoomUrl || session?.filmRoomUrl || session?.film_room_url,
+  };
+}
+
+function getStreakSummaryExternalUrls(pitch) {
+  const ab = resolveStreakAbContextForUrls();
+  if (!ab) return { filmRoomUrl: null, umpScorecardUrl: null };
+
+  const p = pitch || ab.pitches?.[ab.pitches.length - 1] || ab.pitches?.[0];
+  const gamePk = extractGamePkFromAbMeta(ab);
+  const inning = p?.inning ?? ab.inning ?? null;
+  const isTop = p?.is_top ?? p?.isTop ?? ab.is_top ?? ab.isTop ?? true;
+
+  const film = buildGamedayAtBatUrl(gamePk, inning, isTop, ab.atBatNumber);
+
+  let ump = ab.umpScorecardUrl || ab.ump_scorecard_url || null;
+  if (ump && isGenericExternalUrl(ump, 'ump')) ump = null;
+  if (!ump && gamePk) ump = buildUmpScorecardUrl(gamePk);
+
+  return { filmRoomUrl: film, umpScorecardUrl: ump };
 }
 
 function getRevisitedUrls(pitch, abData) {
@@ -8422,6 +8614,7 @@ async function showStreakSummaryScreen() {
   streakFlowEpoch++;
   cancelPendingStreakFlowTimers();
   recordStreakDaySeenIds(streakSessionUsedIds);
+  clearStreakChallengeSession();
 
   if (abStartOverlay?.classList.contains('opacity-100')) {
     setAbStartOverlayActive(false);
@@ -8439,7 +8632,7 @@ async function showStreakSummaryScreen() {
   streakSummarySelectedPitchIndex = null;
   setStreakSummaryReviewExpanded(false);
   hideGameplayHudForSummary(true);
-  hideAbSummaryXpPopover();
+  hideStreakSummaryXpPopover();
   
   setZoomedIn(false);
   clearDimensionLine();
@@ -8534,6 +8727,8 @@ async function showStreakSummaryScreen() {
   const username = localStorage.getItem('ump_username');
   const favoriteTeam = localStorage.getItem('favorite_team') || 'None';
   const xpEarned = (correctCount * 10) + (activeStreakAbIndex * 50);
+  bindStreakSummaryXpPopoverOnce();
+  renderStreakSummaryXpPopover(correctCount, xpEarned);
 
   if (username) {
     const statsKey = getStatsStorageKey(username);
@@ -8556,12 +8751,7 @@ async function showStreakSummaryScreen() {
     submitGlobalScore('daily', username, favoriteTeam, `${accuracy}%`, `${correctCount} Streak`, correctCount);
 
     try {
-      await clearActiveSession(username);
-      const saved = readSavedChallengeData(username);
-      if (saved?.activeChallenge?.gameMode === 'daily_streak') {
-        saved.activeChallenge = null;
-        localStorage.setItem(getChallengeStorageKey(username), JSON.stringify(saved));
-      }
+      await clearStreakChallengeSession(username);
     } catch (err) {
       console.warn('Failed to clear completed streak session:', err);
     }
@@ -8579,6 +8769,8 @@ async function showStreakSummaryScreen() {
 
       if (streakSummaryXpEarned) {
         streakSummaryXpEarned.textContent = `+${xpEarned} XP`;
+        streakSummaryXpEarned.disabled = false;
+        streakSummaryXpEarned.title = 'Tap for XP breakdown';
       }
       if (streakSummaryXpLevel) {
         applyLevelBadgeElement(streakSummaryXpLevel, next.level);
@@ -8609,7 +8801,11 @@ async function showStreakSummaryScreen() {
     if (streakSummaryLeaderboardSnippet) {
       streakSummaryLeaderboardSnippet.textContent = '—';
     }
-    if (streakSummaryXpEarned) streakSummaryXpEarned.textContent = 'Log in for XP';
+    if (streakSummaryXpEarned) {
+      streakSummaryXpEarned.textContent = 'Log in for XP';
+      streakSummaryXpEarned.disabled = true;
+      streakSummaryXpEarned.title = '';
+    }
     if (streakSummaryXpLevel) {
       streakSummaryXpLevel.textContent = 'GUEST';
       streakSummaryXpLevel.className = 'ump-level-badge ump-level-badge--rookie';
@@ -8621,9 +8817,9 @@ async function showStreakSummaryScreen() {
     }
   }
 
-  const urls = getRevisitedUrls(targetPitch, resolveStreakAbContextForUrls());
-  if (streakSummaryFilmLink) streakSummaryFilmLink.href = urls.filmRoomUrl;
-  if (streakSummaryScorecardLink) streakSummaryScorecardLink.href = urls.umpScorecardUrl;
+  const urls = getStreakSummaryExternalUrls(targetPitch);
+  applySummaryExternalLink(streakSummaryFilmLink, urls.filmRoomUrl);
+  applySummaryExternalLink(streakSummaryScorecardLink, urls.umpScorecardUrl);
 
   streakSummaryOverlay.classList.remove('opacity-0', 'pointer-events-none');
   streakSummaryOverlay.classList.add('opacity-100', 'pointer-events-auto');
@@ -8655,6 +8851,7 @@ async function updateStreakSummaryLeaderboardSnippet(username) {
 
 function hideStreakSummaryScreen() {
   closeAllPlayerStatsPopouts();
+  hideStreakSummaryXpPopover();
   if (streakSummaryOverlay) {
     streakSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
     streakSummaryOverlay.classList.remove('opacity-100', 'pointer-events-auto');
@@ -11091,7 +11288,6 @@ function hideUmpireScorecardModal() {
 async function updateDailyStreakStatusUI() {
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   const btn = document.getElementById('btn-start-daily-streak');
-  const status = document.getElementById('daily-attempt-status');
   const outcomeEl = document.getElementById('daily-streak-outcome');
   const historicalEl = document.getElementById('daily-streak-historical');
   const rankEl = document.getElementById('daily-streak-rank');
@@ -11110,10 +11306,6 @@ async function updateDailyStreakStatusUI() {
     outcomeEl.className = "text-white font-black";
   }
 
-  if (status) {
-    status.textContent = "Available (Unlimited Play)";
-    status.className = "text-xs font-bold text-green-400 uppercase";
-  }
   if (btn) {
     btn.removeAttribute('disabled');
     btn.className = "ump-btn bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 border-amber-500/50 text-white ump-btn--sm pointer-events-auto";
@@ -13521,16 +13713,11 @@ function showPlayerStatsPopout(element, name, role, hand) {
 }
 
 function bindPlayerPopoutClose(popout, element) {
-  const closeBtn = popout.querySelector('.btn-close-popout');
-  if (closeBtn) {
-    closeBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      closeAllPlayerStatsPopouts();
-    });
-  }
-
   popout.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (e.target.closest('.btn-close-popout')) {
+      closeAllPlayerStatsPopouts();
+    }
   });
 
   if (activePlayerPopoutDismiss) {

@@ -165,7 +165,8 @@ export function pickStreakAbFromPool(pool, streakIndex, sessionUsedIds, dateKey,
   const runSeed = opts.runSeed ?? dateToSeed(dateKey);
   const daySeenIds = opts.daySeenIds ?? null;
   const rng = mulberry32(runSeed + streakIndex * 9973);
-  const target = targetDifficultyForStreakIndex(streakIndex);
+  const targetJitter = (rng() - 0.5) * 28;
+  const target = targetDifficultyForStreakIndex(streakIndex) + targetJitter;
 
   const cutoff = new Date(dateKey);
   cutoff.setDate(cutoff.getDate() - maxDaysBeforeReuse);
@@ -187,7 +188,7 @@ export function pickStreakAbFromPool(pool, streakIndex, sessionUsedIds, dateKey,
 
   if (daySeenIds?.size) {
     const fresh = poolSlice.filter((ab) => !daySeenIds.has(ab.id));
-    if (fresh.length >= Math.min(5, poolSlice.length)) {
+    if (fresh.length > 0) {
       poolSlice = fresh;
     }
   }
@@ -201,7 +202,7 @@ export function pickStreakAbFromPool(pool, streakIndex, sessionUsedIds, dateKey,
 
   poolSlice.sort(sortByDifficulty);
 
-  const topN = poolSlice.slice(0, Math.min(5, poolSlice.length));
+  const topN = poolSlice.slice(0, Math.min(12, poolSlice.length));
   const idx = Math.floor(rng() * topN.length);
   return topN[idx];
 }

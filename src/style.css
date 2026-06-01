@@ -1949,6 +1949,18 @@ body.ab-summary-active #hud-keyboard-help {
   position: relative;
 }
 
+#streak-summary-xp-panel {
+  position: relative;
+  z-index: 10;
+  overflow: visible;
+}
+
+#streak-summary-xp-panel .ab-summary-xp-popover {
+  top: auto;
+  bottom: calc(100% + 0.35rem);
+  z-index: 200;
+}
+
 .ab-summary-xp-earned-btn {
   font-family: var(--ump-font-pixel);
   font-size: 0.4rem;
@@ -3179,16 +3191,9 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
   background: rgba(15, 23, 42, 0.55);
 }
 
-.ab-streak-summary-dock__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.2rem 0.5rem;
-  margin-bottom: 0.35rem;
-}
-
 .ab-streak-summary-dock__heading {
+  display: block;
+  margin-bottom: 0.35rem;
   font-family: var(--ump-font-pixel);
   font-size: clamp(0.34rem, 3vw, 0.4rem);
   line-height: 1.4;
@@ -3198,12 +3203,7 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
 }
 
 .ab-streak-summary-dock__note {
-  font-family: var(--ump-font-body);
-  font-size: clamp(0.58rem, 2.6vw, 0.68rem);
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--retro-chalk-dim);
+  display: none;
 }
 
 .ab-streak-summary-dock__stats {
@@ -3228,6 +3228,14 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--retro-chalk-dim);
+}
+
+.ab-summary-btn-secondary.is-disabled,
+.ab-summary-btn-secondary[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.42;
+  cursor: not-allowed;
+  filter: grayscale(0.35);
 }
 
 .ab-streak-summary-dock__stat-value {

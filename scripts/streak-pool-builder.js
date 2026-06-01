@@ -15,7 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { scoreStreakAtBat } from '../src/js/lib/streak-ab-scorer.js';
-import { WEEKLY_CHALLENGE_DATA } from '../src/data/weekly_challenge.js';
+import { WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META } from '../src/data/weekly_challenge.js';
 import { DAILY_CHALLENGE_DATA } from '../src/data/daily_challenge.js';
 import { ORIOLES_GAME_DATA } from '../src/data/orioles_game.js';
 
@@ -58,7 +58,12 @@ function groupPitchesByAtBat(pitches, gameMeta = {}) {
 
 function buildAbEntry(pitches, gameMeta, key) {
   const first = pitches[0];
-  const gamePk = gameMeta.gamePk || first.game_pk || first.gamePk || null;
+  let gamePk = gameMeta.gamePk || first.game_pk || first.gamePk || null;
+  const filmUrl = gameMeta.film_room_url || gameMeta.filmRoomUrl || null;
+  if (!gamePk && filmUrl) {
+    const m = String(filmUrl).match(/\/game\/(\d+)/);
+    if (m) gamePk = m[1];
+  }
   const atBatNumber = first.at_bat_number ?? first.at_bat_index ?? key;
   const id = gamePk != null ? `${gamePk}_${atBatNumber}` : `local_${key}_${first.id ?? 0}`;
 
@@ -67,7 +72,7 @@ function buildAbEntry(pitches, gameMeta, key) {
     gamePk,
     atBatNumber,
     gameTitle: gameMeta.title || null,
-    filmRoomUrl: gameMeta.film_room_url || gameMeta.filmRoomUrl || null,
+    filmRoomUrl: filmUrl,
     umpScorecardUrl: gameMeta.ump_scorecard_url || gameMeta.umpScorecardUrl || null,
     pitcher: first.pitcher,
     batter: first.batter,
@@ -80,10 +85,11 @@ function buildAbEntry(pitches, gameMeta, key) {
 function collectSourceAbs() {
   const all = [];
 
-  for (const game of WEEKLY_CHALLENGE_DATA || []) {
+  for (let i = 0; i < (WEEKLY_CHALLENGE_DATA || []).length; i++) {
+    const game = WEEKLY_CHALLENGE_DATA[i];
     all.push(...groupPitchesByAtBat(game.pitches, {
       title: game.title,
-      gamePk: game.gamePk,
+      gamePk: game.gamePk ?? WEEKLY_CHALLENGE_META?.gamePks?.[i] ?? null,
       film_room_url: game.film_room_url,
       ump_scorecard_url: game.ump_scorecard_url,
     }));
@@ -130,6 +136,8 @@ function main() {
       gameTitle: ab.gameTitle,
       filmRoomUrl: ab.filmRoomUrl,
       umpScorecardUrl: ab.umpScorecardUrl,
+      inning: ab.inning,
+      is_top: ab.is_top,
       pitcher: ab.pitcher,
       batter: ab.batter,
       difficulty: result.difficulty,
