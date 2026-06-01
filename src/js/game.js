@@ -2633,6 +2633,7 @@ export async function startGameSession() {
     WEEKLY_CHALLENGE_DATA.push(CLOSE_CHALLENGE_DATA);
   }
   weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  await refreshWeeklyChallengeBundleIfNeeded();
   cacheDOM();
   document.addEventListener('click', () => {
     initAudio();
@@ -6443,6 +6444,10 @@ function advanceGameFlow(immediate = false) {
     if (isGameOver) {
       if (gameMode === 'daily_streak') {
         showStreakSummaryScreen();
+      } else if (gameMode === 'weekly_challenge') {
+        void persistWeeklyChallengeProgress();
+        updateChallengeProgressUI();
+        transitionToState(STATES.START);
       } else {
         transitionToState(STATES.SCOREBOARD);
       }
@@ -9765,6 +9770,7 @@ function saveChallengeSessionToLocal() {
     completedABsCount,
     weeklyPlaylistABs: sanitizedPlaylist,
     weeklyChallengeWeekId: meta.challengeWeekId,
+    weeklyBundleRevision: getStoredWeeklyRevisionKey(meta.challengeWeekId, activeWeeklyBundleId),
     streakPlaylistABs: streakPlaylistABs?.length ? streakPlaylistABs.map((ab) => {
       const cleanAb = { ...ab };
       if (cleanAb.pitches) cleanAb.pitches = cleanAb.pitches.map(sanitizePitch);
@@ -9998,10 +10004,8 @@ function mergeWeeklyAbEntry(freshAb, savedAb) {
   const savedPitchMap = new Map();
   savedPitches.forEach((p) => savedPitchMap.set(weeklyPitchProgressKey(p), p));
 
-  const mergedPitches = freshPitches.map((fp, pi) => {
-    const fromKey = savedPitchMap.get(weeklyPitchProgressKey(fp));
-    const fromIndex = savedPitches[pi];
-    const fromSaved = fromKey || fromIndex;
+  const mergedPitches = freshPitches.map((fp) => {
+    const fromSaved = savedPitchMap.get(weeklyPitchProgressKey(fp));
     if (!fromSaved) return fp;
     const merged = { ...fp };
     applyWeeklyPitchCallFields(merged, fromSaved);
@@ -10012,11 +10016,14 @@ function mergeWeeklyAbEntry(freshAb, savedAb) {
   const correctCount = mergedPitches.filter((p) => p.userCall !== undefined && !p.isSwingPlay && p.userCorrect).length;
   const allPitchesCalled =
     mergedPitches.length > 0 && mergedPitches.every((p) => p.userCall !== undefined);
+  const mergedAb = { ...freshAb, pitches: mergedPitches };
+  const naturallyFinished =
+    allPitchesCalled && checkWeeklyAbIsFinished(mergedAb, mergedPitches);
 
   return {
     ...freshAb,
     pitches: mergedPitches,
-    completed: !!savedAb.completed && allPitchesCalled,
+    completed: !!savedAb.completed && naturallyFinished,
     userCorrectCount: savedAb.userCorrectCount ?? correctCount,
     userTotalCount: savedAb.userTotalCount ?? calledCount,
     gameIndex: freshAb.gameIndex ?? savedAb.gameIndex,
@@ -10044,8 +10051,8 @@ function mergeWeeklyPlaylistProgress(freshPlaylist, savedPlaylist) {
   const savedByAbKey = new Map();
   savedPlaylist.forEach((ab) => savedByAbKey.set(weeklyAbProgressKey(ab), ab));
 
-  return freshPlaylist.map((freshAb, idx) => {
-    const savedAb = savedByAbKey.get(weeklyAbProgressKey(freshAb)) || savedPlaylist[idx];
+  return freshPlaylist.map((freshAb) => {
+    const savedAb = savedByAbKey.get(weeklyAbProgressKey(freshAb));
     return mergeWeeklyAbEntry(freshAb, savedAb);
   });
 }
@@ -10200,6 +10207,74 @@ function challengeProgressMatchesWeek(progress, weekId) {
   return progress.weeklyChallengeWeekId === weekId;
 }
 
+function getCurrentWeeklyBundleRevisionKey() {
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  return getStoredWeeklyRevisionKey(meta.challengeWeekId, activeWeeklyBundleId);
+}
+
+function challengeProgressMatchesBundle(progress) {
+  if (!progress?.weeklyPlaylistABs?.length) return false;
+  const expected = getCurrentWeeklyBundleRevisionKey();
+  if (!progress.weeklyBundleRevision) {
+    const storedRevision = readStoredWeeklyRevision();
+    return !storedRevision || storedRevision === expected;
+  }
+  return progress.weeklyBundleRevision === expected;
+}
+
+async function refreshWeeklyChallengeBundleIfNeeded() {
+  const live = await hydrateWeeklyChallengeFromApi(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  if (live.applied) {
+    weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  }
+  const username = localStorage.getItem('ump_username');
+  const revisionKey = getCurrentWeeklyBundleRevisionKey();
+  const storedRevision = readStoredWeeklyRevision();
+  if (storedRevision && storedRevision !== revisionKey) {
+    console.log(
+      'Weekly challenge playlist revision changed — resetting progress.',
+      storedRevision,
+      '->',
+      revisionKey
+    );
+    await resetWeeklyChallengeClientProgress(username);
+  }
+  writeStoredWeeklyRevision(
+    (weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META))
+      .challengeWeekId,
+    activeWeeklyBundleId
+  );
+}
+
+async function getSavedWeeklyPlaylistForMerge(username) {
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  const weekId = meta.challengeWeekId;
+  const localCp = challengeProgressMatchesWeek(readSavedChallengeData(username), weekId)
+    ? readSavedChallengeData(username)
+    : null;
+  let cloudCp = null;
+  if (username) {
+    try {
+      const stats = await getGlobalUserStats(username);
+      const cp = stats?.challengeProgress;
+      if (challengeProgressMatchesWeek(cp, weekId)) cloudCp = cp;
+    } catch (e) {
+      console.warn('Failed to load cloud weekly progress for menu display:', e);
+    }
+  }
+  const bundle = pickNewerChallengeProgress(cloudCp, localCp);
+  if (!bundle?.weeklyPlaylistABs?.length) return [];
+  if (!challengeProgressMatchesBundle(bundle)) return [];
+  return bundle.weeklyPlaylistABs;
+}
+
+async function syncWeeklyPlaylistForMenuDisplay() {
+  const fresh = extractAtBatsFromWeeklyData();
+  const username = localStorage.getItem('ump_username');
+  const saved = await getSavedWeeklyPlaylistForMerge(username);
+  weeklyPlaylistABs = mergeWeeklyPlaylistProgress(fresh, saved);
+}
+
 function dismissAbSummaryOverlay() {
   if (!abSummaryOverlay) return;
   abSummaryOverlay.classList.add('opacity-0', 'pointer-events-none');
@@ -10258,8 +10333,14 @@ async function resolveWeeklyChallengeResume(rawABs, username) {
     }
   }
 
-  const localCp = challengeProgressMatchesWeek(localData, currentWeekId) ? localData : null;
-  const cloudCp = challengeProgressMatchesWeek(cloudData, currentWeekId) ? cloudData : null;
+  const localCp =
+    challengeProgressMatchesWeek(localData, currentWeekId) && challengeProgressMatchesBundle(localData)
+      ? localData
+      : null;
+  const cloudCp =
+    challengeProgressMatchesWeek(cloudData, currentWeekId) && challengeProgressMatchesBundle(cloudData)
+      ? cloudData
+      : null;
   const savedBundle = pickNewerChallengeProgress(cloudCp, localCp);
 
   let savedPlaylist = savedBundle?.weeklyPlaylistABs?.length ? savedBundle.weeklyPlaylistABs : null;
@@ -10451,6 +10532,8 @@ async function loadSavedSessionFromLocal() {
     console.warn(`No weekly challenge assigned for calendar week ${calendarWeekId} in schedule.`);
   }
   const storedWeekId = localStorage.getItem('ump_weekly_challenge_week') || '';
+  const revisionKey = getStoredWeeklyRevisionKey(currentWeekId, activeWeeklyBundleId);
+  const storedRevision = readStoredWeeklyRevision();
   let weeklyWeekJustReset = false;
   if (storedWeekId && storedWeekId !== currentWeekId) {
     console.log(
@@ -10459,6 +10542,15 @@ async function loadSavedSessionFromLocal() {
       storedWeekId,
       'now:',
       currentWeekId
+    );
+    await resetWeeklyChallengeClientProgress(username);
+    weeklyWeekJustReset = true;
+  } else if (storedRevision && storedRevision !== revisionKey) {
+    console.log(
+      'Weekly challenge playlist revision changed — resetting progress.',
+      storedRevision,
+      '->',
+      revisionKey
     );
     await resetWeeklyChallengeClientProgress(username);
     weeklyWeekJustReset = true;
@@ -10559,7 +10651,10 @@ async function loadSavedSessionFromLocal() {
         challengeProgressMatchesWeek(cloudCp, currentWeekId) ? cloudCp : null,
         challengeProgressMatchesWeek(localCp, currentWeekId) ? localCp : null
       );
-      if (bundle?.weeklyPlaylistABs?.length) {
+      if (
+        bundle?.weeklyPlaylistABs?.length &&
+        challengeProgressMatchesBundle(bundle)
+      ) {
         const freshWeekly = extractAtBatsFromWeeklyData();
         weeklyPlaylistABs = mergeWeeklyPlaylistProgress(freshWeekly, bundle.weeklyPlaylistABs);
         activeWeeklyAbIndex = findWeeklyResumeAbIndex(
@@ -10919,7 +11014,15 @@ function resumeGameFromPause() {
   }
 }
 
-function updateChallengeProgressUI() {
+async function updateChallengeProgressUI() {
+  if (
+    currentState === STATES.START ||
+    currentState === STATES.WELCOME ||
+    currentState === STATES.TEAM_SELECT
+  ) {
+    await refreshWeeklyChallengeBundleIfNeeded();
+    await syncWeeklyPlaylistForMenuDisplay();
+  }
   const total = getWeeklyChallengeTargetAtBats();
   const { completedCount, percent } = getWeeklyChallengeCompletedStats();
   if (weeklyChallengeProgressText && weeklyChallengeProgressBar) {
@@ -11636,7 +11739,11 @@ function updateSummaryTimerUI() {
   const isEnd = (gameMode === 'weekly_challenge')
     ? (activeWeeklyAbIndex >= weeklyPlaylistABs.length - 1)
     : isSessionOver;
-  btnAbSummaryAdvance.textContent = isEnd ? 'VIEW FINAL SCOREBOARD' : 'ADVANCE TO NEXT AB';
+  if (isEnd && gameMode === 'weekly_challenge') {
+    btnAbSummaryAdvance.textContent = 'FINISH CHALLENGE';
+  } else {
+    btnAbSummaryAdvance.textContent = isEnd ? 'VIEW FINAL SCOREBOARD' : 'ADVANCE TO NEXT AB';
+  }
 }
 
 function extractAtBatsFromWeeklyData() {
@@ -11646,7 +11753,15 @@ function extractAtBatsFromWeeklyData() {
 
 function getWeeklyChallengeTargetAtBats() {
   const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
-  return weeklyPlaylistABs.length || meta.targetAtBats || extractAtBatsFromWeeklyData().length || 20;
+  const onMenu =
+    currentState === STATES.START ||
+    currentState === STATES.WELCOME ||
+    currentState === STATES.TEAM_SELECT;
+  if (!onMenu && weeklyPlaylistABs?.length) {
+    return weeklyPlaylistABs.length;
+  }
+  const freshLen = extractAtBatsFromWeeklyData().length;
+  return meta.targetAtBats || freshLen || 20;
 }
 
 function syncWeeklyChallengeTargetLabels(total) {
@@ -11666,6 +11781,7 @@ function syncWeeklyChallengeTargetLabels(total) {
 
 async function startWeeklyChallenge() {
   if (!requireLoggedInUser()) return;
+  await refreshWeeklyChallengeBundleIfNeeded();
   const rawABs = extractAtBatsFromWeeklyData();
   try {
   hideChallengeDetailModal();
@@ -11707,7 +11823,18 @@ async function startWeeklyChallenge() {
 
   if (activeWeeklyAbIndex >= weeklyPlaylistABs.length) {
     saveChallengeSessionToLocal();
-    transitionToState(STATES.SCOREBOARD);
+    updateChallengeProgressUI();
+    if (toastMessage) {
+      toastMessage.innerHTML =
+        '<span class="text-emerald-300 font-bold font-mono-tech">Weekly challenge complete for this week</span>';
+      toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
+      toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
+      setTimeout(() => {
+        toastMessage.classList.add('opacity-0', 'scale-95', '-translate-y-4');
+        toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
+      }, 3200);
+    }
+    transitionToState(STATES.START);
     return;
   }
 
@@ -11736,9 +11863,16 @@ async function startWeeklyChallenge() {
   });
   } catch (err) {
     console.error('Failed to start weekly challenge:', err);
+    dismissAbSummaryOverlay();
+    setAbStartOverlayActive(false);
+    if (abStartOverlay) {
+      abStartOverlay.classList.add('opacity-0', 'pointer-events-none');
+      abStartOverlay.classList.remove('opacity-100', 'pointer-events-auto');
+    }
+    transitionToState(STATES.START);
     if (toastMessage) {
       toastMessage.innerHTML =
-        '<span class="text-amber-300 font-bold font-mono-tech">Resume issue — retry from Play tab</span>';
+        '<span class="text-amber-300 font-bold font-mono-tech">Could not resume weekly challenge — try again</span>';
       toastMessage.classList.remove('opacity-0', 'scale-95', '-translate-y-4');
       toastMessage.classList.add('opacity-100', 'scale-100', 'translate-y-0');
       setTimeout(() => {
@@ -11746,6 +11880,7 @@ async function startWeeklyChallenge() {
         toastMessage.classList.remove('opacity-100', 'scale-100', 'translate-y-0');
       }, 3200);
     }
+    updateChallengeProgressUI();
   }
 }
 
@@ -11841,6 +11976,12 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
   if (abIdx >= weeklyPlaylistABs.length) {
     if (gameMode === 'mlb_game') {
       exitMlbPlaySessionToPicker();
+      return;
+    }
+    if (gameMode === 'weekly_challenge') {
+      void persistWeeklyChallengeProgress();
+      updateChallengeProgressUI();
+      transitionToState(STATES.START);
       return;
     }
     completedABsCount[activeGameIndex] = 1;
@@ -11956,7 +12097,10 @@ function loadWeeklyAtBat(abIdx, isResumeOrOpts = false) {
 
 function showUmpireScorecardModal() {
   if (!umpcardOverlay || !umpcardStrikezoneCanvas) return;
-  
+  if (gameMode === 'weekly_challenge' || gameMode === 'daily_streak' || gameMode === 'mlb_game') {
+    return;
+  }
+
   // Pause the game when opening the scorecard overlay
   pauseGameOnFocusLoss();
   cancelAutoPlayPitch();
