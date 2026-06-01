@@ -81,13 +81,14 @@
             <input id="admin-user-search" type="search" placeholder="Filter by handle…" class="ump-input admin-input--search" />
             <button type="button" id="admin-refresh-users" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
           </div>
-          <div id="admin-users-list" class="admin-list">Loading users…</div>
+          <div id="admin-users-summary" class="admin-kpi-row" aria-live="polite"></div>
+          <div id="admin-users-list" class="admin-table-wrap">Loading users…</div>
           <div id="admin-user-detail" class="admin-detail ump-panel--subtle hidden">
             <div class="admin-detail__head">
               <h2 id="admin-detail-handle" class="ump-title ump-title--sm">—</h2>
               <button type="button" id="admin-detail-close" class="ump-btn ump-btn--ghost ump-btn--sm">Close</button>
             </div>
-            <pre id="admin-detail-json" class="admin-pre"></pre>
+            <div id="admin-detail-body" class="admin-detail-body"></div>
             <div class="admin-danger-zone">
               <p class="ump-label">Delete removes profile, stats, and leaderboard rows (cascade).</p>
               <button type="button" id="admin-delete-user" class="ump-btn admin-btn--danger ump-btn--sm">Delete account</button>

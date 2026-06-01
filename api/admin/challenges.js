@@ -8,6 +8,15 @@ import { getIsoWeekKey } from '../_lib/period.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEEKLY_PATH = path.resolve(__dirname, '../../src/data/weekly_challenge.js');
 
+/** Parse JS object literal (unquoted keys) from weekly_challenge.js exports. */
+function parseJsObjectLiteral(source) {
+  const trimmed = String(source || '').trim();
+  if (!trimmed.startsWith('{')) {
+    throw new SyntaxError('Expected object literal');
+  }
+  return Function(`"use strict"; return (${trimmed});`)();
+}
+
 function parseWeeklyBundle() {
   if (!fs.existsSync(WEEKLY_PATH)) {
     return { ok: false, error: 'weekly_challenge.js not found' };
@@ -21,16 +30,17 @@ function parseWeeklyBundle() {
 
   let meta;
   try {
-    meta = JSON.parse(metaMatch[1]);
+    meta = parseJsObjectLiteral(metaMatch[1]);
   } catch (e) {
-    return { ok: false, error: `Invalid META JSON: ${e.message}` };
+    return { ok: false, error: `Invalid challenge meta: ${e.message}` };
   }
 
   const gameIdMatches = [...text.matchAll(/"id":\s*"(game_\d+)"/g)];
   const titleMatches = [...text.matchAll(/"title":\s*"([^"]+)"/g)];
   const gamePkMatches = [...text.matchAll(/"gamePk":\s*(\d+)/g)];
 
-  const gameSummaries = gameIdMatches.slice(0, 8).map((m, idx) => ({
+  const gameCount = Math.min(meta.gameCount ?? 5, gameIdMatches.length) || gameIdMatches.length;
+  const gameSummaries = gameIdMatches.slice(0, gameCount).map((m, idx) => ({
     index: idx,
     id: m[1],
     title: titleMatches[idx]?.[1] || '—',
