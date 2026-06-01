@@ -75,6 +75,15 @@ export function deriveOverallAccuracy(row, leaderboardAccuracy = null) {
 
   const json = row.stats_json && typeof row.stats_json === 'object' ? row.stats_json : {};
 
+  const lifetimeTotal = Number(json.lifetimeTotalCalls) || 0;
+  if (lifetimeTotal > 0) {
+    const lifetimeCorrect = Number(json.lifetimeCorrectCalls) || 0;
+    return {
+      value: Math.round((lifetimeCorrect / lifetimeTotal) * 100),
+      source: 'stored',
+    };
+  }
+
   for (const candidate of [row.overall_accuracy, json.overallAccuracy]) {
     const parsed = parseAccuracyValue(candidate);
     if (parsed != null) return { value: parsed, source: 'stored' };
@@ -149,9 +158,12 @@ export function clientStatsToRow(handle, stats) {
       favoriteTeam: safe.favoriteTeam ?? 'none',
       recentPitches: safe.recentPitches ?? [],
       totalPitchesCalled: safe.totalPitchesCalled ?? 0,
+      lifetimeTotalCalls: safe.lifetimeTotalCalls ?? safe.totalPitchesCalled ?? 0,
+      lifetimeCorrectCalls: safe.lifetimeCorrectCalls ?? 0,
       bestWeeklyRecord: safe.bestWeeklyRecord ?? null,
       streakHistory: safe.streakHistory ?? {},
       challengeProgress: safe.challengeProgress ?? null,
+      xp: safe.xp ?? 0,
       overallAccuracy:
         safe.overallAccuracy === null || safe.overallAccuracy === undefined
           ? null

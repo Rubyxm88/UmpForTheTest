@@ -1933,6 +1933,132 @@ function mergeRecentPitches(cloud = [], local = []) {
   return merged.slice(-100);
 }
 
+function sumHistoryCalledTotals(history = []) {
+  let totalCalls = 0;
+  let correctCalls = 0;
+  (history || []).forEach((entry) => {
+    totalCalls += Number(entry.totalCalls) || 0;
+    correctCalls += Number(entry.correctCalls) || 0;
+  });
+  return { totalCalls, correctCalls };
+}
+
+/** Initialize lifetime call counters from session history when missing (migration). */
+function ensureLifetimeCalledCounters(userStats) {
+  if (!userStats || typeof userStats !== 'object') return false;
+  if (
+    userStats.lifetimeTotalCalls !== undefined
+    && userStats.lifetimeCorrectCalls !== undefined
+  ) {
+    return false;
+  }
+  const { totalCalls, correctCalls } = sumHistoryCalledTotals(userStats.history);
+  userStats.lifetimeTotalCalls = totalCalls;
+  userStats.lifetimeCorrectCalls = correctCalls;
+  userStats.totalPitchesCalled = totalCalls;
+  userStats.overallAccuracy =
+    totalCalls > 0 ? Math.round((correctCalls / totalCalls) * 100) : userStats.overallAccuracy ?? null;
+  return true;
+}
+
+function applyLifetimeCalledPitch(userStats, userCorrect) {
+  ensureLifetimeCalledCounters(userStats);
+  userStats.lifetimeTotalCalls = (Number(userStats.lifetimeTotalCalls) || 0) + 1;
+  if (userCorrect) {
+    userStats.lifetimeCorrectCalls = (Number(userStats.lifetimeCorrectCalls) || 0) + 1;
+  }
+  userStats.totalPitchesCalled = userStats.lifetimeTotalCalls;
+  userStats.overallAccuracy =
+    userStats.lifetimeTotalCalls > 0
+      ? Math.round((userStats.lifetimeCorrectCalls / userStats.lifetimeTotalCalls) * 100)
+      : null;
+}
+
+/** After a session is appended to history, counters must match history (no double-count). */
+function reconcileLifetimeCalledFromHistory(userStats) {
+  const { totalCalls, correctCalls } = sumHistoryCalledTotals(userStats.history);
+  userStats.lifetimeTotalCalls = totalCalls;
+  userStats.lifetimeCorrectCalls = correctCalls;
+  userStats.totalPitchesCalled = totalCalls;
+  userStats.overallAccuracy = totalCalls > 0 ? Math.round((correctCalls / totalCalls) * 100) : null;
+}
+
+function mergeStreakHistory(cloud = {}, local = {}) {
+  const merged = { ...(cloud || {}) };
+  Object.entries(local || {}).forEach(([date, value]) => {
+    merged[date] = Math.max(Number(merged[date]) || 0, Number(value) || 0);
+  });
+  return merged;
+}
+
+function mergeTeamStats(cloud = {}, local = {}) {
+  const merged = { ...(cloud || {}) };
+  Object.entries(local || {}).forEach(([team, localStats]) => {
+    const cloudStats = merged[team] || { correctCalls: 0, totalCalls: 0 };
+    merged[team] = {
+      correctCalls: Math.max(
+        Number(cloudStats.correctCalls) || 0,
+        Number(localStats.correctCalls) || 0
+      ),
+      totalCalls: Math.max(Number(cloudStats.totalCalls) || 0, Number(localStats.totalCalls) || 0),
+    };
+  });
+  return merged;
+}
+
+function mergeUserStats(cloud = {}, local = {}) {
+  const cloudHist = Array.isArray(cloud.history) ? cloud.history : [];
+  const localHist = Array.isArray(local.history) ? local.history : [];
+  const merged = {
+    ...cloud,
+    ...local,
+    recentPitches: mergeRecentPitches(cloud.recentPitches, local.recentPitches),
+    history: localHist.length >= cloudHist.length ? localHist : cloudHist,
+    dailyHistory: { ...(cloud.dailyHistory || {}), ...(local.dailyHistory || {}) },
+    streakHistory: mergeStreakHistory(cloud.streakHistory, local.streakHistory),
+    teamStats: mergeTeamStats(cloud.teamStats, local.teamStats),
+    maxStreak: Math.max(Number(cloud.maxStreak) || 0, Number(local.maxStreak) || 0),
+    completedWeekly: Math.max(Number(cloud.completedWeekly) || 0, Number(local.completedWeekly) || 0),
+    dnfs: Math.max(Number(cloud.dnfs) || 0, Number(local.dnfs) || 0),
+    xp: Math.max(Number(cloud.xp) || 0, Number(local.xp) || 0),
+    favoriteTeam: local.favoriteTeam || cloud.favoriteTeam || 'none',
+    bestWeeklyRecord: local.bestWeeklyRecord || cloud.bestWeeklyRecord || null,
+    challengeProgress: local.challengeProgress || cloud.challengeProgress || null,
+  };
+
+  const localLifetime = Number(local.lifetimeTotalCalls) || 0;
+  const cloudLifetime = Number(cloud.lifetimeTotalCalls) || 0;
+  if (localLifetime > 0 || cloudLifetime > 0) {
+    const pickLocal = localLifetime >= cloudLifetime;
+    merged.lifetimeTotalCalls = pickLocal ? localLifetime : cloudLifetime;
+    merged.lifetimeCorrectCalls = pickLocal
+      ? Number(local.lifetimeCorrectCalls) || 0
+      : Number(cloud.lifetimeCorrectCalls) || 0;
+    merged.totalPitchesCalled = merged.lifetimeTotalCalls;
+    merged.overallAccuracy =
+      merged.lifetimeTotalCalls > 0
+        ? Math.round((merged.lifetimeCorrectCalls / merged.lifetimeTotalCalls) * 100)
+        : null;
+  } else {
+    ensureLifetimeCalledCounters(merged);
+    reconcileLifetimeCalledFromHistory(merged);
+  }
+
+  return merged;
+}
+
+function localStatsAheadOfCloud(local = {}, cloud = {}) {
+  return (
+    (local.recentPitches?.length || 0) > (cloud.recentPitches?.length || 0) ||
+    (Number(local.lifetimeTotalCalls ?? local.totalPitchesCalled) || 0) >
+      (Number(cloud.lifetimeTotalCalls ?? cloud.totalPitchesCalled) || 0) ||
+    (Number(local.maxStreak) || 0) > (Number(cloud.maxStreak) || 0) ||
+    (local.history?.length || 0) > (cloud.history?.length || 0) ||
+    (Number(local.xp) || 0) > (Number(cloud.xp) || 0) ||
+    (Number(local.completedWeekly) || 0) > (Number(cloud.completedWeekly) || 0)
+  );
+}
+
 const statsCloudSyncTimers = new Map();
 
 /** Persist stats to localStorage immediately; debounce Supabase sync (production). */
@@ -1995,11 +2121,10 @@ function ensureProfileAggregateStats(userStats) {
 
   let changed = false;
 
-  if (userStats.totalPitchesCalled === undefined) {
-    userStats.totalPitchesCalled = (userStats.history || []).reduce(
-      (sum, entry) => sum + (entry.totalCalls || 0),
-      0
-    );
+  if (ensureLifetimeCalledCounters(userStats)) {
+    changed = true;
+  } else if (userStats.totalPitchesCalled === undefined) {
+    userStats.totalPitchesCalled = userStats.lifetimeTotalCalls || 0;
     changed = true;
   }
 
@@ -2065,18 +2190,9 @@ async function applyCloudSessionToLocal(handle, pinVal, cloud) {
     localStorage.getItem(statsKey) ||
       '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
   );
-  const stats = { ...(cloud.stats || {}) };
-  const cloudRecentLen = (cloud.stats?.recentPitches || []).length;
-  stats.recentPitches = mergeRecentPitches(stats.recentPitches, existingLocal.recentPitches);
-  stats.totalPitchesCalled = Math.max(
-    Number(stats.totalPitchesCalled) || 0,
-    Number(existingLocal.totalPitchesCalled) || 0
-  );
+  const stats = mergeUserStats(cloud.stats || {}, existingLocal);
   localStorage.setItem(statsKey, JSON.stringify(stats));
-  if (
-    (existingLocal.recentPitches?.length || 0) > cloudRecentLen ||
-    (Number(existingLocal.totalPitchesCalled) || 0) > (Number(cloud.stats?.totalPitchesCalled) || 0)
-  ) {
+  if (localStatsAheadOfCloud(existingLocal, cloud.stats || {})) {
     scheduleStatsCloudSync(normalized);
   }
 
@@ -2123,13 +2239,11 @@ async function getGlobalUserStats(handle) {
   try {
     const me = await apiMe();
     if (me?.stats && normalizeHandle(me.handle) === normalizeHandle(handle)) {
-      const merged = { ...me.stats };
-      merged.recentPitches = mergeRecentPitches(me.stats.recentPitches, fallback.recentPitches);
-      merged.totalPitchesCalled = Math.max(
-        Number(me.stats.totalPitchesCalled) || 0,
-        Number(fallback.totalPitchesCalled) || 0
-      );
+      const merged = mergeUserStats(me.stats, fallback);
       localStorage.setItem(statsKey, JSON.stringify(merged));
+      if (localStatsAheadOfCloud(fallback, me.stats)) {
+        scheduleStatsCloudSync(normalizeHandle(handle));
+      }
       return merged;
     }
   } catch (e) {
@@ -5798,41 +5912,14 @@ function submitUserDecision(userCall) {
       userStats.recentPitches = userStats.recentPitches.slice(-100);
     }
 
-    userStats.totalPitchesCalled = (userStats.totalPitchesCalled || 0) + 1;
     ensureProfileAggregateStats(userStats).stats;
-    
-    // Calculate live accuracy combining history, completed weekly ABs, & current active session
-    let totalCallsSum = 0;
-    let totalCorrectSum = 0;
-    
-    // Add current session's active AB calls
-    const currentSessionCalled = pitchHistory.filter(x => !x.isSwingPlay);
-    totalCallsSum += currentSessionCalled.length;
-    totalCorrectSum += currentSessionCalled.filter(x => x.userCorrect).length;
-    
-    // Add previously completed weekly ABs in this match (not yet in history)
-    if (gameMode === 'weekly_challenge' && weeklyPlaylistABs) {
-      weeklyPlaylistABs.forEach((ab, idx) => {
-        if (ab.completed && idx !== activeWeeklyAbIndex) {
-          totalCallsSum += ab.userTotalCount || 0;
-          totalCorrectSum += ab.userCorrectCount || 0;
-        }
-      });
-    }
-    
-    // Add all previously completed game sessions from history
-    if (userStats.history) {
-      userStats.history.forEach(h => {
-        totalCallsSum += h.totalCalls;
-        totalCorrectSum += h.correctCalls;
-      });
-    }
-    userStats.overallAccuracy = totalCallsSum > 0 ? Math.round((totalCorrectSum / totalCallsSum) * 100) : 100;
+    applyLifetimeCalledPitch(userStats, userCorrect);
     
     // Calculate live max streak across current session + all history
+    const currentSessionCalled = pitchHistory.filter((x) => !x.isSwingPlay);
     let currentStreak = 0;
     let maxSessionStreak = 0;
-    currentSessionCalled.forEach(p => {
+    currentSessionCalled.forEach((p) => {
       if (p.userCorrect) {
         currentStreak++;
         if (currentStreak > maxSessionStreak) maxSessionStreak = currentStreak;
@@ -7013,15 +7100,6 @@ function renderScoreboardDashboard() {
     }
     
     const usesPlaylistTotals = gameMode === 'weekly_challenge' || gameMode === 'mlb_game';
-    let totalCallsSum = usesPlaylistTotals ? displayPitchesCount : calledPitches.length;
-    let totalCorrectSum = usesPlaylistTotals ? displayCorrectCount : userCorrectCount;
-    if (userStats.history) {
-      userStats.history.forEach(h => {
-        totalCallsSum += h.totalCalls;
-        totalCorrectSum += h.correctCalls;
-      });
-    }
-    userStats.overallAccuracy = totalCallsSum > 0 ? Math.round((totalCorrectSum / totalCallsSum) * 100) : 100;
     
     // Calculate max streak in this game and update overall max streak
     let currentStreak = 0;
@@ -7077,6 +7155,7 @@ function renderScoreboardDashboard() {
     });
 
     ensureProfileAggregateStats(userStats).stats;
+    reconcileLifetimeCalledFromHistory(userStats);
     if (gameMode === 'weekly_challenge') {
       updateBestWeeklyRecord(
         userStats,

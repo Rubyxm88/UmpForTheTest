@@ -36,7 +36,7 @@ export async function loadBundleJson(bundleId) {
   return loadBundle(bundleId);
 }
 
-export { deleteBundle } from './weekly-storage.mjs';
+export { deleteBundle, getWeeksUsingBundle } from './weekly-storage.mjs';
 
 export function buildWeekTimeline(anchorDate = new Date(), { futureCount = 5, pastCount = 12 } = {}) {
   const current = getIsoWeekKey(anchorDate);
