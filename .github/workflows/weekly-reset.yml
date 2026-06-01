@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Run weekly curator script
+      - name: Run weekly curator (uses src/data/weekly_generation_config.json)
         run: node scripts/weekly-curator.js
 
       - name: Check for changes
@@ -39,6 +39,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/data/weekly_challenge.js
+          git add src/data/weekly_challenge.js src/data/weekly_generation_config.json
           git commit -m "chore: refresh weekly challenge data [$(date -u +'%Y-%m-%d')]"
           git push origin main

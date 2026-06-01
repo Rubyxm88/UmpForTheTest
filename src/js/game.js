@@ -2,10 +2,13 @@ import * as THREE from 'three';
 import { getObfuscatedPitches } from '../data/pitches.js';
 import { ORIOLES_GAME_DATA } from '../data/orioles_game.js';
 import { WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META } from '../data/weekly_challenge.js';
+import weeklySchedule from '../data/weekly_schedule.json';
+import { buildWeeklyPlaylist } from './weekly-playlist.js';
 import { STANDINGS_BOARDS } from '../data/challenge_registry.js';
 import {
   resolveWeeklyChallengeMeta,
   getPreviousIsoWeekKey,
+  getIsoWeekKey,
   formatWeekLabel,
 } from './challenge-utils.js';
 import { DAILY_CHALLENGE_DATA } from '../data/daily_challenge.js';
@@ -1913,6 +1916,40 @@ function getStatsStorageKey(handle) {
   return `pitch_ump_stats_${normalizeHandle(handle)}`;
 }
 
+/** Prefer the longer recent-pitch buffer when reconciling local vs cloud (last 100 called pitches). */
+function mergeRecentPitches(cloud = [], local = []) {
+  const fromCloud = Array.isArray(cloud) ? cloud : [];
+  const fromLocal = Array.isArray(local) ? local : [];
+  if (fromLocal.length === 0) return fromCloud.slice(-100);
+  if (fromCloud.length === 0) return fromLocal.slice(-100);
+  const merged = fromLocal.length >= fromCloud.length ? fromLocal : fromCloud;
+  return merged.slice(-100);
+}
+
+const statsCloudSyncTimers = new Map();
+
+/** Persist stats to localStorage immediately; debounce Supabase sync (production). */
+function scheduleStatsCloudSync(handle) {
+  const normalized = normalizeHandle(handle);
+  if (!normalized) return;
+  const existing = statsCloudSyncTimers.get(normalized);
+  if (existing) clearTimeout(existing);
+  statsCloudSyncTimers.set(
+    normalized,
+    setTimeout(() => {
+      statsCloudSyncTimers.delete(normalized);
+      const statsKey = getStatsStorageKey(normalized);
+      const latest = JSON.parse(
+        localStorage.getItem(statsKey) ||
+          '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
+      );
+      saveGlobalUserStats(normalized, latest).catch((e) => {
+        console.warn(`Debounced stats sync failed for ${normalized}:`, e);
+      });
+    }, 2000)
+  );
+}
+
 function isWeeklyChallengeHistoryEntry(entry) {
   const name = (entry?.gameName || '').toLowerCase();
   return name.includes('weekly');
@@ -2016,9 +2053,25 @@ function requireLoggedInUser() {
 
 async function applyCloudSessionToLocal(handle, pinVal, cloud) {
   const normalized = normalizeHandle(handle);
-  const stats = cloud.stats || {};
   const statsKey = getStatsStorageKey(normalized);
+  const existingLocal = JSON.parse(
+    localStorage.getItem(statsKey) ||
+      '{"overallAccuracy":null,"maxStreak":0,"completedWeekly":0,"history":[]}'
+  );
+  const stats = { ...(cloud.stats || {}) };
+  const cloudRecentLen = (cloud.stats?.recentPitches || []).length;
+  stats.recentPitches = mergeRecentPitches(stats.recentPitches, existingLocal.recentPitches);
+  stats.totalPitchesCalled = Math.max(
+    Number(stats.totalPitchesCalled) || 0,
+    Number(existingLocal.totalPitchesCalled) || 0
+  );
   localStorage.setItem(statsKey, JSON.stringify(stats));
+  if (
+    (existingLocal.recentPitches?.length || 0) > cloudRecentLen ||
+    (Number(existingLocal.totalPitchesCalled) || 0) > (Number(cloud.stats?.totalPitchesCalled) || 0)
+  ) {
+    scheduleStatsCloudSync(normalized);
+  }
 
   const pinHash = pinVal ? await hashPIN(pinVal) : (await getProfile(normalized))?.pinHash;
   await saveProfile({
@@ -2063,8 +2116,14 @@ async function getGlobalUserStats(handle) {
   try {
     const me = await apiMe();
     if (me?.stats && normalizeHandle(me.handle) === normalizeHandle(handle)) {
-      localStorage.setItem(statsKey, JSON.stringify(me.stats));
-      return me.stats;
+      const merged = { ...me.stats };
+      merged.recentPitches = mergeRecentPitches(me.stats.recentPitches, fallback.recentPitches);
+      merged.totalPitchesCalled = Math.max(
+        Number(me.stats.totalPitchesCalled) || 0,
+        Number(fallback.totalPitchesCalled) || 0
+      );
+      localStorage.setItem(statsKey, JSON.stringify(merged));
+      return merged;
     }
   } catch (e) {
     console.warn(`Error fetching cloud stats for ${handle}:`, e);
@@ -5775,6 +5834,7 @@ function submitUserDecision(userCall) {
     }
     
     localStorage.setItem(statsKey, JSON.stringify(userStats));
+    scheduleStatsCloudSync(username);
   }
   
   if (gameMode === 'daily_streak') {
@@ -6328,7 +6388,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
     if (startWeeklyDetails) {
       startWeeklyDetails.classList.remove('hidden');
       
-      const totalCount = weeklyPlaylistABs.length || 200;
+      const totalCount = getWeeklyChallengeTargetAtBats();
       const completedCount = weeklyPlaylistABs.filter(ab => ab.completed).length;
       
       const countEl = document.getElementById('ab-start-weekly-count');
@@ -6424,7 +6484,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false) {
 
   if (startTitle) {
     if (gameMode === 'weekly_challenge') {
-      const total = weeklyPlaylistABs.length || 200;
+      const total = getWeeklyChallengeTargetAtBats();
       startTitle.textContent = isResume 
         ? `RESUME: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}` 
         : `NEXT: AT-BAT ${activeWeeklyAbIndex + 1} OF ${total}`;
@@ -9009,7 +9069,7 @@ async function showAtBatSummaryScreen(outcomeText) {
     if (gameMode === 'weekly_challenge' || gameMode === 'mlb_game') {
       const total = gameMode === 'mlb_game'
         ? (weeklyPlaylistABs.length || 1)
-        : (weeklyPlaylistABs.length || 200);
+        : getWeeklyChallengeTargetAtBats();
       abSummarySubtitle.textContent = `Finished At-Bat ${activeWeeklyAbIndex + 1} of ${total}`;
       abSummarySubtitle.classList.remove('hidden');
     } else if (gameMode === 'daily_streak') {
@@ -9201,7 +9261,7 @@ async function showAtBatSummaryScreen(outcomeText) {
     }
 
     const completedCount = activeWeeklyAbIndex + 1;
-    const totalCount = weeklyPlaylistABs.length || 200;
+    const totalCount = getWeeklyChallengeTargetAtBats();
     const prevPercent = Math.round((activeWeeklyAbIndex / totalCount) * 100);
     const newPercent = Math.round((completedCount / totalCount) * 100);
 
@@ -9600,8 +9660,19 @@ function getMondayDateString(d = new Date()) {
 async function loadSavedSessionFromLocal() {
   const username = localStorage.getItem('ump_username');
   weeklyChallengeMeta = resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  const calendarWeekId = getIsoWeekKey();
   const currentWeekId = weeklyChallengeMeta.challengeWeekId;
+  if (currentWeekId !== calendarWeekId) {
+    console.warn(
+      `Weekly live bundle is for ${currentWeekId} but calendar week is ${calendarWeekId}. Admin should assign and deploy the current week.`
+    );
+  }
+  const weekAssignment = weeklySchedule?.assignments?.[calendarWeekId];
+  if (weeklySchedule?.assignments && !weekAssignment?.bundleId) {
+    console.warn(`No weekly challenge assigned for calendar week ${calendarWeekId} in schedule.`);
+  }
   const storedWeek = localStorage.getItem('ump_weekly_challenge_week');
+  let weeklyWeekJustReset = false;
   if (storedWeek !== currentWeekId) {
     console.log('Weekly challenge week changed! Stored:', storedWeek, 'Current:', currentWeekId, 'Resetting weekly challenge progress.');
     const userSuffix = username ? username.toUpperCase() : 'GUEST';
@@ -9619,6 +9690,7 @@ async function loadSavedSessionFromLocal() {
     activeWeeklyAbIndex = 0;
     activeGameIndex = 0;
     weeklyPlaylistABs = extractAtBatsFromWeeklyData();
+    weeklyWeekJustReset = true;
     localStorage.setItem('ump_weekly_challenge_week', currentWeekId);
   }
 
@@ -9633,7 +9705,7 @@ async function loadSavedSessionFromLocal() {
   
   try {
     const session = await getActiveSession(username);
-    if (session) {
+    if (session && !weeklyWeekJustReset) {
       console.log("Restoring active session from IndexedDB...");
       if (session.weeklyPlaylistABs?.length) {
         weeklyPlaylistABs = session.weeklyPlaylistABs;
@@ -10045,14 +10117,13 @@ function resumeGameFromPause() {
 }
 
 function updateChallengeProgressUI() {
-  const total = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || 16;
+  const total = getWeeklyChallengeTargetAtBats();
+  const { completedCount, percent } = getWeeklyChallengeCompletedStats();
   if (weeklyChallengeProgressText && weeklyChallengeProgressBar) {
-    const completed = activeWeeklyAbIndex;
-    weeklyChallengeProgressText.textContent = `${completed} / ${total} At-Bats`;
-    
-    const percentage = Math.min(100, Math.round((completed / total) * 100));
-    weeklyChallengeProgressBar.style.width = `${percentage}%`;
+    weeklyChallengeProgressText.textContent = `${completedCount} / ${total} At-Bats`;
+    weeklyChallengeProgressBar.style.width = `${Math.min(100, percent)}%`;
   }
+  syncWeeklyChallengeTargetLabels(total);
   
   const totalBadge = document.getElementById('weekly-challenge-total-badge');
   if (totalBadge) {
@@ -10061,7 +10132,7 @@ function updateChallengeProgressUI() {
   
   if (btnStartWeeklyChallenge) {
     const hasProgress = hasWeeklyChallengeResumeProgress();
-    if (hasProgress && activeWeeklyAbIndex < total) {
+    if (hasProgress && completedCount < total) {
       btnStartWeeklyChallenge.textContent = "Resume Challenge";
     } else {
       btnStartWeeklyChallenge.textContent = "Start Challenge";
@@ -10749,111 +10820,28 @@ function updateSummaryTimerUI() {
 }
 
 function extractAtBatsFromWeeklyData() {
-  const borderlineABs = [];
-  const normalABs = [];
-  
-  WEEKLY_CHALLENGE_DATA.forEach((game, gameIdx) => {
-    let currentPitches = [];
-    let currentBatter = '';
-    
-    game.pitches.forEach(pitch => {
-      if (pitch.batter !== currentBatter && currentPitches.length > 0) {
-        const abObj = {
-          gameIndex: gameIdx,
-          gameTitle: game.title,
-          filmRoomUrl: game.film_room_url,
-          umpScorecardUrl: game.ump_scorecard_url,
-          pitches: currentPitches,
-          batter: currentPitches[0].batter,
-          pitcher: currentPitches[0].pitcher
-        };
-        
-        let hasBorderline = false;
-        currentPitches.forEach(p => {
-          const t_cross = getCrossingTime(p);
-          const crossPoint = getBallPositionAtTime(p, t_cross);
-          const xEdgeDist = Math.abs(Math.abs(crossPoint.x) - 0.8283);
-          const yBotDist = Math.abs(crossPoint.y - (p.sz_bot - 0.12));
-          const yTopDist = Math.abs(crossPoint.y - (p.sz_top + 0.12));
-          const yEdgeDist = Math.min(yBotDist, yTopDist);
-          if (xEdgeDist <= 0.15 || yEdgeDist <= 0.15) {
-            hasBorderline = true;
-          }
-        });
-        
-        if (hasBorderline) {
-          borderlineABs.push(abObj);
-        } else {
-          normalABs.push(abObj);
-        }
-        currentPitches = [];
-      }
-      currentBatter = pitch.batter;
-      currentPitches.push(pitch);
-    });
-    
-    if (currentPitches.length > 0) {
-      const abObj = {
-        gameIndex: gameIdx,
-        gameTitle: game.title,
-        filmRoomUrl: game.film_room_url,
-        umpScorecardUrl: game.ump_scorecard_url,
-        pitches: currentPitches,
-        batter: currentPitches[0].batter,
-        pitcher: currentPitches[0].pitcher
-      };
-      
-      let hasBorderline = false;
-      currentPitches.forEach(p => {
-        const t_cross = getCrossingTime(p);
-        const crossPoint = getBallPositionAtTime(p, t_cross);
-        const xEdgeDist = Math.abs(Math.abs(crossPoint.x) - 0.8283);
-        const yBotDist = Math.abs(crossPoint.y - (p.sz_bot - 0.12));
-        const yTopDist = Math.abs(crossPoint.y - (p.sz_top + 0.12));
-        const yEdgeDist = Math.min(yBotDist, yTopDist);
-        if (xEdgeDist <= 0.15 || yEdgeDist <= 0.15) {
-          hasBorderline = true;
-        }
-      });
-      
-      if (hasBorderline) {
-        borderlineABs.push(abObj);
-      } else {
-        normalABs.push(abObj);
-      }
-    }
-  });
-  
-  // Deterministic Mulberry32 generator
   const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
-  const randGenerator = mulberry32(meta.shuffleSeed);
-  const deterministicShuffle = (arr) => {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(randGenerator() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  };
-  
-  deterministicShuffle(borderlineABs);
-  deterministicShuffle(normalABs);
-  
-  const targetBorderline = 100;
-  const targetNormal = 100;
-  
-  let selectedBorderline = borderlineABs.slice(0, targetBorderline);
-  let selectedNormal = normalABs.slice(0, targetNormal);
-  
-  if (selectedBorderline.length < targetBorderline) {
-    const needed = targetBorderline - selectedBorderline.length;
-    selectedNormal = selectedNormal.concat(normalABs.slice(targetNormal, targetNormal + needed));
-  } else if (selectedNormal.length < targetNormal) {
-    const needed = targetNormal - selectedNormal.length;
-    selectedBorderline = selectedBorderline.concat(borderlineABs.slice(targetBorderline, targetBorderline + needed));
-  }
-  
-  const finalPlaylist = selectedBorderline.concat(selectedNormal).slice(0, 200);
-  return deterministicShuffle(finalPlaylist);
+  return buildWeeklyPlaylist(WEEKLY_CHALLENGE_DATA, meta);
+}
+
+function getWeeklyChallengeTargetAtBats() {
+  const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
+  return weeklyPlaylistABs.length || meta.targetAtBats || extractAtBatsFromWeeklyData().length || 20;
+}
+
+function syncWeeklyChallengeTargetLabels(total) {
+  const n = total ?? getWeeklyChallengeTargetAtBats();
+  const suffix = ` / ${n}`;
+  const ids = [
+    ['ab-start-weekly-total', suffix],
+    ['ab-summary-weekly-total', suffix],
+    ['pause-challenge-total', suffix],
+    ['challenge-detail-ab-count', String(n)],
+  ];
+  ids.forEach(([id, text]) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  });
 }
 
 async function startWeeklyChallenge() {
@@ -12919,8 +12907,8 @@ async function openChallengeDetailModal(type) {
 
   const username = localStorage.getItem('ump_username') || 'GUEST_UMPIRE';
   const meta = weeklyChallengeMeta || resolveWeeklyChallengeMeta(WEEKLY_CHALLENGE_DATA, WEEKLY_CHALLENGE_META);
-  const totalAbs = weeklyPlaylistABs.length || extractAtBatsFromWeeklyData().length || meta.targetAtBats;
-  const completedAbs = activeWeeklyAbIndex;
+  const totalAbs = getWeeklyChallengeTargetAtBats();
+  const completedAbs = getWeeklyChallengeCompletedStats().completedCount;
   const gamesWrap = document.getElementById('challenge-detail-games-wrap');
   const statsGrid = document.getElementById('challenge-detail-stats');
 

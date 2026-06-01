@@ -150,6 +150,8 @@ export function clientStatsToRow(handle, stats) {
       recentPitches: safe.recentPitches ?? [],
       totalPitchesCalled: safe.totalPitchesCalled ?? 0,
       bestWeeklyRecord: safe.bestWeeklyRecord ?? null,
+      streakHistory: safe.streakHistory ?? {},
+      challengeProgress: safe.challengeProgress ?? null,
       overallAccuracy:
         safe.overallAccuracy === null || safe.overallAccuracy === undefined
           ? null

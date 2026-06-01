@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "bundles": [
+    {
+      "id": "bundle-2026-W22",
+      "label": "Imported 2026-W22",
+      "createdAt": "2026-06-01T06:18:11.324Z",
+      "updatedAt": "2026-06-01T06:18:11.337Z",
+      "challengeWeekId": "2026-W22",
+      "gameCount": 5,
+      "targetAtBats": 20,
+      "pitchCount": 1640,
+      "gameTitles": [
+        "Orioles vs. Tigers",
+        "Dodgers vs. Giants",
+        "Yankees vs. Red Sox",
+        "Mets vs. Phillies",
+        "Astros vs. Rangers"
+      ]
+    }
+  ]
+}

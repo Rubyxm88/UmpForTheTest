@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "label": "Default weekly mix (20 AB)",
+  "scheduleForWeekId": null,
+  "games": {
+    "count": 5,
+    "lookbackDays": 7,
+    "selectionMode": "high_scoring_diverse",
+    "manualGamePks": [],
+    "minTotalRuns": 0,
+    "gameTypes": ["R"]
+  },
+  "playlist": {
+    "targetAtBats": 20,
+    "borderlineRatio": 0.5,
+    "borderlineEdgeThresholdFt": 0.15,
+    "shuffleSeed": null,
+    "perGameCap": null,
+    "minPitchesPerAb": 1,
+    "maxPitchesPerAb": null,
+    "prioritizeLateInning": false
+  },
+  "filters": {
+    "requireCalledPitch": true,
+    "excludeSwingOnlyAbs": false,
+    "minCalledPitchesPerAb": 1
+  }
+}

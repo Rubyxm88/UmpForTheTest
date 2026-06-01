@@ -9,7 +9,10 @@ export const WEEKLY_CHALLENGE_META = {
   challengeWeekId: '2026-W22',
   resetDate: '2026-05-25',
   gameCount: 5,
-  targetAtBats: 200,
+  targetAtBats: 20,
+  borderlineRatio: 0.5,
+  borderlineEdgeThresholdFt: 0.15,
+  perGameCap: null,
   gamePks: [824839, 824840, 824841, 824842, 824843],
   shuffleSeed: 202622,
 };

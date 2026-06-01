@@ -41,7 +41,7 @@ export function resolveWeeklyChallengeMeta(data, exportedMeta) {
       challengeWeekId: exportedMeta.challengeWeekId,
       resetDate: exportedMeta.resetDate || getMondayDateString(),
       gameCount: exportedMeta.gameCount ?? data.length,
-      targetAtBats: exportedMeta.targetAtBats ?? 200,
+      targetAtBats: exportedMeta.targetAtBats ?? 20,
       gamePks: exportedMeta.gamePks || data.map((g) => g.gamePk || extractGamePkFromUrl(g.film_room_url)).filter(Boolean),
       shuffleSeed: exportedMeta.shuffleSeed ?? isoWeekToShuffleSeed(exportedMeta.challengeWeekId),
     };
@@ -52,7 +52,7 @@ export function resolveWeeklyChallengeMeta(data, exportedMeta) {
     challengeWeekId: weekId,
     resetDate: getMondayDateString(),
     gameCount: data.length,
-    targetAtBats: 200,
+    targetAtBats: 20,
     gamePks: data.map((g) => g.gamePk || extractGamePkFromUrl(g.film_room_url)).filter(Boolean),
     shuffleSeed: isoWeekToShuffleSeed(weekId),
   };

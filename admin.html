@@ -73,7 +73,7 @@
 
         <nav class="admin-nav" role="tablist" aria-label="Admin sections">
           <button type="button" class="admin-nav__btn admin-nav__btn--active" data-admin-tab="users">Users</button>
-          <button type="button" class="admin-nav__btn" data-admin-tab="challenges">Challenges</button>
+          <button type="button" class="admin-nav__btn" data-admin-tab="challenges">Weekly schedule</button>
         </nav>
 
         <div id="admin-tab-users" class="admin-tab-panel ump-panel">
@@ -97,8 +97,9 @@
         </div>
 
         <div id="admin-tab-challenges" class="admin-tab-panel ump-panel hidden">
-          <button type="button" id="admin-refresh-challenges" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh bundle</button>
-          <div id="admin-challenges-report" class="admin-report">Loading…</div>
+          <div id="admin-challenges-root" class="admin-challenges-root">
+            <p class="admin-meta-line">Loading weekly schedule…</p>
+          </div>
         </div>
       </section>
     </div>
