@@ -6,7 +6,6 @@ import {
   fetchAllGamesForDate,
   fetchGamePitches,
   formatLocalDateString,
-  getDefaultBrowseDate,
   MLB_GAME_FEED_PARSE_VERSION,
 } from './mlb-api.js';
 import {
@@ -67,10 +66,29 @@ function syncQuickChipHighlight() {
   setActiveQuickChip(getQuickOffsetForIso(getGameFinderCalendarDate()));
 }
 
-function setBrowseToDefault() {
-  const d = getDefaultBrowseDate();
-  browseDateIso = formatLocalDateString(d);
-  setGameFinderCalendarDate(d);
+async function resolveDefaultBrowseDateIso() {
+  const todayIso = formatLocalDateString();
+  let todayGames = getCachedDateGames(todayIso);
+  if (todayGames === null) {
+    try {
+      todayGames = await fetchAllGamesForDate(todayIso);
+      cacheDateGames(todayIso, todayGames);
+    } catch (err) {
+      console.warn('Default browse date probe failed:', err);
+      todayGames = [];
+    }
+  }
+  if (todayGames.length > 0) return todayIso;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return formatLocalDateString(yesterday);
+}
+
+async function setBrowseToDefault() {
+  const iso = await resolveDefaultBrowseDateIso();
+  browseDateIso = iso;
+  setGameFinderCalendarDate(parseIsoDate(iso));
   syncQuickChipHighlight();
 }
 
@@ -83,7 +101,6 @@ function emptyGamesMessage(dateStr) {
 
 export function initMlbGamesModule(moduleDeps) {
   deps = moduleDeps;
-  setBrowseToDefault();
   sessionStorage.removeItem(MLB_PLAY_RETURN_KEY);
   pruneGameCache().catch((e) => console.warn('Game cache prune failed:', e));
   initGameFinderCalendar({ onDateSelected: () => handleFindGames() });
@@ -291,8 +308,9 @@ export function saveMlbBrowseDate(iso) {
   browseDateIso = iso;
 }
 
-export function clearMlbBrowseDate() {
-  setBrowseToDefault();
+export async function clearMlbBrowseDate() {
+  browseDateIso = null;
+  await setBrowseToDefault();
 }
 
 export function rememberMlbPlayContext(gameSummary) {
@@ -323,7 +341,7 @@ export async function restoreMlbBrowseGrid() {
     await handleFindGames();
     return;
   }
-  setBrowseToDefault();
+  await setBrowseToDefault();
   await handleFindGames();
 }
 
@@ -343,7 +361,7 @@ export async function loadPlayTabRecentGames(force = false) {
   if (!grid) return;
 
   if (!browseDateIso) {
-    setBrowseToDefault();
+    await setBrowseToDefault();
   } else {
     setGameFinderCalendarDate(parseIsoDate(browseDateIso));
     syncQuickChipHighlight();
