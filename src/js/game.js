@@ -14854,20 +14854,11 @@ async function populateStreakChallengeDetailModal() {
             const acc = a.accuracy != null ? a.accuracy : null;
             return `
         <div class="streak-history__medal streak-history__medal--${i + 1}" role="listitem">
-          <button type="button" class="streak-history__medal-btn" data-streak-toggle="top-${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-top-${i}">
-            <span class="streak-history__rank">#${i + 1}</span>
-            <span class="streak-history__medal-streak">${a.streak || 0}</span>
-            <span class="streak-history__medal-acc">${a.accuracy != null ? a.accuracy + '%' : '—'}</span>
-          </button>
-          <div id="streak-attempt-drawer-top-${i}" class="challenge-detail-ab__drawer streak-history__drawer" hidden>
-            <div class="challenge-detail-ab__stat"><span>Rank</span><strong>#${i + 1} All-Time</strong></div>
-            <div class="challenge-detail-ab__stat"><span>Streak</span><strong>${a.streak || 0}</strong></div>
-            <div class="challenge-detail-ab__stat"><span>Your accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
-            <div class="challenge-detail-ab__stat"><span>ABs played</span><strong>${a.absPlayed || 0}</strong></div>
-            <div class="challenge-detail-ab__stat"><span>Pitches</span><strong>${a.pitchesCalled || 0}</strong></div>
-            ${a.matchup ? `<div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Ended on</span><strong>${escSh(a.matchup)}</strong></div>` : ''}
-            <div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Played</span><strong>${escSh(fmtAttemptDate(a.endedAt))}</strong></div>
-          </div>`;
+          <div class="streak-history__rank">#${i + 1}</div>
+          <div class="streak-history__medal-streak">${a.streak || 0}</div>
+          <div class="streak-history__medal-acc">${acc != null ? acc + '%' : '—'}</div>
+          <div class="streak-history__medal-detail">Streak: ${a.streak || 0}, ABs: ${a.absPlayed || 0}, Acc: ${acc != null ? acc + '%' : '—'}</div>
+        </div>`;
           })
           .join('')
       : '<p class="streak-history__empty">No attempts yet — play a streak to start your history.</p>';
@@ -14919,23 +14910,6 @@ async function populateStreakChallengeDetailModal() {
       });
       listEl.dataset.drawerBound = '1';
     }
-  }
-
-  // Also bind top medals drawer toggle
-  if (topEl && !topEl.dataset.drawerBound) {
-    topEl.addEventListener('click', (e) => {
-      const toggle = e.target.closest('[data-streak-toggle]');
-      if (!toggle || !topEl.contains(toggle)) return;
-      const drawerId = toggle.getAttribute('aria-controls');
-      if (!drawerId) return;
-      const drawer = document.getElementById(drawerId);
-      if (!drawer) return;
-      const open = toggle.getAttribute('aria-expanded') === 'true';
-      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
-      drawer.hidden = open;
-      toggle.closest('.streak-history__medal')?.classList.toggle('is-open', !open);
-    });
-    topEl.dataset.drawerBound = '1';
   }
 
   if (streakSegtabs && !streakSegtabs.dataset.bound) {

@@ -820,55 +820,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.1rem;
+  gap: 0.25rem;
   padding: 0.5rem 0.35rem;
   border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: var(--ump-radius-2);
   background: rgba(245, 158, 11, 0.06);
-  position: relative;
-}
-
-.streak-history__medal-btn {
-  all: unset;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-  cursor: pointer;
-  border-radius: var(--ump-radius-2);
-  transition: all 0.2s ease;
-  width: 100%;
-  padding: 0;
-  margin: 0;
-}
-
-.streak-history__medal-btn:hover,
-.streak-history__medal-btn:focus {
-  background: rgba(245, 158, 11, 0.1);
-  outline: 1px solid rgba(245, 158, 11, 0.5);
-  outline-offset: -1px;
-}
-
-.streak-history__medal-btn[aria-expanded="true"] {
-  background: rgba(245, 158, 11, 0.15);
-  outline: 1.5px solid rgba(245, 158, 11, 0.7);
-  outline-offset: -1px;
+  min-height: 80px;
+  justify-content: center;
 }
 
 .streak-history__medal--1 {
   border-color: rgba(245, 200, 11, 0.6);
   background: rgba(245, 200, 11, 0.12);
-}
-
-.streak-history__medal--1 .streak-history__medal-btn:hover,
-.streak-history__medal--1 .streak-history__medal-btn:focus {
-  background: rgba(245, 200, 11, 0.15);
-  outline-color: rgba(245, 200, 11, 0.6);
-}
-
-.streak-history__medal--1 .streak-history__medal-btn[aria-expanded="true"] {
-  background: rgba(245, 200, 11, 0.2);
-  outline-color: rgba(245, 200, 11, 0.8);
+  box-shadow: 0 0 12px rgba(245, 200, 11, 0.15);
 }
 
 .streak-history__rank {
@@ -897,33 +861,16 @@
   color: var(--ump-color-text-dim);
 }
 
-.streak-history__drawer {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 10;
-  margin-top: 0.25rem;
-  padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  border-radius: var(--ump-radius-2);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.3rem;
-  animation: slideDown 0.2s ease-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.streak-history__medal-detail {
+  font-family: var(--ump-font-body);
+  font-size: 0.6rem;
+  line-height: 1.2;
+  color: var(--ump-color-text-muted);
+  text-align: center;
+  padding: 0.25rem 0;
+  border-top: 1px solid rgba(245, 158, 11, 0.2);
+  padding-top: 0.25rem;
+  width: 100%;
 }
 
 .streak-history__empty {
