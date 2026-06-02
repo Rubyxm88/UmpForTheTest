@@ -46,4 +46,47 @@ html[data-theme="retro-baseball"] {
   --ump-safe-right: env(safe-area-inset-right, 0px);
   --ump-safe-bottom: env(safe-area-inset-bottom, 0px);
   --ump-safe-left: env(safe-area-inset-left, 0px);
+
+  /* Font Sizes - Heading Tier */
+  --font-size-h1: clamp(2rem, 8vw, 3rem);
+  --font-size-h2: clamp(1.5rem, 6vw, 2.25rem);
+  --font-size-h3: clamp(1.25rem, 5vw, 1.75rem);
+
+  /* Font Sizes - Button Tier */
+  --font-size-btn-lg: clamp(0.65rem, 2.5vw, 0.85rem);
+  --font-size-btn-md: clamp(0.55rem, 2.2vw, 0.75rem);
+  --font-size-btn-sm: clamp(0.45rem, 1.8vw, 0.6rem);
+
+  /* Font Sizes - Label Tier */
+  --font-size-label-lg: clamp(0.6rem, 2.2vw, 0.8rem);
+  --font-size-label-md: clamp(0.5rem, 1.8vw, 0.7rem);
+  --font-size-label-sm: clamp(0.4rem, 1.4vw, 0.5rem);
+
+  /* Font Sizes - Body Tier */
+  --font-size-body-lg: clamp(1rem, 2.8vw, 1.25rem);
+  --font-size-body-md: 1rem;
+  --font-size-body-sm: clamp(0.85rem, 2vw, 1rem);
+
+  /* Font Sizes - Data Tier */
+  --font-size-data-lg: clamp(1rem, 2.5vw, 1.25rem);
+  --font-size-data-md: clamp(0.8rem, 2.2vw, 1rem);
+  --font-size-data-sm: clamp(0.65rem, 1.8vw, 0.85rem);
+
+  /* Font Sizes - Special Tier */
+  --font-size-caption: 0.75rem;
+  --font-size-helper: 0.875rem;
+  --font-size-xp-float: 0.9rem;
+
+  /* Line Heights */
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.4;
+  --line-height-relaxed: 1.5;
+  --line-height-loose: 1.6;
+
+  /* Letter Spacing */
+  --letter-spacing-tight: 0rem;
+  --letter-spacing-normal: 0.02em;
+  --letter-spacing-wide: 0.06em;
+  --letter-spacing-wider: 0.1em;
+  --letter-spacing-widest: 0.15em;
 }
