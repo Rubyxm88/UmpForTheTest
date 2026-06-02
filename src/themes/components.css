@@ -98,6 +98,7 @@
   color: var(--ump-color-accent);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* ---- Buttons ---- */
