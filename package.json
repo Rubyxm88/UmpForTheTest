@@ -16,6 +16,8 @@
     "streak-rotation": "node scripts/streak-rotation-generator.js",
     "streak-refresh": "node scripts/streak-pool-builder.js && node scripts/streak-rotation-generator.js",
     "streak-pool:ingest": "node scripts/streak-pool-ingest.mjs",
+    "build:streak-sample": "node scripts/generate-sample-streak-pool.mjs",
+    "build:streak-statcast": "node scripts/build-streak-pool-from-statcast.mjs",
     "supabase:migrate": "node scripts/supabase-migrate.mjs",
     "vercel:env": "node scripts/vercel-env-setup.mjs",
     "vercel:supabase": "node scripts/vercel-supabase-connect.mjs",
