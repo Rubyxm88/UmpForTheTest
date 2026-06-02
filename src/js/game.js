@@ -2076,6 +2076,35 @@ function mergeStreakHistory(cloud = {}, local = {}) {
   return merged;
 }
 
+/** Most-recent streak attempts to retain per user (newest-first, capped). */
+const STREAK_ATTEMPTS_CAP = 20;
+
+/** Dedupe by id, sort newest-first, and cap the list. */
+function normalizeStreakAttempts(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : [])
+    .filter((a) => a && a.id && !seen.has(a.id) && seen.add(a.id))
+    .sort((a, b) => String(b.endedAt || '').localeCompare(String(a.endedAt || '')))
+    .slice(0, STREAK_ATTEMPTS_CAP);
+}
+
+/** Union of cloud + local attempts (used during sync), newest-first, capped. */
+function mergeStreakAttempts(cloud, local) {
+  return normalizeStreakAttempts([...(Array.isArray(cloud) ? cloud : []), ...(Array.isArray(local) ? local : [])]);
+}
+
+/** Prepend a new attempt to the rolling list. */
+function appendStreakAttempt(list, attempt) {
+  return normalizeStreakAttempts([attempt, ...(Array.isArray(list) ? list : [])]);
+}
+
+/** Best attempts by streak length (then accuracy), for the "Top N" display. */
+function getTopStreakAttempts(list, n = 3) {
+  return (Array.isArray(list) ? list.slice() : [])
+    .sort((a, b) => (b.streak || 0) - (a.streak || 0) || (b.accuracy || 0) - (a.accuracy || 0))
+    .slice(0, n);
+}
+
 function mergeTeamStats(cloud = {}, local = {}) {
   const merged = { ...(cloud || {}) };
   Object.entries(local || {}).forEach(([team, localStats]) => {
@@ -2104,6 +2133,7 @@ function mergeUserStatsFromCloud(cloud = {}, local = {}) {
     history: cloudHist,
     dailyHistory: { ...(cloud.dailyHistory || {}) },
     streakHistory: { ...(cloud.streakHistory || {}) },
+    streakAttempts: mergeStreakAttempts(cloud.streakAttempts, local.streakAttempts),
     teamStats: { ...(cloud.teamStats || {}) },
     bestWeeklyRecord: cloud.bestWeeklyRecord || local.bestWeeklyRecord || null,
     challengeProgress: pickNewerChallengeProgress(cloud.challengeProgress, local.challengeProgress),
@@ -2142,6 +2172,7 @@ function mergeUserStatsForUpload(local = {}, cloud = {}) {
     history: localHist.length >= cloudHist.length ? localHist : cloudHist,
     dailyHistory: { ...(cloud.dailyHistory || {}), ...(local.dailyHistory || {}) },
     streakHistory: mergeStreakHistory(cloud.streakHistory, local.streakHistory),
+    streakAttempts: mergeStreakAttempts(cloud.streakAttempts, local.streakAttempts),
     teamStats: mergeTeamStats(cloud.teamStats, local.teamStats),
     maxStreak: Math.max(Number(cloud.maxStreak) || 0, Number(local.maxStreak) || 0),
     completedWeekly: Math.max(Number(cloud.completedWeekly) || 0, Number(local.completedWeekly) || 0),
@@ -9290,10 +9321,23 @@ async function showStreakSummaryScreen() {
   if (username) {
     const todayStr = new Date().toISOString().split('T')[0];
 
+    const streakAttemptRecord = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      endedAt: new Date().toISOString(),
+      dateKey: todayStr,
+      streak: correctCount,
+      accuracy,
+      umpAccuracy,
+      absPlayed: streakSessionUsedIds.size,
+      pitchesCalled: abPitches.length,
+      matchup: batter && pitcher ? `${batter} vs ${pitcher}` : '',
+    };
+
     getGlobalUserStats(username).then(async (globalStats) => {
       if (!globalStats.streakHistory) globalStats.streakHistory = {};
       globalStats.streakHistory[todayStr] = Math.max(globalStats.streakHistory[todayStr] || 0, correctCount);
       globalStats.maxStreak = Math.max(globalStats.maxStreak || 0, correctCount);
+      globalStats.streakAttempts = appendStreakAttempt(globalStats.streakAttempts, streakAttemptRecord);
       await saveGlobalUserStats(username, globalStats);
       updateDailyStreakStatusUI();
     }).catch((err) => {
@@ -11053,7 +11097,7 @@ function applyWeeklyChallengeProgressToDom(snapshot = getWeeklyChallengeProgress
   const { completedCount, totalCount, percent, sessionAccuracy } = snapshot;
 
   if (weeklyChallengeProgressText) {
-    weeklyChallengeProgressText.textContent = `${completedCount} / ${totalCount} At-Bats`;
+    weeklyChallengeProgressText.textContent = `${completedCount} / ${totalCount}`;
   }
   if (weeklyChallengeProgressBar) {
     weeklyChallengeProgressBar.style.width = `${Math.min(100, percent)}%`;
@@ -14508,6 +14552,25 @@ function setChallengeDetailModalLoading(loading) {
   if (bodyEl) bodyEl.classList.toggle('hidden', loading);
 }
 
+/** Toggle between the Overview and At-Bats sections in the challenge detail modal. */
+function setChallengeDetailSection(name) {
+  const showAbs = name === 'abs';
+  const overview = document.getElementById('challenge-detail-section-overview');
+  const abs = document.getElementById('challenge-detail-section-abs');
+  if (overview) overview.classList.toggle('hidden', showAbs);
+  if (abs) abs.classList.toggle('hidden', !showAbs);
+  const bodyEl = document.getElementById('challenge-detail-body');
+  if (bodyEl) bodyEl.scrollTop = 0;
+  [
+    [document.getElementById('challenge-detail-seg-overview'), !showAbs],
+    [document.getElementById('challenge-detail-seg-abs'), showAbs],
+  ].forEach(([btn, active]) => {
+    if (!btn) return;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
 async function populateWeeklyChallengeDetailModal() {
   await refreshWeeklyChallengeBundleIfNeeded();
   await syncWeeklyPlaylistForMenuDisplay();
@@ -14547,8 +14610,26 @@ async function populateWeeklyChallengeDetailModal() {
   if (playlistWrap) playlistWrap.classList.remove('hidden');
   if (gamesWrap) gamesWrap.classList.remove('hidden');
 
+  // Section tabs: show for weekly, label the At-Bats tab with unlocked count, default to Overview.
+  const segtabs = document.getElementById('challenge-detail-segtabs');
+  const segAbsCount = document.getElementById('challenge-detail-seg-abs-count');
+  const segAbsLabel = document.getElementById('challenge-detail-seg-abs-label');
+  const streakHistoryEl = document.getElementById('challenge-detail-streak-history');
+  if (segtabs) segtabs.classList.remove('hidden');
+  if (segAbsLabel) segAbsLabel.textContent = 'At-Bats';
+  if (segAbsCount) segAbsCount.textContent = `${completedAbs}/${totalAbs}`;
+  if (streakHistoryEl) streakHistoryEl.classList.add('hidden');
+  setChallengeDetailSection('overview');
+  if (segtabs && !segtabs.dataset.bound) {
+    segtabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-detail-section]');
+      if (btn) setChallengeDetailSection(btn.dataset.detailSection);
+    });
+    segtabs.dataset.bound = '1';
+  }
+
   if (playlistMeta) {
-    playlistMeta.textContent = `${totalAbs} ABs · Full Plate Appearances`;
+    playlistMeta.textContent = `${completedAbs} / ${totalAbs} unlocked`;
   }
 
   const playlistLabelEl = document.getElementById('challenge-detail-playlist-label');
@@ -14557,22 +14638,81 @@ async function populateWeeklyChallengeDetailModal() {
   }
 
   if (playlistList) {
-    const rows = explained.selectedAtBats || [];
+    const escapeHtml = (s) =>
+      String(s ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
+      );
+    const rows = (explained.selectedAtBats || []).slice(0, totalAbs);
     playlistList.innerHTML = rows.length
       ? rows
-          .map((ab) => {
-            return `
-          <article class="challenge-detail-playlist-row">
-            <div class="challenge-detail-playlist-row__order">${ab.playOrder}</div>
-            <div class="challenge-detail-playlist-row__main">
-              <div class="challenge-detail-playlist-row__matchup">${ab.batter} <span>vs</span> ${ab.pitcher}</div>
-              <div class="challenge-detail-playlist-row__game">${ab.gameTitle} · ${ab.pitchCount} pitches</div>
-              <div class="challenge-detail-playlist-row__result">${ab.abResult || 'Result on file'}</div>
+          .map((ab, i) => {
+            const progress = weeklyPlaylistABs?.[i] || {};
+            const done = !!progress.completed;
+            const order = ab.playOrder ?? i + 1;
+            const typeLabel = ab.reasonCode === 'borderline' ? 'Borderline' : 'Standard';
+            const typeClass =
+              ab.reasonCode === 'borderline'
+                ? 'challenge-detail-ab__type--borderline'
+                : 'challenge-detail-ab__type--standard';
+
+            if (!done) {
+              return `
+          <div class="challenge-detail-ab challenge-detail-ab--locked" role="listitem" aria-disabled="true">
+            <div class="challenge-detail-ab__order">${order}</div>
+            <div class="challenge-detail-ab__main">
+              <div class="challenge-detail-ab__matchup challenge-detail-ab__redacted">Locked matchup</div>
+              <div class="challenge-detail-ab__hint">Complete this at-bat to reveal</div>
             </div>
-          </article>`;
+            <span class="challenge-detail-ab__lock" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            </span>
+          </div>`;
+            }
+
+            const correct = progress.userCorrectCount || 0;
+            const total = progress.userTotalCount || ab.pitchCount || 0;
+            const acc = total > 0 ? Math.round((correct / total) * 100) : null;
+            const accClass = acc == null ? '' : acc >= 80 ? 'is-high' : acc >= 50 ? 'is-mid' : 'is-low';
+            return `
+          <div class="challenge-detail-ab challenge-detail-ab--done" role="listitem">
+            <button type="button" class="challenge-detail-ab__toggle" data-ab-toggle="${i}" aria-expanded="false" aria-controls="challenge-detail-ab-drawer-${i}">
+              <span class="challenge-detail-ab__order challenge-detail-ab__order--done">${order}</span>
+              <span class="challenge-detail-ab__main">
+                <span class="challenge-detail-ab__matchup">${escapeHtml(ab.batter)} <span>vs</span> ${escapeHtml(ab.pitcher)}</span>
+                <span class="challenge-detail-ab__game">${escapeHtml(ab.gameTitle)}</span>
+              </span>
+              <span class="challenge-detail-ab__metacol">
+                ${acc != null ? `<span class="challenge-detail-ab__acc ${accClass}">${acc}%</span>` : ''}
+                <svg class="challenge-detail-ab__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </span>
+            </button>
+            <div id="challenge-detail-ab-drawer-${i}" class="challenge-detail-ab__drawer" hidden>
+              <div class="challenge-detail-ab__stat"><span>Your calls</span><strong>${correct} / ${total}</strong></div>
+              <div class="challenge-detail-ab__stat"><span>Accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
+              <div class="challenge-detail-ab__stat"><span>Pitches</span><strong>${ab.pitchCount || total || '—'}</strong></div>
+              ${ab.maxInning ? `<div class="challenge-detail-ab__stat"><span>Inning</span><strong>${escapeHtml(ab.maxInning)}</strong></div>` : ''}
+              ${ab.endingCount ? `<div class="challenge-detail-ab__stat"><span>Final count</span><strong>${escapeHtml(ab.endingCount)}</strong></div>` : ''}
+              ${ab.abResult ? `<div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Result</span><strong>${escapeHtml(ab.abResult)}</strong></div>` : ''}
+              <div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Type</span><strong><span class="challenge-detail-ab__type ${typeClass}">${typeLabel}</span></strong></div>
+            </div>
+          </div>`;
           })
           .join('')
       : '<p class="challenge-detail-modal__desc">Playlist data is not available yet for this week.</p>';
+
+    if (!playlistList.dataset.drawerBound) {
+      playlistList.addEventListener('click', (e) => {
+        const toggle = e.target.closest('[data-ab-toggle]');
+        if (!toggle || !playlistList.contains(toggle)) return;
+        const drawer = document.getElementById(`challenge-detail-ab-drawer-${toggle.dataset.abToggle}`);
+        if (!drawer) return;
+        const open = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+        drawer.hidden = open;
+        toggle.closest('.challenge-detail-ab')?.classList.toggle('is-open', !open);
+      });
+      playlistList.dataset.drawerBound = '1';
+    }
   }
 
   if (challengeDetailGamesList) {
@@ -14658,6 +14798,114 @@ async function populateStreakChallengeDetailModal() {
   }
   if (playlistWrap) playlistWrap.classList.add('hidden');
   if (gamesWrap) gamesWrap.classList.add('hidden');
+
+  // Streak: show an Attempt History tab (top streaks + recent attempts).
+  const streakSegtabs = document.getElementById('challenge-detail-segtabs');
+  const streakSegLabel = document.getElementById('challenge-detail-seg-abs-label');
+  const streakSegCount = document.getElementById('challenge-detail-seg-abs-count');
+  const streakHistoryEl = document.getElementById('challenge-detail-streak-history');
+  const topEl = document.getElementById('streak-history-top');
+  const listEl = document.getElementById('streak-history-list');
+
+  let attempts = [];
+  try {
+    const stats = await getGlobalUserStats(username);
+    attempts = normalizeStreakAttempts(stats?.streakAttempts);
+  } catch (e) {
+    console.warn('Failed to load streak attempts:', e);
+  }
+
+  if (streakHistoryEl) streakHistoryEl.classList.remove('hidden');
+  if (streakSegtabs) streakSegtabs.classList.remove('hidden');
+  if (streakSegLabel) streakSegLabel.textContent = 'History';
+  if (streakSegCount) streakSegCount.textContent = String(attempts.length);
+
+  const escSh = (s) =>
+    String(s ?? '').replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]),
+    );
+  const accClassFor = (a) => (a == null ? '' : a >= 80 ? 'is-high' : a >= 50 ? 'is-mid' : 'is-low');
+  const fmtAttemptDate = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return (
+      d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
+      ' · ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    );
+  };
+
+  if (topEl) {
+    const top = getTopStreakAttempts(attempts, 3);
+    topEl.innerHTML = top.length
+      ? top
+          .map(
+            (a, i) => `
+        <div class="streak-history__medal streak-history__medal--${i + 1}" role="listitem">
+          <span class="streak-history__rank">#${i + 1}</span>
+          <span class="streak-history__medal-streak">${a.streak || 0}</span>
+          <span class="streak-history__medal-acc">${a.accuracy != null ? a.accuracy + '%' : '—'}</span>
+        </div>`,
+          )
+          .join('')
+      : '<p class="streak-history__empty">No attempts yet — play a streak to start your history.</p>';
+  }
+
+  if (listEl) {
+    listEl.innerHTML = attempts.length
+      ? attempts
+          .map((a, i) => {
+            const acc = a.accuracy != null ? a.accuracy : null;
+            return `
+        <div class="streak-attempt" role="listitem">
+          <button type="button" class="streak-attempt__toggle" data-streak-toggle="${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-${i}">
+            <span class="streak-attempt__streak">${a.streak || 0}</span>
+            <span class="streak-attempt__main">
+              <span class="streak-attempt__title">${a.streak || 0}-pitch streak</span>
+              <span class="streak-attempt__sub">${escSh(fmtAttemptDate(a.endedAt))}</span>
+            </span>
+            <span class="streak-attempt__metacol">
+              ${acc != null ? `<span class="challenge-detail-ab__acc ${accClassFor(acc)}">${acc}%</span>` : ''}
+              <svg class="challenge-detail-ab__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </button>
+          <div id="streak-attempt-drawer-${i}" class="challenge-detail-ab__drawer" hidden>
+            <div class="challenge-detail-ab__stat"><span>Streak</span><strong>${a.streak || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Your accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>ABs played</span><strong>${a.absPlayed || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Pitches</span><strong>${a.pitchesCalled || 0}</strong></div>
+            ${a.matchup ? `<div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Ended on</span><strong>${escSh(a.matchup)}</strong></div>` : ''}
+            <div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Played</span><strong>${escSh(fmtAttemptDate(a.endedAt))}</strong></div>
+          </div>
+        </div>`;
+          })
+          .join('')
+      : '<p class="streak-history__empty">No attempts recorded yet.</p>';
+
+    if (!listEl.dataset.drawerBound) {
+      listEl.addEventListener('click', (e) => {
+        const toggle = e.target.closest('[data-streak-toggle]');
+        if (!toggle || !listEl.contains(toggle)) return;
+        const drawer = document.getElementById(`streak-attempt-drawer-${toggle.dataset.streakToggle}`);
+        if (!drawer) return;
+        const open = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+        drawer.hidden = open;
+        toggle.closest('.streak-attempt')?.classList.toggle('is-open', !open);
+      });
+      listEl.dataset.drawerBound = '1';
+    }
+  }
+
+  if (streakSegtabs && !streakSegtabs.dataset.bound) {
+    streakSegtabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-detail-section]');
+      if (btn) setChallengeDetailSection(btn.dataset.detailSection);
+    });
+    streakSegtabs.dataset.bound = '1';
+  }
+
+  setChallengeDetailSection('overview');
 
   if (btnChallengeDetailPlay) {
     btnChallengeDetailPlay.textContent = hasStreakChallengeResumeProgress() ? 'Resume Streak' : 'Play Streak';

@@ -798,6 +798,154 @@
   overflow: hidden;
 }
 
+/* ---- Streak attempt history ---- */
+.streak-history__section-label {
+  font-family: var(--ump-font-body);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--retro-dirt, #d9a441);
+  margin: 0.2rem 0 0.45rem;
+}
+
+.streak-history__top {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.streak-history__medal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.5rem 0.35rem;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--ump-radius-2);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.streak-history__medal--1 {
+  border-color: rgba(245, 200, 11, 0.6);
+  background: rgba(245, 200, 11, 0.12);
+}
+
+.streak-history__rank {
+  font-family: var(--font-mono-tech, monospace);
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--ump-color-text-dim);
+}
+
+.streak-history__medal-streak {
+  font-family: var(--font-mono-tech, monospace);
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #fde68a;
+}
+
+.streak-history__medal--1 .streak-history__medal-streak {
+  color: #fcd34d;
+}
+
+.streak-history__medal-acc {
+  font-family: var(--ump-font-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--ump-color-text-dim);
+}
+
+.streak-history__empty {
+  font-family: var(--ump-font-body);
+  font-size: 0.78rem;
+  color: var(--ump-color-text-dim);
+  padding: 0.5rem 0.2rem 0.9rem;
+}
+
+.streak-history__list {
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: var(--ump-radius-2);
+  background: rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.streak-attempt {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.streak-attempt:last-child {
+  border-bottom: none;
+}
+
+.streak-attempt__toggle {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transition: background 0.15s ease;
+}
+
+@media (hover: hover) {
+  .streak-attempt__toggle:hover {
+    background: rgba(245, 158, 11, 0.08);
+  }
+}
+
+.streak-attempt.is-open > .streak-attempt__toggle {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.streak-attempt__streak {
+  font-family: var(--font-mono-tech, monospace);
+  font-size: 1.1rem;
+  font-weight: 900;
+  line-height: 1;
+  color: #fde68a;
+  min-width: 1.8rem;
+  text-align: center;
+}
+
+.streak-attempt__main {
+  min-width: 0;
+}
+
+.streak-attempt__title {
+  display: block;
+  font-family: var(--ump-font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.streak-attempt__sub {
+  display: block;
+  font-family: var(--ump-font-body);
+  font-size: 0.7rem;
+  color: var(--ump-color-text-dim);
+  margin-top: 0.1rem;
+}
+
+.streak-attempt__metacol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.streak-attempt.is-open .challenge-detail-ab__chevron {
+  transform: rotate(180deg);
+}
+
 .challenge-detail-playlist__head {
   display: flex;
   justify-content: space-between;
@@ -3185,13 +3333,13 @@
     min-height: 2.75rem !important;
   }
 
-  /* Tab buttons */
+  /* Tab buttons (tablet/desktop: icon + label) */
   .ump-tab {
     min-height: 2.75rem !important;
-    padding: 0.5rem 0.5rem !important;
-    gap: 0.35rem !important;
-    font-size: clamp(0.6rem, 2.6vw, 0.78rem) !important;
-    letter-spacing: 0.01em !important;
+    padding: 0.55rem 0.5rem !important;
+    gap: 0.4rem !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 0.02em !important;
   }
 
   /* Text sizing for readability */
@@ -3277,6 +3425,27 @@
   #leaderboard-list,
   .standings-list {
     scrollbar-gutter: stable;
+  }
+}
+
+/* Dashboard nav tabs on phones: label-only so text never truncates.
+   Icon + label is kept on wider screens; here the icon is dropped to give
+   the full word ("Standings") room, and truncation is disabled entirely. */
+@media (max-width: 640px) {
+  #dashboard-nav-tabs .ump-tab svg {
+    display: none !important;
+  }
+
+  #dashboard-nav-tabs .ump-tab {
+    gap: 0 !important;
+    padding: 0.6rem 0.4rem !important;
+    font-size: clamp(0.68rem, 3.2vw, 0.82rem) !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  #dashboard-nav-tabs .ump-tab > span {
+    overflow: visible !important;
+    text-overflow: clip !important;
   }
 }
 

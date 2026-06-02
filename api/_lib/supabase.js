@@ -175,6 +175,7 @@ export function clientStatsToRow(handle, stats) {
       lifetimeCorrectCalls: safe.lifetimeCorrectCalls ?? 0,
       bestWeeklyRecord: safe.bestWeeklyRecord ?? null,
       streakHistory: safe.streakHistory ?? {},
+      streakAttempts: Array.isArray(safe.streakAttempts) ? safe.streakAttempts.slice(0, 20) : [],
       challengeProgress: safe.challengeProgress ?? null,
       xp: safe.xp ?? 0,
       overallAccuracy:
