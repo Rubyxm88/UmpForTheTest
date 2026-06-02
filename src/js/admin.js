@@ -807,7 +807,7 @@ function renderOverviewWorkspace(data, detail) {
         .slice(0, 8)
         .map(
           (e, i) =>
-            `<li><span>${i + 1}</span> <strong>${escapeHtml(e.handle)}</strong> <span class="wc-meta">${escapeHtml(e.score_text || e.accuracy + '%')}</span></li>`
+            `<li><span>${i + 1}</span> <strong>${escapeHtml(e.handle || '—')}</strong> <span class="wc-meta">${escapeHtml(e.score_text || (e.accuracy != null ? `${e.accuracy}%` : '—'))}</span></li>`
         )
         .join('')}</ol>
     </div>`

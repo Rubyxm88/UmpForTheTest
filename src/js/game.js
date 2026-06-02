@@ -7949,6 +7949,12 @@ function getInningOrdinal(inn) {
 
 async function goToMainMenu() {
   playMenuTransitionSound();
+  // Capture whether the streak run already ended BEFORE any state below resets
+  // isSessionOver to false. A finished run (failed call or natural end) has
+  // already been recorded + cleared by the summary screen; it must NOT be
+  // re-persisted on the way to the menu, or the next "Play Streak" would restore
+  // a dead run (same ABs, stuck mid-AB) instead of starting fresh.
+  const streakSessionWasOver = gameMode === 'daily_streak' && isSessionOver;
   hideStreakTransitionScreen();
   if (streakSummaryOverlay && isOverlayShowing(streakSummaryOverlay)) {
     await fadeOverlayOut(streakSummaryOverlay);
@@ -8046,6 +8052,10 @@ async function goToMainMenu() {
       if (gameMode === 'weekly_challenge') {
         syncWeeklyPlaylistFromActiveAtBat();
         void persistWeeklyChallengeProgress();
+      } else if (streakSessionWasOver) {
+        // Finished streak run — clear any lingering snapshot instead of saving,
+        // so the next play starts a fresh run rather than restoring a dead one.
+        await clearStreakChallengeSession();
       } else {
         saveChallengeSessionToLocal();
         await saveGameProgress();
@@ -8350,6 +8360,21 @@ async function startDailyStreakChallenge(isResume = false, opts = {}) {
         activeStreakAbIndex = Math.max(0, streakSessionUsedIds.size - 1);
         restoreChallengePitchState(active);
         restored = true;
+      }
+    }
+
+    // Guard: if the restored run already ended on a missed call, it is dead —
+    // discard it and fall through to a fresh run rather than resuming a streak
+    // that is already over.
+    if (restored) {
+      const calledPitches = (streakPitchHistory || []).filter((x) => !x.isSwingPlay);
+      const lastCalled = calledPitches[calledPitches.length - 1];
+      if (lastCalled && !lastCalled.userCorrect) {
+        await clearStreakChallengeSession(username);
+        streakPitchHistory = [];
+        streakSessionUsedIds = new Set();
+        currentStreakAbMeta = null;
+        restored = false;
       }
     }
   }
@@ -13861,83 +13886,64 @@ async function getLeaderboardRows(board, username, period) {
   if (!username) return result;
 
   const normalizedUser = username.toUpperCase();
-  const existingUserRow = result.rows?.find(r => r.handle?.toUpperCase() === normalizedUser || r.isUser);
+  // Server rows expose `name` (with " (YOU)" appended for the current user) — not `handle`.
+  // Match on every available identity field so we reliably find the user's own row.
+  const rowMatchesUser = (r) =>
+    !!r.isUser ||
+    r.handle?.toUpperCase() === normalizedUser ||
+    getStandingsHandleLabel(r.name).toUpperCase() === normalizedUser;
+  const existingUserRow = result.rows?.find(rowMatchesUser);
+
+  // Optimistically inject the player's locally-known result when the server board
+  // has no equal/better official row (e.g. right after an admin leaderboard reset,
+  // or before the score has synced). The injected row MUST match the shape the
+  // renderer reads — `name` + `score` — otherwise the row renders as "undefined".
+  const injectLocalRow = (localScoreRaw, localScoreText, localAccuracy) => {
+    if (existingUserRow && parseLeaderboardScoreRaw(existingUserRow) >= localScoreRaw) {
+      return; // server already shows an equal-or-better official standing
+    }
+
+    let rows = [...(result.rows || [])];
+    if (existingUserRow) rows = rows.filter((r) => r !== existingUserRow);
+
+    rows.push({
+      isUser: true,
+      name: `${username} (YOU)`,
+      handle: username,
+      team: activeFavoriteTeam || existingUserRow?.team || 'None',
+      accuracy: localAccuracy,
+      score: localScoreText,
+      scoreText: localScoreText,
+      scoreRaw: localScoreRaw,
+      xp: existingUserRow?.xp,
+    });
+
+    // Sort + rank using a resolver that understands both server rows (text `score`)
+    // and injected rows (`scoreRaw`), so server entries keep their correct order.
+    rows.sort((a, b) => parseLeaderboardScoreRaw(b) - parseLeaderboardScoreRaw(a));
+
+    let currentRank = 1;
+    for (let i = 0; i < rows.length; i++) {
+      if (i > 0 && parseLeaderboardScoreRaw(rows[i]) !== parseLeaderboardScoreRaw(rows[i - 1])) {
+        currentRank = i + 1;
+      }
+      rows[i].rank = currentRank;
+      if (rowMatchesUser(rows[i])) rows[i].isUser = true;
+    }
+    result.rows = rows;
+  };
 
   if (board === 'weekly') {
-    const isComplete = isWeeklyChallengeRunComplete(weeklyPlaylistABs);
-    if (isComplete) {
+    if (isWeeklyChallengeRunComplete(weeklyPlaylistABs)) {
       const stats = getWeeklyChallengeCompletedStats();
       const localScoreRaw = stats.overallCorrect * 10;
-      const localAcc = stats.overallAccuracy;
-      const localScoreText = `${localScoreRaw} PTS`;
-
-      if (!existingUserRow || (existingUserRow.scoreRaw || 0) < localScoreRaw) {
-        let rows = [...(result.rows || [])];
-        if (existingUserRow) {
-          rows = rows.filter(r => r !== existingUserRow);
-        }
-
-        const newRow = {
-          isUser: true,
-          handle: username,
-          team: activeFavoriteTeam || 'None',
-          accuracy: `${localAcc}%`,
-          scoreText: localScoreText,
-          scoreRaw: localScoreRaw,
-          rank: 1,
-        };
-
-        rows.push(newRow);
-        rows.sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
-
-        let currentRank = 1;
-        for (let i = 0; i < rows.length; i++) {
-          if (i > 0 && rows[i].scoreRaw !== rows[i - 1].scoreRaw) {
-            currentRank = i + 1;
-          }
-          rows[i].rank = currentRank;
-          if (rows[i].handle?.toUpperCase() === normalizedUser) {
-            rows[i].isUser = true;
-          }
-        }
-        result.rows = rows;
-      }
+      injectLocalRow(localScoreRaw, `${localScoreRaw} PTS`, `${stats.overallAccuracy}%`);
     }
   } else if (board === 'daily') {
     const profile = readLocalUserStats(username) || {};
     const localMaxStreak = profile.maxStreak || 0;
     if (localMaxStreak > 0) {
-      if (!existingUserRow || (existingUserRow.scoreRaw || 0) < localMaxStreak) {
-        let rows = [...(result.rows || [])];
-        if (existingUserRow) {
-          rows = rows.filter(r => r !== existingUserRow);
-        }
-
-        const newRow = {
-          isUser: true,
-          handle: username,
-          team: activeFavoriteTeam || 'None',
-          accuracy: existingUserRow?.accuracy || '100%',
-          scoreText: `${localMaxStreak} STREAK`,
-          scoreRaw: localMaxStreak,
-          rank: 1,
-        };
-
-        rows.push(newRow);
-        rows.sort((a, b) => (b.scoreRaw || 0) - (a.scoreRaw || 0));
-
-        let currentRank = 1;
-        for (let i = 0; i < rows.length; i++) {
-          if (i > 0 && rows[i].scoreRaw !== rows[i - 1].scoreRaw) {
-            currentRank = i + 1;
-          }
-          rows[i].rank = currentRank;
-          if (rows[i].handle?.toUpperCase() === normalizedUser) {
-            rows[i].isUser = true;
-          }
-        }
-        result.rows = rows;
-      }
+      injectLocalRow(localMaxStreak, `${localMaxStreak} STREAK`, existingUserRow?.accuracy || '100%');
     }
   }
 
@@ -16103,6 +16109,19 @@ function showTemporaryLoadingScreen(label, minDurationMs = 850, callback = null)
 async function saveGameProgress() {
   const username = localStorage.getItem('ump_username');
   if (!username) return;
+
+  // Never persist a finished streak run. saveGameProgress() fires after every
+  // pitch — including the missed call that ends the streak — so without this
+  // guard the dead run lands in IndexedDB and gets restored (and replayed with
+  // the same ABs) on the next play. Clear any prior snapshot instead.
+  if (gameMode === 'daily_streak' && isSessionOver) {
+    try {
+      await clearActiveSession(username);
+    } catch (err) {
+      console.warn('Failed to clear finished streak session:', err);
+    }
+    return;
+  }
 
   const sessionData = {
     gameMode,
