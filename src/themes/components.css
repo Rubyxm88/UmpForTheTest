@@ -53,16 +53,16 @@
 
 .ump-title {
   font-family: var(--ump-font-body);
-  font-size: clamp(1.75rem, 6vw, 2.5rem);
+  font-size: var(--font-size-h1);
   letter-spacing: 0.04em;
   color: var(--ump-color-text);
   text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55);
-  line-height: 1.05;
+  line-height: var(--line-height-tight);
   text-transform: uppercase;
 }
 
 .ump-title--sm {
-  font-size: clamp(1.35rem, 4.5vw, 1.85rem);
+  font-size: var(--font-size-h2);
 }
 
 .ump-title-accent {
@@ -71,9 +71,10 @@
 
 .ump-subtitle {
   font-family: var(--ump-font-body);
-  font-size: clamp(1rem, 3.5vw, 1.15rem);
+  font-size: var(--font-size-body-lg);
   color: var(--ump-color-text-dim);
   letter-spacing: 0.02em;
+  line-height: var(--line-height-normal);
 }
 
 .ump-label {
