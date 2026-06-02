@@ -26,6 +26,13 @@ function fmt(d) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Day before a YYYY-MM-DD string (UTC). */
+function prevDay(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return fmt(d);
+}
+
 /** Inclusive list of YYYY-MM-DD strings between start and end. */
 export function eachDay(startDt, endDt) {
   const days = [];
@@ -75,7 +82,9 @@ export async function fetchStatcastCsv({ startDt, endDt, team = '', maxDays = 14
 
   for (const day of days) {
     try {
-      const text = await fetchSavantCsvRange({ startDt: day, endDt: day, team });
+      // Savant's game_date_gt is EXCLUSIVE and game_date_lt is INCLUSIVE, so to
+      // capture exactly `day` we bracket (day-1, day].
+      const text = await fetchSavantCsvRange({ startDt: prevDay(day), endDt: day, team });
       const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
       if (lines.length === 0) {
         diagnostics.push({ date: day, rows: 0, ok: true });

@@ -86,6 +86,19 @@ export function parseStatcastCsv(csvText) {
     let pitcher = flipName(get('player_name') || get('pitcher_name')) || 'Pitcher';
     let batter = flipName(get('batter_name') || get('hitter_name')) || 'Batter';
 
+    // Savant's standard export has no batter NAME column (only a numeric id),
+    // but the AB-level `des` text names the batter (e.g. "Aaron Judge homers.").
+    if (batter === 'Batter') {
+      const des = get('des') || '';
+      const toMatch = des.match(/\bto\s+([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){0,2})/);
+      if (toMatch) {
+        batter = toMatch[1].trim();
+      } else {
+        const m = des.match(/^([A-Z][\w'.-]+(?:\s+[A-Z][\w'.-]+){1,2})\b/);
+        if (m) batter = m[1].trim();
+      }
+    }
+
     const description = (get('description') || '').toLowerCase();
     const events = (get('events') || '').toLowerCase();
 
