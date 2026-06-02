@@ -654,14 +654,23 @@
                     </p>
                   </div>
                   <div>
-                    <div class="flex justify-between ump-label mb-1">
-                      <span>Challenge Progress</span>
-                      <span id="weekly-challenge-progress-text">0 / 20 At-Bats</span>
+                    <div class="flex justify-between items-baseline mb-2">
+                      <span class="ump-label">Challenge Progress</span>
+                      <span id="weekly-challenge-progress-text" class="text-xs md:text-sm font-black text-emerald-300 uppercase tracking-wide">0 / 20 At-Bats</span>
                     </div>
-                    <div class="ump-progress">
+                    <div class="ump-progress mb-3">
                       <div id="weekly-challenge-progress-bar" class="ump-progress__fill" style="width: 0%"></div>
                     </div>
-                    <p id="weekly-challenge-rank-snippet" class="ump-card__meta mt-2 hidden"></p>
+                    <div id="weekly-challenge-stats-panel" class="hidden grid grid-cols-2 gap-2 p-2.5 bg-black/20 rounded-lg border border-emerald-500/20 mb-3">
+                      <div class="flex flex-col">
+                        <span class="text-[9px] text-gray-400 font-mono-tech uppercase tracking-widest font-bold mb-1">Accuracy</span>
+                        <span id="weekly-challenge-accuracy" class="text-sm font-black text-emerald-400">--</span>
+                      </div>
+                      <div class="flex flex-col text-right">
+                        <span class="text-[9px] text-gray-400 font-mono-tech uppercase tracking-widest font-bold mb-1">Leaderboard</span>
+                        <span id="weekly-challenge-leaderboard" class="text-sm font-black text-emerald-300">--</span>
+                      </div>
+                    </div>
                     <div class="flex items-center gap-2 mt-3">
                       <button id="btn-start-weekly-challenge" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 border-emerald-500/50 text-white ump-btn--sm pointer-events-auto flex-1 min-w-0">Start Challenge</button>
                       <button id="btn-info-weekly-challenge" type="button" class="ump-icon-btn pointer-events-auto" title="Details" aria-label="Weekly challenge details">

@@ -14292,38 +14292,48 @@ function formatWeeklyInProgressStandingsLine(snapshot, projectedRank = null) {
 }
 
 async function updateWeeklyChallengeRankSnippet() {
-  const snippetEl = document.getElementById('weekly-challenge-rank-snippet');
-  if (!snippetEl) return;
+  const statsPanel = document.getElementById('weekly-challenge-stats-panel');
+  const accuracyEl = document.getElementById('weekly-challenge-accuracy');
+  const leaderboardEl = document.getElementById('weekly-challenge-leaderboard');
+
+  if (!statsPanel || !accuracyEl || !leaderboardEl) return;
+
   const username = localStorage.getItem('ump_username');
   if (!username) {
-    snippetEl.classList.add('hidden');
+    statsPanel.classList.add('hidden');
     return;
   }
-  snippetEl.classList.remove('hidden');
-  snippetEl.textContent = 'Loading…';
 
   const snapshot = getWeeklyChallengeProgressSnapshot();
+  const { sessionAccuracy, completedCount } = snapshot;
+
+  if (completedCount === 0) {
+    statsPanel.classList.add('hidden');
+    return;
+  }
+
+  statsPanel.classList.remove('hidden');
+  accuracyEl.textContent = sessionAccuracy != null ? `${sessionAccuracy}%` : '--';
+
   const periodKey = getActiveWeeklyLeaderboardPeriodKey();
 
   try {
     if (hasOfficialWeeklyLeaderboardStanding()) {
       const { rows } = await getLeaderboardRows('weekly', username, periodKey);
       const me = rows.find((r) => r.isUser);
-      snippetEl.textContent = me
-        ? `Leaderboard: #${me.rank} · ${me.accuracy}`
-        : 'Challenge complete — syncing leaderboard…';
+      leaderboardEl.textContent = me ? `#${me.rank}` : 'Syncing…';
       return;
     }
 
     const scoreRaw = computeWeeklyLeaderboardScoreRaw();
-    let projectedRank = null;
     if (scoreRaw > 0) {
       const estimate = await estimateWeeklyLeaderboardPlacement(username, scoreRaw, periodKey);
-      projectedRank = estimate.rank;
+      leaderboardEl.textContent = estimate.rank ? `~#${estimate.rank}` : '--';
+    } else {
+      leaderboardEl.textContent = '--';
     }
-    snippetEl.textContent = formatWeeklyInProgressStandingsLine(snapshot, projectedRank);
   } catch {
-    snippetEl.textContent = `${formatWeeklyInProgressStandingsLine(snapshot, null)} (offline)`;
+    leaderboardEl.textContent = '--';
   }
 }
 
