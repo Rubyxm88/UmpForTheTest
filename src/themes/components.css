@@ -45,7 +45,7 @@
 /* ---- Typography ---- */
 .ump-kicker {
   font-family: var(--ump-font-pixel);
-  font-size: 0.45rem;
+  font-size: 0.65rem;
   color: var(--ump-color-accent);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -79,7 +79,7 @@
 
 .ump-label {
   font-family: var(--ump-font-pixel);
-  font-size: 0.42rem;
+  font-size: 0.65rem;
   color: var(--ump-color-text-dim);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -237,7 +237,7 @@
   min-height: 48px;
   padding: 10px 16px;
   font-family: var(--font-mono-tech), monospace;
-  font-size: clamp(0.58rem, 2.2vw, 0.72rem);
+  font-size: 0.8rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: var(--letter-spacing-wider);
@@ -289,7 +289,7 @@
     flex: 1 1 0;
     gap: 4px;
     padding: 8px 4px;
-    font-size: 0.58rem;
+    font-size: 0.8rem;
     letter-spacing: var(--letter-spacing-normal);
   }
 
@@ -1115,7 +1115,7 @@
 .ump-stat-card__label {
   display: block;
   font-family: var(--ump-font-pixel);
-  font-size: 0.38rem;
+  font-size: 0.65rem;
   color: var(--ump-color-text-dim);
   letter-spacing: 0.06em;
   text-transform: uppercase;
