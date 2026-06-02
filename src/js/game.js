@@ -5528,6 +5528,12 @@ function transitionToState(newState, options = {}) {
         } else {
           // FULL CUT: Change camera angle to side and open review panel sidebar
           enterFullReviewPanel(userHistoryItem);
+
+          // Streak mode: schedule summary after full review delay
+          if (gameMode === 'daily_streak' && isSessionOver) {
+            const fullReviewRevealMs = 2500; // Time to view full details before summary
+            scheduleStreakPostPitchFlow(() => showStreakSummaryScreen(), fullReviewRevealMs);
+          }
         }
       }
       break;
@@ -14836,30 +14842,45 @@ async function populateStreakChallengeDetailModal() {
     );
   };
 
+  // Get top 3 and remove them from the recent list (avoid duplicates)
+  const top = getTopStreakAttempts(attempts, 3);
+  const topIds = new Set(top.map(a => a.id));
+  const recentOnly = attempts.filter(a => !topIds.has(a.id));
+
   if (topEl) {
-    const top = getTopStreakAttempts(attempts, 3);
     topEl.innerHTML = top.length
       ? top
-          .map(
-            (a, i) => `
+          .map((a, i) => {
+            const acc = a.accuracy != null ? a.accuracy : null;
+            return `
         <div class="streak-history__medal streak-history__medal--${i + 1}" role="listitem">
-          <span class="streak-history__rank">#${i + 1}</span>
-          <span class="streak-history__medal-streak">${a.streak || 0}</span>
-          <span class="streak-history__medal-acc">${a.accuracy != null ? a.accuracy + '%' : '—'}</span>
-        </div>`,
-          )
+          <button type="button" class="streak-history__medal-btn" data-streak-toggle="top-${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-top-${i}">
+            <span class="streak-history__rank">#${i + 1}</span>
+            <span class="streak-history__medal-streak">${a.streak || 0}</span>
+            <span class="streak-history__medal-acc">${a.accuracy != null ? a.accuracy + '%' : '—'}</span>
+          </button>
+          <div id="streak-attempt-drawer-top-${i}" class="challenge-detail-ab__drawer streak-history__drawer" hidden>
+            <div class="challenge-detail-ab__stat"><span>Rank</span><strong>#${i + 1} All-Time</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Streak</span><strong>${a.streak || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Your accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>ABs played</span><strong>${a.absPlayed || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Pitches</span><strong>${a.pitchesCalled || 0}</strong></div>
+            ${a.matchup ? `<div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Ended on</span><strong>${escSh(a.matchup)}</strong></div>` : ''}
+            <div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Played</span><strong>${escSh(fmtAttemptDate(a.endedAt))}</strong></div>
+          </div>`;
+          })
           .join('')
       : '<p class="streak-history__empty">No attempts yet — play a streak to start your history.</p>';
   }
 
   if (listEl) {
-    listEl.innerHTML = attempts.length
-      ? attempts
+    listEl.innerHTML = recentOnly.length
+      ? recentOnly
           .map((a, i) => {
             const acc = a.accuracy != null ? a.accuracy : null;
             return `
         <div class="streak-attempt" role="listitem">
-          <button type="button" class="streak-attempt__toggle" data-streak-toggle="${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-${i}">
+          <button type="button" class="streak-attempt__toggle" data-streak-toggle="recent-${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-recent-${i}">
             <span class="streak-attempt__streak">${a.streak || 0}</span>
             <span class="streak-attempt__main">
               <span class="streak-attempt__title">${a.streak || 0}-pitch streak</span>
@@ -14870,7 +14891,7 @@ async function populateStreakChallengeDetailModal() {
               <svg class="challenge-detail-ab__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </span>
           </button>
-          <div id="streak-attempt-drawer-${i}" class="challenge-detail-ab__drawer" hidden>
+          <div id="streak-attempt-drawer-recent-${i}" class="challenge-detail-ab__drawer" hidden>
             <div class="challenge-detail-ab__stat"><span>Streak</span><strong>${a.streak || 0}</strong></div>
             <div class="challenge-detail-ab__stat"><span>Your accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
             <div class="challenge-detail-ab__stat"><span>ABs played</span><strong>${a.absPlayed || 0}</strong></div>
@@ -14887,7 +14908,9 @@ async function populateStreakChallengeDetailModal() {
       listEl.addEventListener('click', (e) => {
         const toggle = e.target.closest('[data-streak-toggle]');
         if (!toggle || !listEl.contains(toggle)) return;
-        const drawer = document.getElementById(`streak-attempt-drawer-${toggle.dataset.streakToggle}`);
+        const drawerId = toggle.getAttribute('aria-controls');
+        if (!drawerId) return;
+        const drawer = document.getElementById(drawerId);
         if (!drawer) return;
         const open = toggle.getAttribute('aria-expanded') === 'true';
         toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
@@ -14896,6 +14919,23 @@ async function populateStreakChallengeDetailModal() {
       });
       listEl.dataset.drawerBound = '1';
     }
+  }
+
+  // Also bind top medals drawer toggle
+  if (topEl && !topEl.dataset.drawerBound) {
+    topEl.addEventListener('click', (e) => {
+      const toggle = e.target.closest('[data-streak-toggle]');
+      if (!toggle || !topEl.contains(toggle)) return;
+      const drawerId = toggle.getAttribute('aria-controls');
+      if (!drawerId) return;
+      const drawer = document.getElementById(drawerId);
+      if (!drawer) return;
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      drawer.hidden = open;
+      toggle.closest('.streak-history__medal')?.classList.toggle('is-open', !open);
+    });
+    topEl.dataset.drawerBound = '1';
   }
 
   if (streakSegtabs && !streakSegtabs.dataset.bound) {
