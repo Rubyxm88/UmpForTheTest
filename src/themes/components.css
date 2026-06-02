@@ -237,10 +237,10 @@
   min-height: 48px;
   padding: 10px 16px;
   font-family: var(--font-mono-tech), monospace;
-  font-size: 0.72rem;
+  font-size: clamp(0.58rem, 2.2vw, 0.72rem);
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--letter-spacing-wider);
   color: var(--ump-color-text-dim);
   background: transparent;
   border: 1px solid transparent;
@@ -290,7 +290,7 @@
     gap: 4px;
     padding: 8px 4px;
     font-size: 0.58rem;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--letter-spacing-normal);
   }
 
   .ump-tab svg {

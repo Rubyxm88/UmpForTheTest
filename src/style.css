@@ -4724,6 +4724,21 @@ body.streak-mode #ab-start-overlay .ab-start-cabinet {
 }
 
 /* ═════════════════════════════════════════════════
+   HUD NAVIGATION FONT SIZES — Standardized scale
+   ═════════════════════════════════════════════════ */
+
+/* Pitch counter text */
+#pitch-counter-text {
+  font-size: var(--font-size-data-md) !important;
+}
+
+/* Gameplay status pill text */
+#gameplay-status-pill {
+  font-size: var(--font-size-label-sm) !important;
+  letter-spacing: var(--letter-spacing-wide) !important;
+}
+
+/* ═════════════════════════════════════════════════
    NAV MATCHUP CARD — Retro themed mini player cards
    ═════════════════════════════════════════════════ */
 
