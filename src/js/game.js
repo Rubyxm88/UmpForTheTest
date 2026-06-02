@@ -5311,6 +5311,7 @@ function transitionToState(newState, options = {}) {
       if (gameMode === 'daily_streak' && !userHistoryItem.isSwingPlay && !userHistoryItem.userCorrect) {
         isSessionOver = true;
         activeAbEnded = true;
+        abEnded = true;
         showABOutcomeToast("STREAK ENDED! MISSED CALL");
         updateDailyStreakStatusUI();
       }
