@@ -2118,47 +2118,55 @@
         </div>
       </div>
 
-      <div id="challenge-detail-modal-overlay" class="ump-modal-overlay fixed inset-0 w-full h-full bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-[200] opacity-0 pointer-events-none transition-all duration-200 p-4">
-        <div id="challenge-detail-modal-panel" class="challenge-detail-modal glass-panel border-emerald-500/40 flex flex-col relative overflow-hidden w-full max-w-2xl max-h-[min(92vh,720px)] shadow-2xl shadow-emerald-950/40" role="dialog" aria-labelledby="challenge-detail-title" aria-modal="true">
-          <div class="challenge-detail-modal__head">
-            <div class="challenge-detail-modal__head-copy">
-              <p class="challenge-detail-modal__kicker">Official mode</p>
-              <h3 id="challenge-detail-title" class="challenge-detail-modal__title">Weekly Challenge</h3>
-              <p id="challenge-detail-subtitle" class="challenge-detail-modal__subtitle">2026 · Week 22</p>
+      <div id="challenge-detail-modal-overlay" class="challenge-modal-overlay fixed inset-0 w-full h-full flex justify-center items-center z-[200] opacity-0 pointer-events-none transition-all duration-300">
+        <div id="challenge-detail-modal-panel" class="challenge-modal-panel w-[95%] sm:w-full sm:max-w-md flex flex-col relative pointer-events-auto rounded-xl border border-white/20 bg-slate-900 shadow-2xl overflow-hidden" role="dialog" aria-labelledby="challenge-detail-title" aria-modal="true">
+
+          <!-- Header with Close Button -->
+          <div class="flex items-center justify-between gap-2 p-4 sm:p-5 border-b border-white/10">
+            <div class="min-w-0 flex-1">
+              <div class="text-xs font-mono-tech uppercase tracking-widest text-[var(--retro-gold)] font-bold">Weekly Challenge</div>
+              <h3 id="challenge-detail-title" class="text-lg sm:text-xl font-black text-white uppercase tracking-wider leading-tight">--</h3>
             </div>
-            <button id="btn-challenge-detail-close" type="button" class="challenge-detail-modal__close" aria-label="Close">✕</button>
+            <button id="btn-challenge-detail-close" type="button" class="ump-icon-btn pointer-events-auto text-slate-400 hover:text-white transition-colors flex-shrink-0" aria-label="Close challenge details">✕</button>
           </div>
-          <div id="challenge-detail-loading" class="challenge-detail-loading hidden" aria-live="polite">
-            <div class="challenge-detail-loading__spinner" aria-hidden="true"></div>
-            <p class="challenge-detail-loading__text">Loading this week&rsquo;s challenge&hellip;</p>
-          </div>
-          <div id="challenge-detail-body" class="challenge-detail-modal__scroll hidden">
-            <p id="challenge-detail-desc" class="challenge-detail-modal__desc">Earn 10 points per correct call on curated MLB at-bats. Resets every Monday.</p>
-            <div id="challenge-detail-stats" class="challenge-detail-stats">
-              <div class="challenge-detail-stats__item"><span>Games</span><strong id="challenge-detail-games-count">5</strong></div>
-              <div class="challenge-detail-stats__item"><span>At-bats</span><strong id="challenge-detail-ab-count">20</strong></div>
-              <div class="challenge-detail-stats__item"><span>Progress</span><strong id="challenge-detail-completed">0 / 20</strong></div>
-              <div class="challenge-detail-stats__item"><span>Resets</span><strong id="challenge-detail-reset">Monday</strong></div>
-            </div>
-            <div id="challenge-detail-playlist-wrap" class="challenge-detail-playlist">
-              <div class="challenge-detail-playlist__head">
-                <span id="challenge-detail-playlist-label" class="challenge-detail-playlist__label">Your At-Bats</span>
-                <span id="challenge-detail-playlist-meta" class="challenge-detail-playlist__meta">Full MLB plate appearances</span>
+
+          <!-- Content Section -->
+          <div id="challenge-detail-body" class="hidden flex-1 px-4 sm:px-5 py-3 space-y-3">
+
+            <!-- Description -->
+            <p id="challenge-detail-desc" class="text-sm sm:text-base text-slate-200 leading-relaxed">Earn 10 points per correct call on curated MLB at-bats. Resets every Monday.</p>
+
+            <!-- Stats Grid - Larger, More Visual -->
+            <div id="challenge-detail-stats" class="grid grid-cols-2 gap-2.5">
+              <div class="bg-gradient-to-br from-slate-800 to-slate-900/50 p-3 rounded-lg border border-white/10 text-center">
+                <div class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Games</div>
+                <div class="text-2xl font-black text-[var(--retro-gold)]" id="challenge-detail-games-count">5</div>
               </div>
-              <div id="challenge-detail-playlist-list" class="challenge-detail-playlist__list"></div>
+              <div class="bg-gradient-to-br from-slate-800 to-slate-900/50 p-3 rounded-lg border border-white/10 text-center">
+                <div class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">At-Bats</div>
+                <div class="text-2xl font-black text-[var(--retro-gold)]" id="challenge-detail-ab-count">20</div>
+              </div>
+              <div class="bg-gradient-to-br from-emerald-900/40 to-slate-900/50 p-3 rounded-lg border border-emerald-500/30 text-center">
+                <div class="text-xs text-emerald-400 uppercase tracking-widest font-bold mb-1">Progress</div>
+                <div class="text-2xl font-black text-emerald-300" id="challenge-detail-completed">0 / 20</div>
+              </div>
+              <div class="bg-gradient-to-br from-slate-800 to-slate-900/50 p-3 rounded-lg border border-white/10 text-center">
+                <div class="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Resets</div>
+                <div class="text-sm font-bold text-slate-200" id="challenge-detail-reset">Monday</div>
+              </div>
             </div>
-            <div id="challenge-detail-games-wrap" class="challenge-detail-games">
-              <span class="challenge-detail-games__label">Source games</span>
-              <div id="challenge-detail-games-list" class="challenge-detail-games__list"></div>
+
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex flex-col gap-2 p-4 sm:p-5 border-t border-white/10 bg-slate-950">
+            <button id="btn-challenge-detail-play" type="button" class="ump-btn ump-btn--primary w-full pointer-events-auto font-bold text-base">Start Challenge</button>
+            <div class="flex gap-2 text-xs sm:text-sm">
+              <button id="btn-challenge-detail-standings" type="button" class="ump-btn ump-btn--ghost flex-1 pointer-events-auto">Standings</button>
+              <button id="btn-challenge-detail-last-week" type="button" class="ump-btn ump-btn--ghost flex-1 pointer-events-auto">History</button>
             </div>
           </div>
-          <div id="challenge-detail-modal-foot" class="challenge-detail-modal__foot">
-            <button id="btn-challenge-detail-play" type="button" class="ump-btn bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-500/50 text-white w-full pointer-events-auto">Start Challenge</button>
-            <div class="challenge-detail-modal__links">
-              <button id="btn-challenge-detail-standings" type="button" class="challenge-detail-modal__link pointer-events-auto">Standings</button>
-              <button id="btn-challenge-detail-last-week" type="button" class="challenge-detail-modal__link pointer-events-auto">History</button>
-            </div>
-          </div>
+
         </div>
       </div>
 

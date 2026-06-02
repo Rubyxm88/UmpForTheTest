@@ -6636,9 +6636,7 @@ function showAtBatStartScreen(onConfirmCallback, isResume = false, startOpts = {
         const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
         if (gameData) titleText = gameData.title;
       }
-      const parts = titleText.split(' vs. ');
-      const awayTeam = parts[0] || "Orioles";
-      const homeTeam = parts[1] || "Tigers";
+      const { away: awayTeam, home: homeTeam } = extractTeamsFromGameTitle(titleText);
       const pitchIsTop = pitch.is_top !== undefined ? pitch.is_top : activeIsTop;
       if (!pitcherTeam) pitcherTeam = pitchIsTop ? homeTeam : awayTeam;
       if (!batterTeam) batterTeam = pitchIsTop ? awayTeam : homeTeam;
@@ -10532,11 +10530,11 @@ async function getSavedWeeklyPlaylistForMerge(username) {
   let cloudCp = null;
   if (username) {
     try {
-      const stats = await getGlobalUserStats(username);
+      const stats = readLocalUserStats(username);
       const cp = stats?.challengeProgress;
       if (challengeProgressMatchesWeek(cp, weekId)) cloudCp = cp;
     } catch (e) {
-      console.warn('Failed to load cloud weekly progress for menu display:', e);
+      console.warn('Failed to load local/cloud weekly progress for menu display:', e);
     }
   }
   const bundle = pickNewerChallengeProgress(cloudCp, localCp);
@@ -12275,28 +12273,51 @@ async function startWeeklyChallenge() {
 
 function getPlayerTeam(name) {
   if (!name) return null;
-  const phillies = ["Zack Wheeler", "Jose Alvarado", "Kyle Schwarber", "Trea Turner", "Bryce Harper", "Alec Bohm", "Bryson Stott", "Nick Castellanos", "J.T. Realmuto", "Brandon Marsh", "Johan Rojas"];
-  const Mets = ["Kodai Senga", "Edwin Diaz", "Brandon Nimmo", "Francisco Lindor", "Pete Alonso", "J.D. Martinez", "Jeff McNeil", "Starling Marte", "Harrison Bader", "Francisco Alvarez", "Brett Baty"];
-  const Orioles = ["Corbin Burnes", "Craig Kimbrel", "Gunnar Henderson", "Adley Rutschman", "Colton Cowser", "Anthony Santander", "Ryan Mountcastle", "Jordan Westburg", "Jackson Holliday", "Cedric Mullins", "Ramón Urías"];
-  const Tigers = ["Tarik Skubal", "Jason Foley", "Zach McKinstry", "Riley Greene", "Kerry Carpenter", "Mark Canha", "Colt Keith", "Gio Urshela", "Wenceel Pérez", "Jake Rogers", "Andy Ibáñez"];
-  const Dodgers = ["Yoshinobu Yamamoto", "Evan Phillips", "Shohei Ohtani", "Mookie Betts", "Freddie Freeman", "Teoscar Hernández", "Max Muncy", "Will Smith", "Gavin Lux", "Andy Pages", "Miguel Rojas"];
-  const Giants = ["Logan Webb", "Camilo Doval", "Jung Hoo Lee", "LaMonte Wade Jr.", "Jorge Soler", "Matt Chapman", "Thairo Estrada", "Wilmer Flores", "Mike Yastrzemski", "Patrick Bailey", "Nick Ahmed"];
-  const Yankees = ["Gerrit Cole", "Clay Holmes", "Anthony Volpe", "Juan Soto", "Aaron Judge", "Giancarlo Stanton", "Anthony Rizzo", "Gleyber Torres", "Alex Verdugo", "Jose Trevino", "Oswaldo Cabrera"];
-  const RedSox = ["Nick Pivetta", "Kenley Jansen", "Jarren Duran", "Rafael Devers", "Tyler O'Neill", "Triston Casas", "Masataka Yoshida", "Wilyer Abreu", "Connor Wong", "Ceddanne Rafaela", "David Hamilton"];
-  const Astros = ["Framber Valdez", "Josh Hader", "Jose Altuve", "Yordan Alvarez", "Alex Bregman", "Kyle Tucker", "Jeremy Peña", "Yainer Diaz", "Jon Singleton", "Jake Meyers", "Mauricio Dubón"];
-  const Rangers = ["Nathan Eovaldi", "Kirby Yates", "Marcus Semien", "Corey Seager", "Adolis García", "Josh Jung", "Nathaniel Lowe", "Jonah Heim", "Wyatt Langford", "Leody Taveras", "Ezequiel Duran"];
 
-  if (phillies.includes(name)) return "Phillies";
-  if (Mets.includes(name)) return "Mets";
-  if (Orioles.includes(name)) return "Orioles";
-  if (Tigers.includes(name)) return "Tigers";
-  if (Dodgers.includes(name)) return "Dodgers";
-  if (Giants.includes(name)) return "Giants";
-  if (Yankees.includes(name)) return "Yankees";
-  if (RedSox.includes(name)) return "RedSox";
-  if (Astros.includes(name)) return "Astros";
-  if (Rangers.includes(name)) return "Rangers";
+  // Comprehensive player rosters for 2026 season (key players per team)
+  const TEAM_ROSTERS = {
+    'Orioles': ['Corbin Burnes', 'Craig Kimbrel', 'Gunnar Henderson', 'Adley Rutschman', 'Colton Cowser', 'Anthony Santander', 'Ryan Mountcastle', 'Jordan Westburg', 'Jackson Holliday', 'Cedric Mullins', 'Ramón Urías'],
+    'Tigers': ['Tarik Skubal', 'Jason Foley', 'Zach McKinstry', 'Riley Greene', 'Kerry Carpenter', 'Mark Canha', 'Colt Keith', 'Gio Urshela', 'Wenceel Pérez', 'Jake Rogers', 'Andy Ibáñez'],
+    'Astros': ['Framber Valdez', 'Josh Hader', 'Jose Altuve', 'Yordan Alvarez', 'Alex Bregman', 'Kyle Tucker', 'Jeremy Peña', 'Yainer Diaz', 'Jon Singleton', 'Jake Meyers', 'Mauricio Dubón'],
+    'Dodgers': ['Yoshinobu Yamamoto', 'Evan Phillips', 'Shohei Ohtani', 'Mookie Betts', 'Freddie Freeman', 'Teoscar Hernández', 'Max Muncy', 'Will Smith', 'Gavin Lux', 'Andy Pages', 'Miguel Rojas'],
+    'Mets': ['Kodai Senga', 'Edwin Diaz', 'Brandon Nimmo', 'Francisco Lindor', 'Pete Alonso', 'J.D. Martinez', 'Jeff McNeil', 'Starling Marte', 'Harrison Bader', 'Francisco Alvarez', 'Brett Baty'],
+    'Yankees': ['Gerrit Cole', 'Clay Holmes', 'Anthony Volpe', 'Juan Soto', 'Aaron Judge', 'Giancarlo Stanton', 'Anthony Rizzo', 'Gleyber Torres', 'Alex Verdugo', 'Jose Trevino', 'Oswaldo Cabrera'],
+    'Phillies': ['Zack Wheeler', 'Jose Alvarado', 'Kyle Schwarber', 'Trea Turner', 'Bryce Harper', 'Alec Bohm', 'Bryson Stott', 'Nick Castellanos', 'J.T. Realmuto', 'Brandon Marsh', 'Johan Rojas'],
+    'Red Sox': ['Nick Pivetta', 'Kenley Jansen', 'Jarren Duran', 'Rafael Devers', 'Tyler O\'Neill', 'Triston Casas', 'Masataka Yoshida', 'Wilyer Abreu', 'Connor Wong', 'Ceddanne Rafaela', 'David Hamilton'],
+    'Giants': ['Logan Webb', 'Camilo Doval', 'Jung Hoo Lee', 'LaMonte Wade Jr.', 'Jorge Soler', 'Matt Chapman', 'Thairo Estrada', 'Wilmer Flores', 'Mike Yastrzemski', 'Patrick Bailey', 'Nick Ahmed'],
+    'Rangers': ['Nathan Eovaldi', 'Kirby Yates', 'Marcus Semien', 'Corey Seager', 'Adolis García', 'Josh Jung', 'Nathaniel Lowe', 'Jonah Heim', 'Wyatt Langford', 'Leody Taveras', 'Ezequiel Duran'],
+  };
+
+  // Check each team's roster
+  for (const [team, players] of Object.entries(TEAM_ROSTERS)) {
+    if (players.includes(name)) {
+      return team;
+    }
+  }
+
+  // If not found in rosters, return null (will fallback to game title parsing)
   return null;
+}
+
+/**
+ * Extract away and home team names from a game title.
+ * Handles formats like "Orioles vs. Tigers", "Orioles vs Tigers", "Baltimore vs Detroit"
+ * Returns { away, home } or { away: 'Orioles', home: 'Tigers' } as fallback.
+ */
+function extractTeamsFromGameTitle(gameTitle) {
+  if (!gameTitle) return { away: 'Orioles', home: 'Tigers' };
+
+  // Handle various separators: " vs. ", " vs ", " vs. ", "vs"
+  const parts = gameTitle
+    .split(/\s+vs\.?\s+/i)
+    .map(t => t.trim())
+    .filter(t => t.length > 0);
+
+  if (parts.length >= 2) {
+    return { away: parts[0], home: parts[1] };
+  }
+
+  return { away: 'Orioles', home: 'Tigers' };
 }
 
 function checkReconstructedAbCompleted() {
@@ -13026,9 +13047,7 @@ function renderDashboardGamesList() {
     
     let rivalBadgeHtml = '';
     if (activeFavoriteTeam) {
-      const parts = game.title.split(' vs. ');
-      const awayTeam = parts[0];
-      const homeTeam = parts[1];
+      const { away: awayTeam, home: homeTeam } = extractTeamsFromGameTitle(game.title);
       if (awayTeam === activeFavoriteTeam || homeTeam === activeFavoriteTeam) {
         rivalBadgeHtml = `<span class="absolute top-1.5 right-1.5 text-[8px] font-mono-tech px-1 py-0.2 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded font-bold">RIVAL</span>`;
       }
@@ -13065,9 +13084,9 @@ function calculateScorecardRE24() {
   if (gameMode === 'weekly_challenge') {
     const gameData = WEEKLY_CHALLENGE_DATA[activeGameIndex];
     if (gameData) {
-      const parts = gameData.title.split(' vs. ');
-      awayTeamName = parts[0] || "Away";
-      homeTeamName = parts[1] || "Home";
+      const { away, home } = extractTeamsFromGameTitle(gameData.title);
+      awayTeamName = away || "Away";
+      homeTeamName = home || "Home";
     }
   } else if (gameMode === 'orioles_full') {
     awayTeamName = "Orioles";
@@ -13261,9 +13280,7 @@ async function updateMatchupCardImagesAndStats(pitch) {
   let batterTeam = getPlayerTeam(matchup.batter);
 
   if (!pitcherTeam || !batterTeam) {
-    const parts = titleText.split(' vs. ');
-    const awayTeam = parts[0] || "Orioles";
-    const homeTeam = parts[1] || "Tigers";
+    const { away: awayTeam, home: homeTeam } = extractTeamsFromGameTitle(titleText);
     if (!pitcherTeam) pitcherTeam = activeIsTop ? homeTeam : awayTeam;
     if (!batterTeam) batterTeam = activeIsTop ? awayTeam : homeTeam;
   }
@@ -14474,15 +14491,11 @@ function hideGamePreviewModal() {
 }
 
 function setChallengeDetailModalLoading(loading) {
-  const loadingEl = document.getElementById('challenge-detail-loading');
   const bodyEl = document.getElementById('challenge-detail-body');
-  const footEl = document.getElementById('challenge-detail-modal-foot');
   if (challengeDetailModalPanel) {
     challengeDetailModalPanel.classList.toggle('challenge-detail-modal--loading', loading);
   }
-  if (loadingEl) loadingEl.classList.toggle('hidden', !loading);
   if (bodyEl) bodyEl.classList.toggle('hidden', loading);
-  if (footEl) footEl.classList.toggle('challenge-detail-modal__foot--busy', loading);
 }
 
 async function populateWeeklyChallengeDetailModal() {

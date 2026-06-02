@@ -1954,6 +1954,48 @@
   pointer-events: auto;
 }
 
+/* ---- Challenge modal (full-screen blur backdrop) ---- */
+.challenge-modal-overlay {
+  background: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.challenge-modal-overlay.opacity-100 {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.challenge-modal-panel {
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.challenge-modal-overlay.opacity-0 .challenge-modal-panel {
+  animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
 .game-preview-panel {
   display: flex;
   flex-direction: column;
@@ -2532,5 +2574,390 @@
 
   .game-preview-panel__browse-actions .ump-btn {
     flex: 1;
+  }
+}
+
+/* ---- AB Summary Overlay Mobile Improvements ---- */
+#ab-summary-overlay {
+  background: transparent !important;
+}
+
+@media (max-width: 639px) {
+  #ab-summary-overlay {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .ab-summary-panel {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 95dvh;
+    border-radius: 0 !important;
+    transform: scale(1) !important;
+    overflow-y: auto;
+  }
+
+  .arcade-cabinet {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .ab-summary-marquee {
+    font-size: 0.35rem !important;
+    padding: 0.35rem 0 !important;
+  }
+
+  .ab-summary-calls-board {
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .ab-summary-calls-label {
+    font-size: 0.7rem !important;
+  }
+
+  .ab-summary-calls-score {
+    font-size: 1.2rem !important;
+  }
+
+  .ab-summary-calls-pct {
+    font-size: 0.65rem !important;
+  }
+
+  .ab-summary-xp-panel {
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .ab-summary-review-toggle {
+    padding: 0.6rem 0.5rem !important;
+    font-size: 0.32rem !important;
+  }
+
+  .ab-summary-blurb {
+    font-size: 0.75rem !important;
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .ab-summary-footer-bar {
+    padding: 0.75rem !important;
+  }
+
+  .ab-summary-btn-primary,
+  .ab-summary-btn-secondary {
+    padding: 0.6rem !important;
+    font-size: 0.32rem !important;
+    min-height: 2.75rem !important;
+  }
+
+  .ab-summary-btn-row {
+    gap: 0.35rem !important;
+  }
+
+  .ab-summary-kbd {
+    display: none;
+  }
+}
+
+/* ---- Streak Summary Overlay Mobile Improvements ---- */
+#streak-summary-overlay {
+  background: transparent !important;
+}
+
+@media (max-width: 639px) {
+  #streak-summary-overlay {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .streak-summary-panel {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: 95dvh;
+    border-radius: 0 !important;
+    transform: scale(1) !important;
+    overflow-y: auto;
+  }
+
+  .streak-summary-panel .ab-summary-marquee {
+    font-size: 0.35rem !important;
+    padding: 0.35rem 0 !important;
+  }
+
+  .streak-summary-calls-board {
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .streak-summary-xp-panel {
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .streak-summary-review-toggle {
+    padding: 0.6rem 0.5rem !important;
+    font-size: 0.32rem !important;
+  }
+
+  .streak-summary-blurb {
+    font-size: 0.75rem !important;
+    padding: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+  }
+
+  .streak-summary-footer-bar {
+    padding: 0.75rem !important;
+  }
+
+  .streak-summary-btn-primary,
+  .streak-summary-btn-secondary {
+    padding: 0.6rem !important;
+    font-size: 0.32rem !important;
+    min-height: 2.75rem !important;
+  }
+
+  .streak-summary-btn-row {
+    gap: 0.35rem !important;
+  }
+
+  .streak-summary-kbd {
+    display: none;
+  }
+}
+
+/* ---- Scoring & Stat Visual Hierarchy Improvements ---- */
+/* Make accuracy and scoring metrics stand out more */
+
+.ab-summary-calls-score {
+  font-size: clamp(1.5rem, 5vw, 2rem) !important;
+  font-weight: 900;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color: var(--retro-stitch, #e8d4a8) !important;
+}
+
+.ab-summary-calls-pct {
+  font-size: clamp(0.65rem, 2vw, 0.8rem) !important;
+  color: var(--retro-gold, #e8c547) !important;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.streak-summary-final-streak {
+  font-size: clamp(1.8rem, 6vw, 2.5rem) !important;
+  font-weight: 900;
+  color: var(--retro-stitch, #e8d4a8) !important;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.streak-summary-accuracy {
+  font-size: clamp(1.5rem, 5vw, 2rem) !important;
+  font-weight: 900;
+  color: var(--retro-grass, #5cdb95) !important;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Profile stats cards - increase prominence */
+#stats-avg-accuracy,
+#stats-max-streak,
+#stats-best-weekly-record,
+#stats-total-pitches-called {
+  font-size: clamp(1.3rem, 4vw, 1.8rem) !important;
+  font-weight: 900;
+  color: var(--retro-gold, #e8c547) !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Leaderboard score display */
+.standings-row__score,
+.standings-row__stat-value {
+  font-weight: 900 !important;
+  color: var(--retro-gold, #e8c547) !important;
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem) !important;
+}
+
+/* Challenge progress cards */
+#weekly-challenge-progress-text,
+#challenge-detail-completed {
+  font-weight: 900 !important;
+  color: var(--retro-gold, #e8c547) !important;
+  font-size: clamp(0.85rem, 2vw, 1rem) !important;
+}
+
+/* XP earned display */
+.ab-summary-xp-earned-btn,
+.streak-summary-xp-earned-btn {
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem) !important;
+  font-weight: 900 !important;
+  color: var(--retro-stitch, #e8d4a8) !important;
+  background: linear-gradient(180deg, rgba(232, 197, 71, 0.2), rgba(232, 197, 71, 0.1)) !important;
+  border: 1.5px solid var(--retro-gold, #e8c547) !important;
+  box-shadow: 0 0 8px rgba(232, 197, 71, 0.3) !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 4px !important;
+}
+
+/* Accuracy percentage badges */
+.ump-stat-card__value {
+  font-size: clamp(1rem, 3vw, 1.4rem) !important;
+  font-weight: 900 !important;
+  color: var(--retro-gold, #e8c547) !important;
+}
+
+/* Weekly challenge accuracy in summary */
+#ab-summary-weekly-accuracy-text {
+  font-weight: 900 !important;
+  color: var(--retro-stitch, #e8d4a8) !important;
+  font-size: clamp(1rem, 2.5vw, 1.2rem) !important;
+}
+
+/* ---- Mobile Responsiveness Audit & Fixes ---- */
+/* Ensure all interactive elements meet 44px minimum touch target */
+@media (max-width: 768px) {
+  /* Button sizing */
+  .ump-btn {
+    min-height: 2.75rem !important;
+    padding: 0.6rem 1rem !important;
+  }
+
+  .ump-icon-btn {
+    min-width: 2.75rem !important;
+    min-height: 2.75rem !important;
+  }
+
+  /* Input fields */
+  input,
+  textarea,
+  select {
+    min-height: 2.75rem !important;
+  }
+
+  /* Tab buttons */
+  .ump-tab {
+    min-height: 2.75rem !important;
+    padding: 0.5rem 1rem !important;
+  }
+
+  /* Text sizing for readability */
+  body {
+    font-size: clamp(16px, 4vw, 20px);
+  }
+
+  /* Prevent text overflow */
+  .name-marquee-text,
+  .ab-summary-player-name {
+    font-size: clamp(0.75rem, 3vw, 0.95rem) !important;
+  }
+
+  /* Reduce padding on small screens to maximize content space */
+  .ump-panel {
+    padding: 0.75rem !important;
+  }
+
+  .ump-card {
+    padding: 0.75rem !important;
+  }
+
+  /* Horizontal scroll prevention */
+  body, html {
+    overflow-x: hidden !important;
+    width: 100% !important;
+  }
+
+  /* Modal/Dialog improvements */
+  [role="dialog"],
+  .ump-screen {
+    max-width: 100vw !important;
+    width: 100% !important;
+  }
+
+  /* Menu navigation spacing */
+  .ump-tab-bar {
+    gap: 0.25rem !important;
+  }
+
+  /* Leaderboard row touch targets */
+  .standings-row {
+    min-height: 3rem !important;
+    padding: 0.75rem !important;
+  }
+
+  /* Challenge card button spacing */
+  .ump-card button {
+    min-height: 2.5rem !important;
+  }
+
+  /* Profile/stats layout adjustments */
+  .grid {
+    gap: 0.5rem !important;
+  }
+
+  /* Reduce shadow complexity on mobile for performance */
+  .shadow-2xl {
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Leaderboard accessibility */
+  .standings-list {
+    overflow-x: hidden !important;
+  }
+
+  /* Pitch chart responsiveness */
+  .ab-summary-chart-layout {
+    flex-direction: column !important;
+  }
+
+  .ab-summary-pitch-sidebar {
+    max-height: 150px !important;
+    overflow-y: auto !important;
+  }
+
+  /* Weekly challenge detail scrolling */
+  #challenge-detail-playlist-list {
+    max-height: 200px !important;
+  }
+
+  /* Prevent layout shift on scrollbar appearance */
+  #leaderboard-list,
+  .standings-list {
+    scrollbar-gutter: stable;
+  }
+}
+
+/* Extra small devices (< 360px) */
+@media (max-width: 359px) {
+  .ump-btn {
+    min-height: 2.5rem !important;
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.7rem !important;
+  }
+
+  .ump-title {
+    font-size: clamp(1.2rem, 5vw, 1.6rem) !important;
+  }
+
+  .ump-subtitle {
+    font-size: clamp(0.8rem, 3vw, 0.95rem) !important;
+  }
+
+  /* Stack layout on tiny screens */
+  .grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Reduce spacing further */
+  .gap-4 {
+    gap: 0.5rem !important;
+  }
+
+  .gap-3 {
+    gap: 0.35rem !important;
   }
 }

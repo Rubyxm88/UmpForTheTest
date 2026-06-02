@@ -58,8 +58,7 @@ body {
 #scoreboard-screen,
 #pause-screen,
 #confirm-modal-overlay,
-#game-preview-modal-overlay,
-#challenge-detail-modal-overlay {
+#game-preview-modal-overlay {
   background:
     radial-gradient(1200px 700px at 15% 12%, rgba(45, 107, 66, 0.25), transparent 55%),
     radial-gradient(900px 600px at 85% 82%, rgba(196, 30, 58, 0.18), transparent 60%),
@@ -70,8 +69,7 @@ body {
 #scoreboard-screen .glass-panel,
 #pause-screen .glass-panel,
 #confirm-modal-overlay .glass-panel,
-#game-preview-modal-overlay .glass-panel,
-#challenge-detail-modal-overlay .glass-panel {
+#game-preview-modal-overlay .glass-panel {
   background: linear-gradient(180deg, rgba(18,34,56,0.92), rgba(10,22,40,0.86)) !important;
   border-color: rgba(232, 197, 71, 0.28) !important;
   border-radius: var(--ump-radius-2) !important;
@@ -86,7 +84,6 @@ body {
 #pause-screen [class*="rounded-"],
 #confirm-modal-overlay [class*="rounded-"],
 #game-preview-modal-overlay [class*="rounded-"],
-#challenge-detail-modal-overlay [class*="rounded-"],
 #abs-broadcast-overlay [class*="rounded-"],
 #quick-preview-controls [class*="rounded-"] {
   border-radius: var(--ump-radius-2) !important;
@@ -113,7 +110,6 @@ body {
 #scoreboard-screen .text-purple-500,
 #pause-screen .text-purple-400,
 #game-preview-modal-overlay .text-purple-400,
-#challenge-detail-modal-overlay .text-purple-400,
 #abs-broadcast-overlay .text-purple-300,
 #abs-broadcast-overlay .text-purple-400 {
   color: var(--retro-gold) !important;
@@ -154,10 +150,7 @@ body {
 #pause-screen [class*="text-purple-"],
 #game-preview-modal-overlay [class*="border-purple-"],
 #game-preview-modal-overlay [class*="bg-purple-"],
-#game-preview-modal-overlay [class*="text-purple-"],
-#challenge-detail-modal-overlay [class*="border-purple-"],
-#challenge-detail-modal-overlay [class*="bg-purple-"],
-#challenge-detail-modal-overlay [class*="text-purple-"] {
+#game-preview-modal-overlay [class*="text-purple-"] {
   border-color: rgba(232, 197, 71, 0.28) !important;
   color: var(--retro-gold) !important;
 }
