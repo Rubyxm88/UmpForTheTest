@@ -3,9 +3,24 @@
  */
 
 let streakSessionStartedAt = null;
+let streakSessionId = null;
+
+/** Stable per-session id; lets the server dedupe session_end writes idempotently. */
+function generateSessionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export function markStreakSessionStart() {
   streakSessionStartedAt = new Date().toISOString();
+  streakSessionId = generateSessionId();
+}
+
+/** Current stable session id (null before a session starts). */
+export function getStreakSessionId() {
+  return streakSessionId;
 }
 
 export function streakTelemetry(event, payload = {}) {
@@ -40,6 +55,7 @@ export function streakTelemetrySessionEnd({
 }) {
   streakTelemetry('session_end', {
     dateKey,
+    sessionId: streakSessionId,
     startedAt: streakSessionStartedAt,
     correctStreak,
     absPlayed,
@@ -48,4 +64,5 @@ export function streakTelemetrySessionEnd({
     usedAbIds: [...(usedAbIds || [])],
   });
   streakSessionStartedAt = null;
+  streakSessionId = null;
 }

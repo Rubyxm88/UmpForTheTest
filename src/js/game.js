@@ -44,6 +44,7 @@ import {
   streakTelemetryPitch,
   streakTelemetryAbCompleted,
   streakTelemetrySessionEnd,
+  getStreakSessionId,
 } from './streak-telemetry.js';
 import { clearPreviewState, collapsePreviewGameDetails } from './mlb-games-preview.js';
 import { formatMlbAbOutcomeText, MLB_GAME_FEED_PARSE_VERSION, fetchMlbPlayerProfile } from './mlb-api.js';
@@ -303,6 +304,11 @@ let streakRunSeedValue = 0;
 let streakFlowEpoch = 0;
 let currentStreakAbMeta = null;
 let isTransitioningToSummary = false;
+// Idempotency guard: ensures the end-of-session RECORDING side effects
+// (telemetry session_end, streakAttempts append, leaderboard submit) run
+// exactly once per streak session, even though showStreakSummaryScreen()
+// can be invoked from many UI paths. Reset on each new streak session start.
+let streakSessionRecorded = false;
 let cachedAbOutcomeText = "";
 let summaryTimeout = null;
 
@@ -2078,12 +2084,58 @@ function mergeStreakHistory(cloud = {}, local = {}) {
 
 /** Most-recent streak attempts to retain per user (newest-first, capped). */
 const STREAK_ATTEMPTS_CAP = 20;
+/** Attempts sharing a content signature within this window are the same run. */
+const STREAK_ATTEMPT_DEDUPE_WINDOW_MS = 120000;
 
-/** Dedupe by id, sort newest-first, and cap the list. */
+/** Content signature: same run if these match and endedAt are close in time. */
+function streakAttemptSignature(a) {
+  return [
+    a.streak ?? '',
+    a.accuracy ?? '',
+    a.umpAccuracy ?? '',
+    a.absPlayed ?? '',
+    a.pitchesCalled ?? '',
+    a.matchup ?? '',
+  ].join('|');
+}
+
+/**
+ * Dedupe attempts, sort newest-first, cap the list.
+ * Two-pass dedupe:
+ *   1. Exact id collision (cheap, handles deterministic ids).
+ *   2. Content+time collision — collapses legacy duplicates that were written
+ *      with random ids by the old multi-call bug. Attempts with an identical
+ *      content signature whose endedAt fall within DEDUPE_WINDOW collapse to
+ *      the earliest one.
+ */
 function normalizeStreakAttempts(list) {
-  const seen = new Set();
-  return (Array.isArray(list) ? list : [])
-    .filter((a) => a && a.id && !seen.has(a.id) && seen.add(a.id))
+  const valid = (Array.isArray(list) ? list : []).filter((a) => a && a.id);
+
+  // Pass 1: id dedupe.
+  const byId = new Map();
+  for (const a of valid) {
+    if (!byId.has(a.id)) byId.set(a.id, a);
+  }
+
+  // Pass 2: content+time dedupe. Walk oldest-first so the earliest survives.
+  const oldestFirst = [...byId.values()].sort((a, b) =>
+    String(a.endedAt || '').localeCompare(String(b.endedAt || '')),
+  );
+  const kept = [];
+  const sigToTimes = new Map(); // signature -> array of kept endedAt epochs
+  for (const a of oldestFirst) {
+    const sig = streakAttemptSignature(a);
+    const t = Date.parse(a.endedAt || '') || 0;
+    const priorTimes = sigToTimes.get(sig) || [];
+    const isDup = priorTimes.some((pt) => Math.abs(t - pt) <= STREAK_ATTEMPT_DEDUPE_WINDOW_MS);
+    if (isDup) continue;
+    kept.push(a);
+    priorTimes.push(t);
+    sigToTimes.set(sig, priorTimes);
+  }
+
+  // Newest-first for display, capped.
+  return kept
     .sort((a, b) => String(b.endedAt || '').localeCompare(String(a.endedAt || '')))
     .slice(0, STREAK_ATTEMPTS_CAP);
 }
@@ -5306,7 +5358,8 @@ function transitionToState(newState, options = {}) {
       }
       
       // Update count and check if AB ended
-      const abEnded = updateCountAndCheckABEnd(userHistoryItem);
+      // NOTE: must be `let` — a streak-ending missed call reassigns this below.
+      let abEnded = updateCountAndCheckABEnd(userHistoryItem);
 
       if (gameMode === 'daily_streak' && !userHistoryItem.isSwingPlay && !userHistoryItem.userCorrect) {
         isSessionOver = true;
@@ -8243,9 +8296,19 @@ async function startDailyStreakChallenge(isResume = false, opts = {}) {
   streakFlowEpoch++;
   cancelPendingStreakFlowTimers();
 
+  // Wipe any 3D pitch markers / traces left over from a previous summary so
+  // they don't linger on the field when the new run begins.
+  clearSummaryPitchReview();
+  clearTrajectoryTrace();
+  clearDimensionLine();
+
   gameMode = 'daily_streak';
   isGamePaused = false;
   isSessionOver = false;
+  // Entering a streak session (fresh, resume, or restore) — this run is now
+  // eligible for exactly one end-of-session record. Guard is flipped true the
+  // first time showStreakSummaryScreen() records, blocking duplicate writes.
+  streakSessionRecorded = false;
   if (pauseScreen) {
     pauseScreen.classList.add('opacity-0', 'pointer-events-none');
     pauseScreen.classList.remove('opacity-100', 'pointer-events-auto');
@@ -9198,16 +9261,28 @@ async function showStreakSummaryScreen() {
 
   streakFlowEpoch++;
   cancelPendingStreakFlowTimers();
-  const abPitchesForTelemetry = streakPitchHistory.filter((p) => !p.isSwingPlay);
-  const correctForTelemetry = abPitchesForTelemetry.filter((x) => x.userCorrect).length;
-  streakTelemetrySessionEnd({
-    dateKey: getStreakDateKey(),
-    correctStreak: correctForTelemetry,
-    absPlayed: streakSessionUsedIds.size,
-    pitchesCalled: abPitchesForTelemetry.length,
-    correctPitches: correctForTelemetry,
-    usedAbIds: streakSessionUsedIds,
-  });
+
+  // Idempotency: this function is reachable from ~10 UI paths for a single
+  // session end. Capture the record-eligibility ONCE and flip the guard
+  // immediately (synchronously, before any await) so that every side-effectful
+  // write below — session_end telemetry, streakAttempts append, leaderboard
+  // submit — happens exactly once per session. UI rendering is unguarded and
+  // may safely re-run on repeat calls.
+  const shouldRecord = !streakSessionRecorded;
+  if (shouldRecord) streakSessionRecorded = true;
+
+  if (shouldRecord) {
+    const abPitchesForTelemetry = streakPitchHistory.filter((p) => !p.isSwingPlay);
+    const correctForTelemetry = abPitchesForTelemetry.filter((x) => x.userCorrect).length;
+    streakTelemetrySessionEnd({
+      dateKey: getStreakDateKey(),
+      correctStreak: correctForTelemetry,
+      absPlayed: streakSessionUsedIds.size,
+      pitchesCalled: abPitchesForTelemetry.length,
+      correctPitches: correctForTelemetry,
+      usedAbIds: streakSessionUsedIds,
+    });
+  }
   recordStreakDaySeenIds(streakSessionUsedIds);
   clearStreakChallengeSession();
 
@@ -9328,31 +9403,36 @@ async function showStreakSummaryScreen() {
   if (username) {
     const todayStr = new Date().toISOString().split('T')[0];
 
-    const streakAttemptRecord = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      endedAt: new Date().toISOString(),
-      dateKey: todayStr,
-      streak: correctCount,
-      accuracy,
-      umpAccuracy,
-      absPlayed: streakSessionUsedIds.size,
-      pitchesCalled: abPitches.length,
-      matchup: batter && pitcher ? `${batter} vs ${pitcher}` : '',
-    };
+    // Only persist the attempt + leaderboard score once per session.
+    if (shouldRecord) {
+      const streakAttemptRecord = {
+        // Deterministic per-session id: if this record is ever written twice
+        // for the same run, id-dedupe in normalizeStreakAttempts collapses it.
+        id: getStreakSessionId() || `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        endedAt: new Date().toISOString(),
+        dateKey: todayStr,
+        streak: correctCount,
+        accuracy,
+        umpAccuracy,
+        absPlayed: streakSessionUsedIds.size,
+        pitchesCalled: abPitches.length,
+        matchup: batter && pitcher ? `${batter} vs ${pitcher}` : '',
+      };
 
-    getGlobalUserStats(username).then(async (globalStats) => {
-      if (!globalStats.streakHistory) globalStats.streakHistory = {};
-      globalStats.streakHistory[todayStr] = Math.max(globalStats.streakHistory[todayStr] || 0, correctCount);
-      globalStats.maxStreak = Math.max(globalStats.maxStreak || 0, correctCount);
-      globalStats.streakAttempts = appendStreakAttempt(globalStats.streakAttempts, streakAttemptRecord);
-      await saveGlobalUserStats(username, globalStats);
-      updateDailyStreakStatusUI();
-    }).catch((err) => {
-      if (err.status === 401) handleSessionExpired();
-      else console.warn(err);
-    });
+      getGlobalUserStats(username).then(async (globalStats) => {
+        if (!globalStats.streakHistory) globalStats.streakHistory = {};
+        globalStats.streakHistory[todayStr] = Math.max(globalStats.streakHistory[todayStr] || 0, correctCount);
+        globalStats.maxStreak = Math.max(globalStats.maxStreak || 0, correctCount);
+        globalStats.streakAttempts = appendStreakAttempt(globalStats.streakAttempts, streakAttemptRecord);
+        await saveGlobalUserStats(username, globalStats);
+        updateDailyStreakStatusUI();
+      }).catch((err) => {
+        if (err.status === 401) handleSessionExpired();
+        else console.warn(err);
+      });
 
-    submitGlobalScore('daily', username, favoriteTeam, `${accuracy}%`, `${correctCount} Streak`, correctCount);
+      submitGlobalScore('daily', username, favoriteTeam, `${accuracy}%`, `${correctCount} Streak`, correctCount);
+    }
 
     try {
       await clearStreakChallengeSession(username);

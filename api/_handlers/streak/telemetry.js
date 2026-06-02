@@ -54,6 +54,7 @@ export default async function handler(req, res) {
 
     if (event === 'session_end') {
       const row = await recordStreakSessionEnd(handle, {
+        sessionId: body.sessionId,
         dateKey: body.dateKey,
         startedAt: body.startedAt,
         correctStreak: body.correctStreak,

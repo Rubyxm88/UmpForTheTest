@@ -1489,194 +1489,448 @@ async function loadUsersSafe() {
 }
 
 let streakPanelData = null;
+let streakDistribution = null;
 let streakAbsPage = 1;
 let streakSessionsPage = 1;
+let streakIngestBusy = false;
 
-function renderStreakReadiness(data) {
-  const steps = data.readiness?.steps || [];
-  const items = steps
-    .map(
-      (s) =>
-        `<li class="admin-streak-step ${s.done ? 'admin-streak-step--done' : ''}"><strong>${s.done ? '✓' : '○'}</strong> ${escapeHtml(s.label)}${s.detail ? ` <span class="admin-meta-line">(${escapeHtml(s.detail)})</span>` : ''}</li>`
-    )
-    .join('');
+const STREAK_TEAMS = [
+  '', 'AZ', 'ATL', 'BAL', 'BOS', 'CHC', 'CWS', 'CIN', 'CLE', 'COL', 'DET',
+  'HOU', 'KC', 'LAA', 'LAD', 'MIA', 'MIL', 'MIN', 'NYM', 'NYY', 'OAK', 'ATH',
+  'PHI', 'PIT', 'SD', 'SF', 'SEA', 'STL', 'TB', 'TEX', 'TOR', 'WSH',
+];
+
+/* ---------- Overview: KPIs + phase ---------- */
+
+function renderStreakOverview(data) {
   const phase = data.readiness?.phase || 'unknown';
-  const phaseLabel = {
-    bundle_only: 'Bundle only (client ships ABs in JS)',
-    partial_ingest: 'Partial DB pool',
-    supabase_pool: 'Supabase pool active',
-  }[phase] || phase;
+  const phaseMeta = {
+    bundle_only: { label: 'Bundle only', tone: 'warn', hint: 'ABs ship in the JS build — ingest to move to a live DB pool.' },
+    partial_ingest: { label: 'Partial pool', tone: 'mid', hint: 'Some ABs ingested. Keep ingesting toward a deep pool.' },
+    supabase_pool: { label: 'Live pool', tone: 'ok', hint: 'Supabase pool is the source of truth.' },
+  }[phase] || { label: phase, tone: 'mid', hint: '' };
+
+  const pool = data.poolCount ?? 0;
+  const eligible = data.eligibleCount ?? 0;
+  const eligiblePct = pool > 0 ? Math.round((100 * eligible) / pool) : 0;
 
   return `
-    <header class="admin-challenges-header ump-panel--subtle">
-      <div>
-        <h2 class="ump-title ump-title--sm">Streak pool</h2>
-        <p class="admin-meta-line">20k+ path: ingest → client fetches by ID → telemetry fills admin stats</p>
+    <header class="admin-streak-hero">
+      <div class="admin-streak-hero__titles">
+        <p class="ump-kicker">Streak challenge</p>
+        <h2 class="ump-title ump-title--sm">At-bat pool &amp; ingest</h2>
+        <p class="admin-meta-line admin-streak-hero__hint">${escapeHtml(phaseMeta.hint)}</p>
       </div>
-      <button type="button" id="admin-refresh-streak" class="ump-btn ump-btn--ghost ump-btn--sm">Refresh</button>
+      <div class="admin-streak-hero__actions">
+        <span class="admin-streak-phase admin-streak-phase--${phaseMeta.tone}">${escapeHtml(phaseMeta.label)}</span>
+        <button type="button" id="admin-refresh-streak" class="ump-btn ump-btn--ghost ump-btn--sm">↻ Refresh</button>
+      </div>
     </header>
-    <div class="admin-kpi-row">
-      <div class="admin-kpi"><span class="admin-kpi__label">Phase</span><span class="admin-kpi__value">${escapeHtml(phaseLabel)}</span></div>
-      <div class="admin-kpi"><span class="admin-kpi__label">DB pool (eligible)</span><span class="admin-kpi__value">${data.poolCount ?? 0} (${data.eligibleCount ?? 0})</span></div>
-      <div class="admin-kpi"><span class="admin-kpi__label">Build bundle</span><span class="admin-kpi__value">${data.bundleMeta?.totalAbs ?? '—'} ABs</span></div>
-      <div class="admin-kpi"><span class="admin-kpi__label">Sessions logged</span><span class="admin-kpi__value">${data.sessionCount ?? 0}</span></div>
-      <div class="admin-kpi"><span class="admin-kpi__label">ABs with stats</span><span class="admin-kpi__value">${data.statsRowCount ?? 0}</span></div>
-    </div>
-    <section class="admin-section">
-      <h3 class="admin-section__title">Readiness checklist</h3>
-      <ul class="admin-streak-checklist">${items || '<li>Loading…</li>'}</ul>
-      <p class="admin-meta-line">Ingest: <code>npm run streak-pool:ingest</code> (from machine with service role key). Vercel production needs migrations applied first.</p>
+    <div class="admin-stat-grid">
+      <div class="admin-stat-card admin-stat-card--accent">
+        <span class="admin-stat-card__label">Eligible ABs</span>
+        <span class="admin-stat-card__value">${eligible.toLocaleString()}</span>
+        <span class="admin-stat-card__sub">${eligiblePct}% of ${pool.toLocaleString()} in pool</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-card__label">Avg difficulty</span>
+        <span class="admin-stat-card__value">${data.distribution?.avgDifficulty ?? '—'}</span>
+        <span class="admin-stat-card__sub">0–100 scale</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-card__label">Sessions</span>
+        <span class="admin-stat-card__value">${(data.sessionCount ?? 0).toLocaleString()}</span>
+        <span class="admin-stat-card__sub">logged runs</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-card__label">ABs with play stats</span>
+        <span class="admin-stat-card__value">${(data.statsRowCount ?? 0).toLocaleString()}</span>
+        <span class="admin-stat-card__sub">served at least once</span>
+      </div>
+    </div>`;
+}
+
+/* ---------- Difficulty distribution histogram ---------- */
+
+function renderStreakDistribution(dist) {
+  if (!dist || !dist.buckets?.length || !dist.eligibleCount) {
+    return `<section class="admin-streak-card">
+      <h3 class="admin-streak-card__title">Difficulty distribution</h3>
+      <p class="admin-meta-line">No eligible ABs yet — ingest a slate below to populate the curve.</p>
     </section>`;
+  }
+  const max = Math.max(1, ...dist.buckets.map((b) => b.count));
+  const bars = dist.buckets
+    .map((b) => {
+      const pct = Math.round((100 * b.count) / max);
+      const heat = b.min >= 70 ? 'hot' : b.min >= 40 ? 'mid' : 'cool';
+      return `<div class="admin-histo__col" title="${b.label}: ${b.count} ABs">
+        <div class="admin-histo__bar admin-histo__bar--${heat}" style="--h:${pct}%">
+          <span class="admin-histo__count">${b.count}</span>
+        </div>
+        <span class="admin-histo__label">${b.min}</span>
+      </div>`;
+    })
+    .join('');
+  const tierChips = (dist.tiers || [])
+    .map((c, i) => `<span class="admin-tier-chip admin-tier-chip--${i + 1}">T${i + 1}<b>${c}</b></span>`)
+    .join('');
+  return `<section class="admin-streak-card">
+    <div class="admin-streak-card__head">
+      <h3 class="admin-streak-card__title">Difficulty distribution</h3>
+      <div class="admin-tier-chips">${tierChips}</div>
+    </div>
+    <div class="admin-histo" role="img" aria-label="At-bat difficulty distribution">${bars}</div>
+    <p class="admin-meta-line">Buckets of 10 across ${dist.eligibleCount.toLocaleString()} eligible ABs. Aim for a full curve so the progressive ramp has material at every level.</p>
+  </section>`;
+}
+
+/* ---------- Pool controls: Statcast fetch + CSV paste ---------- */
+
+function renderStreakIngestControls() {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const teamOpts = STREAK_TEAMS
+    .map((t) => `<option value="${t}">${t || 'All teams'}</option>`)
+    .join('');
+  return `<section class="admin-streak-card admin-streak-ingest">
+    <div class="admin-streak-card__head">
+      <h3 class="admin-streak-card__title">Grow the pool</h3>
+      <div class="admin-seg" role="tablist" aria-label="Ingest source">
+        <button type="button" class="admin-seg__btn admin-seg__btn--active" data-ingest-tab="statcast">Statcast fetch</button>
+        <button type="button" class="admin-seg__btn" data-ingest-tab="csv">Paste CSV</button>
+      </div>
+    </div>
+
+    <div class="admin-ingest-pane" data-ingest-pane="statcast">
+      <p class="admin-meta-line">Pulls real games from baseball-savant by date range, scores close-call difficulty, and upserts eligible ABs. Fetched per day (max 31).</p>
+      <div class="admin-field-row">
+        <label class="admin-field"><span class="ump-label">Start date</span>
+          <input id="ingest-start" type="date" class="ump-input" value="${weekAgo}" max="${today}" /></label>
+        <label class="admin-field"><span class="ump-label">End date</span>
+          <input id="ingest-end" type="date" class="ump-input" value="${weekAgo}" max="${today}" /></label>
+        <label class="admin-field"><span class="ump-label">Team</span>
+          <select id="ingest-team" class="ump-input">${teamOpts}</select></label>
+        <label class="admin-field admin-field--narrow"><span class="ump-label">Min difficulty</span>
+          <input id="ingest-mindiff" type="number" class="ump-input" min="0" max="100" value="0" /></label>
+      </div>
+      <div class="admin-ingest-actions">
+        <button type="button" id="ingest-run-statcast" class="ump-btn ump-btn--primary ump-btn--sm">Fetch &amp; ingest</button>
+        <span class="admin-meta-line">Tip: a single recent day across all teams is a fast first pull.</span>
+      </div>
+    </div>
+
+    <div class="admin-ingest-pane hidden" data-ingest-pane="csv">
+      <p class="admin-meta-line">Paste a baseball-savant “type=details” CSV (header row included). Scored and upserted the same way.</p>
+      <label class="admin-field"><span class="ump-label">CSV text</span>
+        <textarea id="ingest-csv" class="ump-input admin-textarea" rows="6" placeholder="pitch_type,game_date,release_speed,..."></textarea></label>
+      <div class="admin-field-row">
+        <label class="admin-field admin-field--narrow"><span class="ump-label">Min difficulty</span>
+          <input id="ingest-csv-mindiff" type="number" class="ump-input" min="0" max="100" value="0" /></label>
+        <div class="admin-ingest-actions">
+          <button type="button" id="ingest-run-csv" class="ump-btn ump-btn--primary ump-btn--sm">Ingest CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ingest-result" class="admin-ingest-result hidden"></div>
+  </section>`;
+}
+
+function renderIngestResult(r) {
+  const tiers = (r.tierCounts || [])
+    .map((c, i) => `<span class="admin-tier-chip admin-tier-chip--${i + 1}">T${i + 1}<b>${c}</b></span>`)
+    .join('');
+  const rejects = Object.entries(r.rejectReasons || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<li><code>${escapeHtml(k)}</code> <b>${v}</b></li>`)
+    .join('');
+  const dayLines = (r.days || [])
+    .filter((d) => !d.ok || d.rows)
+    .map((d) => `<li>${escapeHtml(d.date)} — ${d.ok ? `${d.rows} pitches` : `<span class="admin-status-err">${escapeHtml(d.error || 'failed')}</span>`}</li>`)
+    .join('');
+  return `
+    <div class="admin-ingest-result__head">
+      <span class="admin-ingest-result__badge">Ingest complete</span>
+      ${r.note ? `<span class="admin-meta-line">${escapeHtml(r.note)}</span>` : ''}
+    </div>
+    <div class="admin-stat-grid admin-stat-grid--compact">
+      <div class="admin-stat-card admin-stat-card--accent"><span class="admin-stat-card__label">Inserted</span><span class="admin-stat-card__value">${(r.inserted ?? 0).toLocaleString()}</span></div>
+      <div class="admin-stat-card"><span class="admin-stat-card__label">Eligible</span><span class="admin-stat-card__value">${(r.eligible ?? 0).toLocaleString()}</span></div>
+      <div class="admin-stat-card"><span class="admin-stat-card__label">Total ABs</span><span class="admin-stat-card__value">${(r.totalAbs ?? 0).toLocaleString()}</span></div>
+      ${r.fetchedRows != null ? `<div class="admin-stat-card"><span class="admin-stat-card__label">Pitches fetched</span><span class="admin-stat-card__value">${r.fetchedRows.toLocaleString()}</span></div>` : ''}
+    </div>
+    ${tiers ? `<div class="admin-tier-chips admin-tier-chips--spaced">${tiers}</div>` : ''}
+    ${dayLines ? `<details class="admin-ingest-details"><summary>Per-day fetch</summary><ul class="admin-ingest-list">${dayLines}</ul></details>` : ''}
+    ${rejects ? `<details class="admin-ingest-details"><summary>Rejected at-bats (not close-call eligible)</summary><ul class="admin-ingest-list">${rejects}</ul></details>` : ''}
+    ${(r.errors || []).length ? `<p class="admin-status-err">${escapeHtml(r.errors.join('; '))}</p>` : ''}`;
+}
+
+/* ---------- AB browser ---------- */
+
+function difficultyBadge(d) {
+  if (d == null) return '<span class="admin-diff-badge">—</span>';
+  const tone = d >= 70 ? 'hot' : d >= 40 ? 'mid' : 'cool';
+  return `<span class="admin-diff-badge admin-diff-badge--${tone}">${d}</span>`;
 }
 
 function renderStreakAbsTable(rows, total, page, limit) {
+  const toolbar = `
+    <div class="admin-toolbar">
+      <input id="admin-streak-ab-search" type="search" class="ump-input admin-input--search" placeholder="Search pitcher, batter, id…" />
+      <select id="admin-streak-ab-sort" class="ump-input">
+        <option value="difficulty">Hardest first</option>
+        <option value="times_served">Most played</option>
+        <option value="last_used">Last used</option>
+        <option value="id">ID</option>
+      </select>
+      <span class="admin-toolbar__spacer"></span>
+      <button type="button" id="admin-streak-abs-prev" class="ump-btn ump-btn--ghost ump-btn--sm" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+      <span class="admin-meta-line">Page ${page} / ${Math.max(1, Math.ceil(total / limit))} · ${total.toLocaleString()} total</span>
+      <button type="button" id="admin-streak-abs-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= Math.max(1, Math.ceil(total / limit)) ? 'disabled' : ''}>Next</button>
+    </div>`;
+
   if (!rows?.length) {
-    return '<p class="admin-meta-line">No ABs in Supabase yet — run ingest or play streak (telemetry creates stat rows for served ABs).</p>';
+    return `${toolbar}<p class="admin-empty">No ABs match. Ingest a slate above, or clear the search.</p>`;
   }
   const body = rows
     .map((r) => {
       const s = r.stats || {};
-      const acc =
-        s.pitches_seen > 0
-          ? `${Math.round((100 * (s.correct_calls || 0)) / s.pitches_seen)}%`
-          : '—';
+      const acc = s.pitches_seen > 0 ? `${Math.round((100 * (s.correct_calls || 0)) / s.pitches_seen)}%` : '—';
+      const m = r.metrics || {};
       return `<tr>
-        <td class="admin-table__mono admin-table__truncate" title="${escapeHtml(r.id)}">${escapeHtml(r.id.slice(0, 36))}${r.id.length > 36 ? '…' : ''}</td>
-        <td>${escapeHtml(r.pitcher || '—')} vs ${escapeHtml(r.batter || '—')}</td>
-        <td>${r.difficulty ?? '—'}</td>
+        <td>${difficultyBadge(r.difficulty)}</td>
+        <td class="admin-ab-matchup"><b>${escapeHtml(r.pitcher || '—')}</b><span>vs ${escapeHtml(r.batter || '—')}</span></td>
+        <td class="admin-table__mono admin-table__truncate" title="${escapeHtml(r.id)}">${escapeHtml(r.id)}</td>
+        <td>${m.borderlineCount ?? '—'}</td>
         <td>${s.times_served ?? 0}</td>
-        <td>${s.times_completed ?? 0}</td>
-        <td>${s.pitches_seen ?? 0}</td>
         <td>${acc}</td>
         <td>${formatDate(s.last_played_at)}</td>
       </tr>`;
     })
     .join('');
-  const pages = Math.max(1, Math.ceil(total / limit));
-  return `
-    <div class="admin-toolbar">
-      <input id="admin-streak-ab-search" type="search" class="ump-input admin-input--search" placeholder="Search pitcher, batter, id…" />
-      <select id="admin-streak-ab-sort" class="ump-input">
-        <option value="times_served">Most played</option>
-        <option value="difficulty">Difficulty</option>
-        <option value="last_used">Last used</option>
-        <option value="id">ID</option>
-      </select>
-      <button type="button" id="admin-streak-abs-prev" class="ump-btn ump-btn--ghost ump-btn--sm" ${page <= 1 ? 'disabled' : ''}>Prev</button>
-      <span class="admin-meta-line">Page ${page} / ${pages} (${total} total)</span>
-      <button type="button" id="admin-streak-abs-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= pages ? 'disabled' : ''}>Next</button>
-    </div>
+  return `${toolbar}
     <div class="admin-table-wrap">
-      <table class="admin-table">
+      <table class="admin-table admin-table--streak">
         <thead><tr>
-          <th>AB id</th><th>Matchup</th><th>Diff</th><th>Served</th><th>Completed</th><th>Pitches</th><th>Accuracy</th><th>Last played</th>
+          <th>Diff</th><th>Matchup</th><th>AB id</th><th>Borderline</th><th>Served</th><th>Accuracy</th><th>Last played</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
 }
 
+/* ---------- Sessions (deduped, richer) ---------- */
+
+function fmtDuration(sec) {
+  if (sec == null) return '—';
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}m ${s}s`;
+}
+
 function renderStreakSessionsTable(rows, total, page, limit) {
-  if (!rows?.length) {
-    return '<p class="admin-meta-line">No streak sessions recorded yet. Logged-in players send data when a streak run ends.</p>';
-  }
-  const body = rows
-    .map(
-      (r) => `<tr>
-        <td>${escapeHtml(r.handle)}</td>
-        <td>${escapeHtml(r.date_key)}</td>
-        <td>${r.correct_streak}</td>
-        <td>${r.abs_played}</td>
-        <td>${r.correct_pitches}/${r.pitches_called}</td>
-        <td class="admin-table__mono admin-table__truncate">${escapeHtml((r.used_ab_ids || []).slice(0, 3).join(', '))}${(r.used_ab_ids?.length || 0) > 3 ? '…' : ''}</td>
-        <td>${formatDate(r.ended_at)}</td>
-      </tr>`
-    )
-    .join('');
-  const pages = Math.max(1, Math.ceil(total / limit));
-  return `
+  const toolbar = `
     <div class="admin-toolbar">
       <input id="admin-streak-session-handle" type="search" class="ump-input admin-input--search" placeholder="Filter handle…" />
+      <span class="admin-toolbar__spacer"></span>
       <button type="button" id="admin-streak-sessions-prev" class="ump-btn ump-btn--ghost ump-btn--sm" ${page <= 1 ? 'disabled' : ''}>Prev</button>
-      <span class="admin-meta-line">Page ${page} / ${pages}</span>
-      <button type="button" id="admin-streak-sessions-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= pages ? 'disabled' : ''}>Next</button>
-    </div>
+      <span class="admin-meta-line">Page ${page} / ${Math.max(1, Math.ceil(total / limit))} · ${total.toLocaleString()} total</span>
+      <button type="button" id="admin-streak-sessions-next" class="ump-btn ump-btn--ghost ump-btn--sm" ${page >= Math.max(1, Math.ceil(total / limit)) ? 'disabled' : ''}>Next</button>
+    </div>`;
+  if (!rows?.length) {
+    return `${toolbar}<p class="admin-empty">No streak sessions recorded yet. Logged-in players post a run when their streak ends.</p>`;
+  }
+  const body = rows
+    .map((r) => {
+      const accTone = r.accuracy == null ? '' : r.accuracy >= 80 ? 'ok' : r.accuracy >= 50 ? 'mid' : 'low';
+      return `<tr>
+        <td><b>${escapeHtml(r.handle)}</b></td>
+        <td><span class="admin-streak-num">${r.correct_streak}</span></td>
+        <td>${r.abs_played}</td>
+        <td>${r.correct_pitches}/${r.pitches_called}</td>
+        <td>${r.accuracy == null ? '—' : `<span class="admin-acc admin-acc--${accTone}">${r.accuracy}%</span>`}</td>
+        <td>${fmtDuration(r.duration_sec)}</td>
+        <td>${formatDate(r.ended_at)}</td>
+      </tr>`;
+    })
+    .join('');
+  return `${toolbar}
     <div class="admin-table-wrap">
-      <table class="admin-table">
-        <thead><tr><th>Player</th><th>Date</th><th>Streak</th><th>ABs</th><th>Pitches</th><th>AB ids</th><th>Ended</th></tr></thead>
+      <table class="admin-table admin-table--streak">
+        <thead><tr><th>Player</th><th>Streak</th><th>ABs</th><th>Pitches</th><th>Accuracy</th><th>Duration</th><th>Ended</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     </div>`;
 }
 
+/* ---------- Events ---------- */
+
 function bindStreakPanelEvents() {
   if (!streakRoot || streakRoot.dataset.bound) return;
   streakRoot.dataset.bound = '1';
+
   streakRoot.addEventListener('click', (e) => {
-    const t = e.target;
+    const t = e.target.closest('button');
+    if (!t) return;
     if (t.id === 'admin-refresh-streak') loadStreak();
-    if (t.id === 'admin-streak-abs-prev' && streakAbsPage > 1) {
-      streakAbsPage--;
-      loadStreakAbs();
-    }
-    if (t.id === 'admin-streak-abs-next') {
-      streakAbsPage++;
-      loadStreakAbs();
-    }
-    if (t.id === 'admin-streak-sessions-prev' && streakSessionsPage > 1) {
-      streakSessionsPage--;
-      loadStreakSessions();
-    }
-    if (t.id === 'admin-streak-sessions-next') {
-      streakSessionsPage++;
-      loadStreakSessions();
-    }
+    else if (t.id === 'admin-streak-abs-prev' && streakAbsPage > 1) { streakAbsPage--; loadStreakAbs(); }
+    else if (t.id === 'admin-streak-abs-next') { streakAbsPage++; loadStreakAbs(); }
+    else if (t.id === 'admin-streak-sessions-prev' && streakSessionsPage > 1) { streakSessionsPage--; loadStreakSessions(); }
+    else if (t.id === 'admin-streak-sessions-next') { streakSessionsPage++; loadStreakSessions(); }
+    else if (t.id === 'ingest-run-statcast') runIngestStatcast();
+    else if (t.id === 'ingest-run-csv') runIngestCsv();
+    else if (t.dataset.ingestTab) switchIngestTab(t.dataset.ingestTab);
   });
+
   streakRoot.addEventListener('change', (e) => {
     const t = e.target;
-    if (t.id === 'admin-streak-ab-search' || t.id === 'admin-streak-ab-sort') {
-      streakAbsPage = 1;
-      loadStreakAbs();
-    }
-    if (t.id === 'admin-streak-session-handle') {
-      streakSessionsPage = 1;
-      loadStreakSessions();
-    }
+    if (t.id === 'admin-streak-ab-search' || t.id === 'admin-streak-ab-sort') { streakAbsPage = 1; loadStreakAbs(); }
+    if (t.id === 'admin-streak-session-handle') { streakSessionsPage = 1; loadStreakSessions(); }
   });
 }
 
+function switchIngestTab(tab) {
+  streakRoot.querySelectorAll('[data-ingest-tab]').forEach((b) =>
+    b.classList.toggle('admin-seg__btn--active', b.dataset.ingestTab === tab));
+  streakRoot.querySelectorAll('[data-ingest-pane]').forEach((p) =>
+    p.classList.toggle('hidden', p.dataset.ingestPane !== tab));
+}
+
+function setIngestBusy(busy, label) {
+  streakIngestBusy = busy;
+  const btns = streakRoot.querySelectorAll('#ingest-run-statcast, #ingest-run-csv');
+  btns.forEach((b) => { b.disabled = busy; });
+  const result = document.getElementById('ingest-result');
+  if (busy && result) {
+    result.classList.remove('hidden');
+    result.innerHTML = `<div class="admin-ingest-running"><span class="admin-spinner"></span> ${escapeHtml(label || 'Working…')}</div>`;
+  }
+}
+
+async function runIngestStatcast() {
+  if (streakIngestBusy) return;
+  const startDt = document.getElementById('ingest-start')?.value;
+  const endDt = document.getElementById('ingest-end')?.value;
+  const team = document.getElementById('ingest-team')?.value || '';
+  const minDifficulty = Number(document.getElementById('ingest-mindiff')?.value) || 0;
+  if (!startDt || !endDt) { showAdminToast('Pick a start and end date', 'warn'); return; }
+  if (startDt > endDt) { showAdminToast('Start date must be on or before end date', 'warn'); return; }
+
+  setIngestBusy(true, `Fetching ${startDt} → ${endDt} from Statcast…`);
+  try {
+    const r = await api('/api/admin/streak', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'ingest_statcast', startDt, endDt, team, minDifficulty }),
+    });
+    document.getElementById('ingest-result').innerHTML = renderIngestResult(r);
+    showAdminToast(`Ingested ${r.inserted} ABs`, 'ok');
+    await Promise.all([loadStreakDistribution(), loadStreakAbs(), refreshStreakOverview()]);
+  } catch (err) {
+    document.getElementById('ingest-result').innerHTML = `<p class="admin-status-err">${escapeHtml(err.message)}</p>`;
+    showAdminToast(err.message, 'err');
+  } finally {
+    setIngestBusy(false);
+  }
+}
+
+async function runIngestCsv() {
+  if (streakIngestBusy) return;
+  const csv = document.getElementById('ingest-csv')?.value || '';
+  const minDifficulty = Number(document.getElementById('ingest-csv-mindiff')?.value) || 0;
+  if (csv.trim().length < 40) { showAdminToast('Paste a CSV with a header row first', 'warn'); return; }
+
+  setIngestBusy(true, 'Scoring & ingesting CSV…');
+  try {
+    const r = await api('/api/admin/streak', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'ingest_csv', csv, minDifficulty }),
+    });
+    document.getElementById('ingest-result').innerHTML = renderIngestResult(r);
+    showAdminToast(`Ingested ${r.inserted} ABs`, 'ok');
+    await Promise.all([loadStreakDistribution(), loadStreakAbs(), refreshStreakOverview()]);
+  } catch (err) {
+    document.getElementById('ingest-result').innerHTML = `<p class="admin-status-err">${escapeHtml(err.message)}</p>`;
+    showAdminToast(err.message, 'err');
+  } finally {
+    setIngestBusy(false);
+  }
+}
+
+/* ---------- Loaders ---------- */
+
 async function loadStreakAbs() {
   const search = document.getElementById('admin-streak-ab-search')?.value || '';
-  const sort = document.getElementById('admin-streak-ab-sort')?.value || 'times_served';
-  const abs = await api(
-    `/api/admin/streak?view=abs&page=${streakAbsPage}&limit=50&search=${encodeURIComponent(search)}&sort=${encodeURIComponent(sort)}`
-  );
+  const sort = document.getElementById('admin-streak-ab-sort')?.value || 'difficulty';
   const mount = document.getElementById('admin-streak-abs-mount');
+  if (mount && !mount.dataset.loaded) mount.innerHTML = '<p class="admin-meta-line">Loading at-bats…</p>';
+  const abs = await api(
+    `/api/admin/streak?view=abs&page=${streakAbsPage}&limit=25&search=${encodeURIComponent(search)}&sort=${encodeURIComponent(sort)}`
+  );
   if (mount) {
     mount.innerHTML = renderStreakAbsTable(abs.rows, abs.total, abs.page, abs.limit);
+    mount.dataset.loaded = '1';
+    const searchEl = document.getElementById('admin-streak-ab-search');
+    if (searchEl) { searchEl.value = search; if (document.activeElement === document.body) searchEl.focus(); }
+    const sortEl = document.getElementById('admin-streak-ab-sort');
+    if (sortEl) sortEl.value = sort;
   }
 }
 
 async function loadStreakSessions() {
   const handle = document.getElementById('admin-streak-session-handle')?.value || '';
   const data = await api(
-    `/api/admin/streak?view=sessions&page=${streakSessionsPage}&limit=30&handle=${encodeURIComponent(handle)}`
+    `/api/admin/streak?view=sessions&page=${streakSessionsPage}&limit=25&handle=${encodeURIComponent(handle)}`
   );
   const mount = document.getElementById('admin-streak-sessions-mount');
   if (mount) {
     mount.innerHTML = renderStreakSessionsTable(data.rows, data.total, data.page, data.limit);
+    const handleEl = document.getElementById('admin-streak-session-handle');
+    if (handleEl) handleEl.value = handle;
   }
+}
+
+async function loadStreakDistribution() {
+  try {
+    streakDistribution = await api('/api/admin/streak?view=distribution');
+  } catch {
+    streakDistribution = null;
+  }
+  const mount = document.getElementById('admin-streak-distribution');
+  if (mount) mount.innerHTML = renderStreakDistribution(streakDistribution);
+}
+
+async function refreshStreakOverview() {
+  try {
+    const dash = await api('/api/admin/streak');
+    streakPanelData = { ...dash, distribution: streakDistribution };
+    const mount = document.getElementById('admin-streak-overview');
+    if (mount) mount.innerHTML = renderStreakOverview(streakPanelData);
+  } catch { /* keep prior */ }
 }
 
 async function loadStreak() {
   if (!streakRoot) return;
-  streakRoot.innerHTML = '<p class="admin-meta-line">Loading…</p>';
+  streakRoot.innerHTML = '<p class="admin-meta-line">Loading streak console…</p>';
   try {
     const dash = await api('/api/admin/streak');
-    streakPanelData = dash;
-    streakRoot.innerHTML = `${renderStreakReadiness(dash)}
-      <section class="admin-section"><h3 class="admin-section__title">At-bats (Supabase + play stats)</h3><div id="admin-streak-abs-mount"></div></section>
-      <section class="admin-section"><h3 class="admin-section__title">Streak sessions</h3><div id="admin-streak-sessions-mount"></div></section>`;
+    streakDistribution = await api('/api/admin/streak?view=distribution').catch(() => null);
+    streakPanelData = { ...dash, distribution: streakDistribution };
+
+    streakRoot.innerHTML = `
+      <div id="admin-streak-overview">${renderStreakOverview(streakPanelData)}</div>
+      <div id="admin-streak-distribution">${renderStreakDistribution(streakDistribution)}</div>
+      ${renderStreakIngestControls()}
+      <section class="admin-streak-card">
+        <h3 class="admin-streak-card__title">At-bat pool</h3>
+        <div id="admin-streak-abs-mount"></div>
+      </section>
+      <section class="admin-streak-card">
+        <h3 class="admin-streak-card__title">Recent sessions</h3>
+        <div id="admin-streak-sessions-mount"></div>
+      </section>`;
+
     delete streakRoot.dataset.bound;
     bindStreakPanelEvents();
     await loadStreakAbs();

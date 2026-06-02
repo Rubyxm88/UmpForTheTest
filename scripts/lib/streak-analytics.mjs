@@ -3,6 +3,8 @@
  */
 
 import { getSupabaseAdmin } from '../../api/_lib/supabase.js';
+import { buildStreakRowsFromCsv } from './statcast-ingest.mjs';
+import { fetchStatcastCsv } from './statcast-fetch.mjs';
 
 async function ensureAbStatsRow(supabase, abId) {
   const { data } = await supabase.from('streak_ab_stats').select('ab_id').eq('ab_id', abId).maybeSingle();
@@ -64,6 +66,7 @@ export async function recordStreakAbCompleted(abId) {
 export async function recordStreakSessionEnd(handle, payload) {
   const supabase = getSupabaseAdmin();
   const {
+    sessionId = null,
     dateKey,
     startedAt,
     correctStreak = 0,
@@ -74,20 +77,36 @@ export async function recordStreakSessionEnd(handle, payload) {
     meta = {},
   } = payload;
 
+  const row = {
+    handle,
+    date_key: dateKey || new Date().toISOString().slice(0, 10),
+    started_at: startedAt || new Date().toISOString(),
+    ended_at: new Date().toISOString(),
+    correct_streak: correctStreak,
+    abs_played: absPlayed,
+    pitches_called: pitchesCalled,
+    correct_pitches: correctPitches,
+    used_ab_ids: usedAbIds,
+    meta,
+  };
+
+  // Idempotency: when the client supplies a stable session id, upsert on it so
+  // repeated session_end events for the same run collapse to a single row
+  // instead of inserting duplicates.
+  if (sessionId) {
+    row.client_session_id = sessionId;
+    const { data, error } = await supabase
+      .from('streak_sessions')
+      .upsert(row, { onConflict: 'client_session_id' })
+      .select('id')
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
   const { data, error } = await supabase
     .from('streak_sessions')
-    .insert({
-      handle,
-      date_key: dateKey || new Date().toISOString().slice(0, 10),
-      started_at: startedAt || new Date().toISOString(),
-      ended_at: new Date().toISOString(),
-      correct_streak: correctStreak,
-      abs_played: absPlayed,
-      pitches_called: pitchesCalled,
-      correct_pitches: correctPitches,
-      used_ab_ids: usedAbIds,
-      meta,
-    })
+    .insert(row)
     .select('id')
     .single();
 
@@ -238,5 +257,122 @@ export async function listStreakSessionsForAdmin({ page = 1, limit = 30, handle 
 
   const { data, error, count } = await query;
   if (error) throw new Error(error.message);
-  return { rows: data || [], total: count ?? 0, page, limit };
+
+  // Derive convenience fields for the admin UI (duration, accuracy).
+  const rows = (data || []).map((r) => {
+    const started = r.started_at ? new Date(r.started_at).getTime() : null;
+    const ended = r.ended_at ? new Date(r.ended_at).getTime() : null;
+    const durationSec = started && ended ? Math.max(0, Math.round((ended - started) / 1000)) : null;
+    const accuracy = r.pitches_called > 0
+      ? Math.round((100 * (r.correct_pitches || 0)) / r.pitches_called)
+      : null;
+    return { ...r, duration_sec: durationSec, accuracy };
+  });
+
+  return { rows, total: count ?? 0, page, limit };
+}
+
+/**
+ * Difficulty distribution across the eligible pool, bucketed 0-9,10-19,…,90-100.
+ * Powers the admin histogram.
+ */
+export async function fetchStreakDifficultyDistribution() {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('streak_at_bats')
+    .select('difficulty, tier, eligible')
+    .eq('eligible', true);
+  if (error) throw new Error(error.message);
+
+  const buckets = Array.from({ length: 10 }, (_, i) => ({
+    label: `${i * 10}-${i * 10 + 9}`,
+    min: i * 10,
+    max: i * 10 + 9,
+    count: 0,
+  }));
+  const tiers = [0, 0, 0, 0, 0];
+  let sum = 0;
+  let n = 0;
+
+  for (const r of data || []) {
+    const d = Math.max(0, Math.min(99, Number(r.difficulty) || 0));
+    buckets[Math.floor(d / 10)].count++;
+    if (r.tier >= 1 && r.tier <= 5) tiers[r.tier - 1]++;
+    sum += Number(r.difficulty) || 0;
+    n++;
+  }
+
+  return {
+    buckets,
+    tiers,
+    eligibleCount: n,
+    avgDifficulty: n ? Math.round(sum / n) : 0,
+  };
+}
+
+/**
+ * Upsert scored AB rows into streak_at_bats (chunked). Idempotent on id.
+ * @returns {{ upserted: number, errors: string[] }}
+ */
+export async function upsertStreakAbs(rows, { chunkSize = 200 } = {}) {
+  const supabase = getSupabaseAdmin();
+  let upserted = 0;
+  const errors = [];
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize);
+    const { error } = await supabase
+      .from('streak_at_bats')
+      .upsert(chunk, { onConflict: 'id' });
+    if (error) errors.push(`rows ${i}-${i + chunk.length}: ${error.message}`);
+    else upserted += chunk.length;
+  }
+  return { upserted, errors };
+}
+
+/**
+ * Ingest a Statcast CSV string into the streak pool.
+ * @returns combined parse summary + upsert result.
+ */
+export async function ingestStreakPoolFromCsvText(csvText, { minDifficulty = 0 } = {}) {
+  const { rows, summary } = buildStreakRowsFromCsv(csvText);
+  const filtered = minDifficulty > 0
+    ? rows.filter((r) => r.difficulty >= minDifficulty)
+    : rows;
+  const { upserted, errors } = await upsertStreakAbs(filtered);
+  return {
+    ...summary,
+    minDifficulty,
+    inserted: upserted,
+    skippedBelowMin: rows.length - filtered.length,
+    errors,
+  };
+}
+
+/**
+ * Fetch Statcast by date range (server-side), score, and ingest into the pool.
+ * @param {object} opts - { startDt, endDt, team, minDifficulty, maxDays }
+ */
+export async function ingestStreakPoolFromStatcast({
+  startDt,
+  endDt,
+  team = '',
+  minDifficulty = 0,
+  maxDays = 14,
+}) {
+  if (!startDt || !endDt) throw new Error('startDt and endDt are required (YYYY-MM-DD).');
+
+  const { csv, days } = await fetchStatcastCsv({ startDt, endDt, team, maxDays });
+  const fetchedRows = days.reduce((acc, d) => acc + (d.rows || 0), 0);
+
+  if (!csv) {
+    return {
+      startDt, endDt, team, fetchedRows, days,
+      totalAbs: 0, eligible: 0, ineligible: 0, inserted: 0,
+      rejectReasons: {}, tierCounts: [0, 0, 0, 0, 0], errors: [],
+      note: 'No pitches returned for this range.',
+    };
+  }
+
+  const result = await ingestStreakPoolFromCsvText(csv, { minDifficulty });
+  return { startDt, endDt, team, fetchedRows, days, ...result };
 }

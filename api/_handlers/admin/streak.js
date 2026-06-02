@@ -1,10 +1,13 @@
-import { sendJson } from '../../_lib/http.js';
+import { sendJson, readJsonBody } from '../../_lib/http.js';
 import { getAdminFromRequest } from '../../_lib/admin-session.js';
 import { tryGetSupabaseAdmin, SUPABASE_SETUP_HINT } from '../../_lib/supabase.js';
 import {
   fetchStreakAdminDashboard,
   listStreakAbsForAdmin,
   listStreakSessionsForAdmin,
+  fetchStreakDifficultyDistribution,
+  ingestStreakPoolFromCsvText,
+  ingestStreakPoolFromStatcast,
 } from '../../../scripts/lib/streak-analytics.mjs';
 import { getStreakPoolMeta } from '../../../scripts/lib/streak-pool-meta.mjs';
 
@@ -48,6 +51,12 @@ export default async function handler(req, res) {
           limit: Math.min(100, Number(url.searchParams.get('limit') || 30)),
           handle: url.searchParams.get('handle') || '',
         });
+        sendJson(res, 200, { ok: true, ...data });
+        return;
+      }
+
+      if (view === 'distribution') {
+        const data = await fetchStreakDifficultyDistribution();
         sendJson(res, 200, { ok: true, ...data });
         return;
       }
@@ -98,6 +107,38 @@ export default async function handler(req, res) {
         },
         ...dash,
       });
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const action = body.action;
+
+      if (action === 'ingest_statcast') {
+        const result = await ingestStreakPoolFromStatcast({
+          startDt: body.startDt,
+          endDt: body.endDt,
+          team: body.team || '',
+          minDifficulty: Number(body.minDifficulty) || 0,
+          maxDays: Math.min(31, Number(body.maxDays) || 14),
+        });
+        sendJson(res, 200, { ok: true, ...result });
+        return;
+      }
+
+      if (action === 'ingest_csv') {
+        if (!body.csv || typeof body.csv !== 'string') {
+          sendJson(res, 400, { error: 'csv (string) is required' });
+          return;
+        }
+        const result = await ingestStreakPoolFromCsvText(body.csv, {
+          minDifficulty: Number(body.minDifficulty) || 0,
+        });
+        sendJson(res, 200, { ok: true, ...result });
+        return;
+      }
+
+      sendJson(res, 400, { error: `Unknown action: ${action}` });
       return;
     }
 
