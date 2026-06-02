@@ -961,6 +961,126 @@
   transform: rotate(180deg);
 }
 
+/* Medal rows (gold, silver, bronze top 3 streaks) */
+.streak-medal-row {
+  border: 1.5px solid;
+  border-radius: var(--ump-radius-2);
+  margin-bottom: 0.5rem;
+}
+
+.streak-medal-row--gold {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.streak-medal-row--silver {
+  border-color: rgba(209, 213, 219, 0.4);
+  background: rgba(209, 213, 219, 0.04);
+}
+
+.streak-medal-row--bronze {
+  border-color: rgba(217, 119, 6, 0.4);
+  background: rgba(217, 119, 6, 0.04);
+}
+
+.streak-medal-row__toggle {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.6rem 0.65rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  transition: background 0.15s ease;
+}
+
+@media (hover: hover) {
+  .streak-medal-row--gold .streak-medal-row__toggle:hover {
+    background: rgba(251, 191, 36, 0.12);
+  }
+  .streak-medal-row--silver .streak-medal-row__toggle:hover {
+    background: rgba(209, 213, 219, 0.08);
+  }
+  .streak-medal-row--bronze .streak-medal-row__toggle:hover {
+    background: rgba(217, 119, 6, 0.08);
+  }
+}
+
+.streak-medal-row.is-open > .streak-medal-row__toggle {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.streak-medal-row--gold.is-open > .streak-medal-row__toggle {
+  background: rgba(251, 191, 36, 0.15);
+}
+
+.streak-medal-row--silver.is-open > .streak-medal-row__toggle {
+  background: rgba(209, 213, 219, 0.1);
+}
+
+.streak-medal-row--bronze.is-open > .streak-medal-row__toggle {
+  background: rgba(217, 119, 6, 0.1);
+}
+
+.streak-medal-row__rank {
+  font-family: var(--font-mono-tech, monospace);
+  font-size: 1.2rem;
+  font-weight: 900;
+  line-height: 1;
+  min-width: 2rem;
+  text-align: center;
+}
+
+.streak-medal-row--gold .streak-medal-row__rank {
+  color: #fcd34d;
+  text-shadow: 0 0 8px rgba(251, 191, 36, 0.4);
+}
+
+.streak-medal-row--silver .streak-medal-row__rank {
+  color: #e5e7eb;
+  text-shadow: 0 0 8px rgba(209, 213, 219, 0.3);
+}
+
+.streak-medal-row--bronze .streak-medal-row__rank {
+  color: #f59e0b;
+  text-shadow: 0 0 8px rgba(217, 119, 6, 0.3);
+}
+
+.streak-medal-row__main {
+  min-width: 0;
+}
+
+.streak-medal-row__title {
+  display: block;
+  font-family: var(--ump-font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.streak-medal-row__sub {
+  display: block;
+  font-family: var(--ump-font-body);
+  font-size: 0.7rem;
+  color: var(--ump-color-text-dim);
+  margin-top: 0.1rem;
+}
+
+.streak-medal-row__metacol {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.streak-medal-row.is-open .challenge-detail-ab__chevron {
+  transform: rotate(180deg);
+}
+
 .challenge-detail-playlist__head {
   display: flex;
   justify-content: space-between;

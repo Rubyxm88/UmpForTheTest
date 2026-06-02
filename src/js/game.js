@@ -14842,27 +14842,47 @@ async function populateStreakChallengeDetailModal() {
     );
   };
 
-  // Get top 3 and remove them from the recent list (avoid duplicates)
+  // Render top 3 as expandable medal rows (gold/silver/bronze)
   const top = getTopStreakAttempts(attempts, 3);
-  const topIds = new Set(top.map(a => a.id));
-  const recentOnly = attempts.filter(a => !topIds.has(a.id));
+  const medalColors = ['gold', 'silver', 'bronze'];
 
   if (topEl) {
     topEl.innerHTML = top.length
       ? top
           .map((a, i) => {
             const acc = a.accuracy != null ? a.accuracy : null;
+            const color = medalColors[i] || 'bronze';
             return `
-        <div class="streak-history__medal streak-history__medal--${i + 1}" role="listitem">
-          <div class="streak-history__rank">#${i + 1}</div>
-          <div class="streak-history__medal-streak">${a.streak || 0}</div>
-          <div class="streak-history__medal-acc">${acc != null ? acc + '%' : '—'}</div>
-          <div class="streak-history__medal-detail">Streak: ${a.streak || 0}, ABs: ${a.absPlayed || 0}, Acc: ${acc != null ? acc + '%' : '—'}</div>
+        <div class="streak-medal-row streak-medal-row--${color}" role="listitem">
+          <button type="button" class="streak-medal-row__toggle" data-streak-toggle="medal-${i}" aria-expanded="false" aria-controls="streak-attempt-drawer-medal-${i}">
+            <span class="streak-medal-row__rank">#${i + 1}</span>
+            <span class="streak-medal-row__main">
+              <span class="streak-medal-row__title">${a.streak || 0}-pitch streak</span>
+              <span class="streak-medal-row__sub">${escSh(fmtAttemptDate(a.endedAt))}</span>
+            </span>
+            <span class="streak-medal-row__metacol">
+              ${acc != null ? `<span class="challenge-detail-ab__acc ${accClassFor(acc)}">${acc}%</span>` : ''}
+              <svg class="challenge-detail-ab__chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
+          </button>
+          <div id="streak-attempt-drawer-medal-${i}" class="challenge-detail-ab__drawer" hidden>
+            <div class="challenge-detail-ab__stat"><span>Rank</span><strong>#${i + 1} All-Time</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Streak</span><strong>${a.streak || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Your accuracy</span><strong>${acc != null ? acc + '%' : '—'}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>ABs played</span><strong>${a.absPlayed || 0}</strong></div>
+            <div class="challenge-detail-ab__stat"><span>Pitches</span><strong>${a.pitchesCalled || 0}</strong></div>
+            ${a.matchup ? `<div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Ended on</span><strong>${escSh(a.matchup)}</strong></div>` : ''}
+            <div class="challenge-detail-ab__stat challenge-detail-ab__stat--wide"><span>Played</span><strong>${escSh(fmtAttemptDate(a.endedAt))}</strong></div>
+          </div>
         </div>`;
           })
           .join('')
       : '<p class="streak-history__empty">No attempts yet — play a streak to start your history.</p>';
   }
+
+  // Filter: only show recent attempts that are NOT in top 3
+  const topIds = new Set(top.map(a => a.id));
+  const recentOnly = attempts.filter(a => !topIds.has(a.id));
 
   if (listEl) {
     listEl.innerHTML = recentOnly.length
@@ -14893,7 +14913,7 @@ async function populateStreakChallengeDetailModal() {
         </div>`;
           })
           .join('')
-      : '<p class="streak-history__empty">No attempts recorded yet.</p>';
+      : '<p class="streak-history__empty">No other attempts recorded yet.</p>';
 
     if (!listEl.dataset.drawerBound) {
       listEl.addEventListener('click', (e) => {
@@ -14910,6 +14930,23 @@ async function populateStreakChallengeDetailModal() {
       });
       listEl.dataset.drawerBound = '1';
     }
+  }
+
+  // Bind medal row drawer toggles separately
+  if (topEl && !topEl.dataset.drawerBound) {
+    topEl.addEventListener('click', (e) => {
+      const toggle = e.target.closest('[data-streak-toggle]');
+      if (!toggle || !topEl.contains(toggle)) return;
+      const drawerId = toggle.getAttribute('aria-controls');
+      if (!drawerId) return;
+      const drawer = document.getElementById(drawerId);
+      if (!drawer) return;
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      drawer.hidden = open;
+      toggle.closest('.streak-medal-row')?.classList.toggle('is-open', !open);
+    });
+    topEl.dataset.drawerBound = '1';
   }
 
   if (streakSegtabs && !streakSegtabs.dataset.bound) {
